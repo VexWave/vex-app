@@ -17,6 +17,7 @@ export class LocalTrackLoader {
 	private async loadFile(file: File): Promise<Track> {
 		const track: Track = {
 			id: crypto.randomUUID(),
+			origin: "local",
 			title: file.name.replace(/\.[^.]+$/, ""),
 			durationSec: 0,
 			src: URL.createObjectURL(file),

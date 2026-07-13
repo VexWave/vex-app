@@ -30,8 +30,17 @@ export class PlaybackQueue {
 		this.repeat = mode;
 	}
 
+	/** Append tracks; ids already in the queue are skipped (queue invariant). */
 	add(tracks: Track[]): void {
-		this.items = [...this.items, ...tracks];
+		const ids = new Set(this.items.map((track) => track.id));
+		const fresh: Track[] = [];
+		for (const track of tracks) {
+			if (ids.has(track.id)) continue;
+			ids.add(track.id);
+			fresh.push(track);
+		}
+		if (fresh.length === 0) return;
+		this.items = [...this.items, ...fresh];
 	}
 
 	/** Remove a track; returns it so the caller can release its resources. */
@@ -44,6 +53,34 @@ export class PlaybackQueue {
 		} else if (position === this.index) {
 			// Current track was removed; clamp to the item now at this position.
 			this.index = Math.min(this.index, this.items.length - 1);
+		}
+		return removed;
+	}
+
+	/**
+	 * Remove every track matching the predicate; returns them for cleanup.
+	 * The current index follows the current track when it survives, else it
+	 * clamps to the item now occupying the current position.
+	 */
+	removeMatching(predicate: (track: Track) => boolean): Track[] {
+		const removed: Track[] = [];
+		const kept: Track[] = [];
+		let keptBeforeCurrent = 0;
+		for (const [i, track] of this.items.entries()) {
+			if (predicate(track)) {
+				removed.push(track);
+			} else {
+				kept.push(track);
+				if (i < this.index) keptBeforeCurrent += 1;
+			}
+		}
+		if (removed.length === 0) return removed;
+		const current = this.current;
+		this.items = kept;
+		if (current) {
+			this.index = predicate(current)
+				? Math.min(keptBeforeCurrent, kept.length - 1)
+				: keptBeforeCurrent;
 		}
 		return removed;
 	}

@@ -1,5 +1,6 @@
 import {
 	AlertCircle,
+	Cloud,
 	CloudUpload,
 	Loader2,
 	Music,
@@ -110,7 +111,13 @@ export function TrackList() {
 										{track.artist ?? "Unknown artist"}
 									</p>
 								</div>
-								<UploadIndicator upload={uploads[track.id]} />
+								{track.origin === "remote" ? (
+									<span title="Streams from the server" className="shrink-0">
+										<Cloud className="h-3.5 w-3.5 text-muted-foreground" />
+									</span>
+								) : (
+									<UploadIndicator upload={uploads[track.id]} />
+								)}
 								<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
 									{formatTime(track.durationSec)}
 								</span>

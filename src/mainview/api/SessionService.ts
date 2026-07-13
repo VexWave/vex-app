@@ -1,4 +1,4 @@
-import { bun } from "./rpc";
+import { bun, onBunMessage } from "./rpc";
 
 export type SessionStatus = "loggedOut" | "loggingIn" | "loggedIn";
 
@@ -82,3 +82,10 @@ export class SessionService {
 
 /** App-wide singleton — session state must survive component unmounts. */
 export const sessionService = new SessionService();
+
+// The stream proxy is the one server path that bypasses RPC requests, so a
+// token rejected mid-stream reaches the webview as a pushed message instead
+// of a 401 result.
+onBunMessage("sessionExpired", ({ reason }) => {
+	sessionService.markExpired(reason);
+});

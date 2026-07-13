@@ -90,6 +90,23 @@ export class PlayerController {
 		this.refresh();
 	}
 
+	/** Remove every track matching the predicate (e.g. all remote tracks). */
+	removeTracks(predicate: (track: Track) => boolean): void {
+		const current = this.queue.current;
+		const wasPlaying = this.player.isPlaying;
+		const removed = this.queue.removeMatching(predicate);
+		if (removed.length === 0) return;
+		for (const track of removed) {
+			LocalTrackLoader.dispose(track);
+		}
+		if (current && removed.includes(current)) {
+			const replacement = this.queue.current;
+			this.player.load(replacement);
+			if (replacement && wasPlaying) void this.player.play();
+		}
+		this.refresh();
+	}
+
 	clearQueue(): void {
 		this.player.load(null);
 		for (const track of this.queue.clear()) {

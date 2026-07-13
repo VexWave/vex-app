@@ -1,5 +1,6 @@
 import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { ApiClient } from "./ApiClient";
+import { StreamProxy } from "./StreamProxy";
 import type { PlayerRPC } from "../shared/rpcSchema";
 
 const DEV_SERVER_PORT = 5173;
@@ -26,6 +27,16 @@ async function getMainViewUrl(): Promise<string> {
 const url = await getMainViewUrl();
 
 const api = new ApiClient();
+// A 401 on a stream request means the token is dead: drop it bun-side and
+// push the expiry to the webview (media errors carry no HTTP status, so the
+// webview can't detect this itself). `rpc` is initialized below; streams
+// can't run before it exists because logging in requires the RPC.
+const streamProxy = new StreamProxy(api, () => {
+	api.expireSession();
+	rpc.send.sessionExpired({
+		reason: "Session expired — please log in again.",
+	});
+});
 
 const rpc = BrowserView.defineRPC<PlayerRPC>({
 	// Default is 1s; logins and multi-MB uploads need far more.
@@ -34,6 +45,8 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 		requests: {
 			login: (params) => api.login(params),
 			uploadTrack: (params) => api.uploadTrack(params),
+			listTracks: () =>
+				api.listTracks((serverId) => streamProxy.urlForTrack(serverId)),
 		},
 	},
 });

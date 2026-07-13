@@ -8,6 +8,7 @@ import { PlayerBar } from "@/components/PlayerBar";
 import { TrackList } from "@/components/TrackList";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useSession } from "@/hooks/useSession";
 import { LocalTrackLoader } from "@/player/LocalTrackLoader";
@@ -17,6 +18,9 @@ const loader = new LocalTrackLoader();
 function App() {
 	const { state, controller } = usePlayer();
 	const { session } = useSession();
+	// LibraryService fetches the server library per login and drops remote
+	// tracks on logout; the component only renders its error state.
+	const { library } = useLibrary();
 	const [isDragging, setIsDragging] = useState(false);
 
 	const handleDrop = async (e: DragEvent) => {
@@ -75,6 +79,12 @@ function App() {
 				<div className="flex items-center gap-2 border-t bg-destructive/10 px-4 py-2 text-sm text-destructive">
 					<AlertCircle className="h-4 w-4 shrink-0" />
 					<span className="truncate">{state.error}</span>
+				</div>
+			)}
+			{library.error && (
+				<div className="flex items-center gap-2 border-t bg-destructive/10 px-4 py-2 text-sm text-destructive">
+					<AlertCircle className="h-4 w-4 shrink-0" />
+					<span className="truncate">Server library: {library.error}</span>
 				</div>
 			)}
 

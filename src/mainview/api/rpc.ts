@@ -11,3 +11,6 @@ new Electroview({ rpc });
 
 /** Typed requests handled by the bun process: `bun.login(...)`, `bun.uploadTrack(...)`. */
 export const bun = rpc.request;
+
+/** Listen for messages pushed by the bun process (e.g. `sessionExpired`). */
+export const onBunMessage = rpc.addMessageListener;

@@ -11,12 +11,17 @@ export interface LoginParams {
 }
 
 /**
- * Handler results cross the RPC boundary as plain values instead of thrown
- * errors so the HTTP status (401 detection) survives intact.
+ * Failed handler results cross the RPC boundary as plain values instead of
+ * thrown errors so the HTTP status (401 detection) survives intact.
  */
-export type RpcResult =
-	| { ok: true }
-	| { ok: false; status?: number; error: string };
+export interface RpcFailure {
+	ok: false;
+	/** HTTP status when the server answered; absent on transport failures. */
+	status?: number;
+	error: string;
+}
+
+export type RpcResult = { ok: true } | RpcFailure;
 
 export interface UploadTrackParams {
 	title: string;
@@ -26,12 +31,40 @@ export interface UploadTrackParams {
 	dataBase64: string;
 }
 
+export interface RemoteTrack {
+	/** Server-side track id. */
+	id: number;
+	title: string;
+	artist?: string;
+	durationSec: number;
+	/**
+	 * Loopback URL of the bun-side stream proxy for this track. The audio
+	 * element plays it directly; bytes stream through the bun process, which
+	 * attaches the session token — so playback starts as soon as enough is
+	 * buffered while the rest keeps downloading.
+	 */
+	streamUrl: string;
+}
+
+export type ListTracksResult = { ok: true; tracks: RemoteTrack[] } | RpcFailure;
+
 export type PlayerRPC = {
 	bun: RPCSchema<{
 		requests: {
 			login: { params: LoginParams; response: RpcResult };
 			uploadTrack: { params: UploadTrackParams; response: RpcResult };
+			listTracks: { params: undefined; response: ListTracksResult };
 		};
 	}>;
-	webview: RPCSchema<{ requests: {}; messages: {} }>;
+	webview: RPCSchema<{
+		requests: {};
+		messages: {
+			/**
+			 * Pushed by the bun process when the stream proxy hits a 401 —
+			 * the only server round-trip that doesn't flow through an RPC
+			 * request, so the webview can't see the status itself.
+			 */
+			sessionExpired: { reason: string };
+		};
+	}>;
 };
