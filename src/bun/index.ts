@@ -52,7 +52,7 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 });
 
 export const mainWindow = new BrowserWindow({
-	title: "Music Player",
+	title: "VexWave",
 	url,
 	frame: {
 		width: 900,
@@ -63,4 +63,4 @@ export const mainWindow = new BrowserWindow({
 	rpc,
 });
 
-console.log("React Tailwind Vite app started!");
+console.log("VexWave started!");

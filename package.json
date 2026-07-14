@@ -1,7 +1,7 @@
 {
-	"name": "electrobun-react-tailwind-vite",
+	"name": "vexwave",
 	"version": "1.0.0",
-	"description": "Electrobun app with React, Tailwind CSS, and Vite HMR",
+	"description": "VexWave — a desktop music player built with Electrobun, React, Tailwind CSS, and Vite HMR",
 	"scripts": {
 		"start": "vite build && electrobun dev",
 		"dev": "electrobun dev --watch",

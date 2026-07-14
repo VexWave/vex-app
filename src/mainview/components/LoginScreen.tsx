@@ -9,6 +9,7 @@ import {
 	CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Logo } from "@/components/Logo";
 import { useSession } from "@/hooks/useSession";
 
 function Field({
@@ -59,8 +60,9 @@ export function LoginScreen() {
 	return (
 		<div className="flex h-screen items-center justify-center bg-background p-4 text-foreground">
 			<Card className="w-full max-w-sm">
-				<CardHeader>
-					<CardTitle>Connect to server</CardTitle>
+				<CardHeader className="items-center text-center">
+					<Logo className="mb-2 h-14 w-14" />
+					<CardTitle>Welcome to VexWave</CardTitle>
 					<CardDescription>
 						Enter the address of a running server and log in with your
 						credentials.

@@ -3,6 +3,7 @@ import { AlertCircle, Trash2 } from "lucide-react";
 import { uploadService } from "@/api/UploadService";
 import { AddTracksButton } from "@/components/AddTracksButton";
 import { LoginScreen } from "@/components/LoginScreen";
+import { Logo } from "@/components/Logo";
 import { NowPlaying } from "@/components/NowPlaying";
 import { PlayerBar } from "@/components/PlayerBar";
 import { TrackList } from "@/components/TrackList";
@@ -49,7 +50,10 @@ function App() {
 			onDrop={(e) => void handleDrop(e)}
 		>
 			<header className="flex items-center justify-between px-6 py-4">
-				<h1 className="text-xl font-bold tracking-tight">Music Player</h1>
+				<div className="flex items-center gap-2">
+					<Logo className="h-6 w-6" />
+					<h1 className="text-xl font-bold tracking-tight">VexWave</h1>
+				</div>
 				<div className="flex items-center gap-2">
 					{state.tracks.length > 0 && (
 						<Button

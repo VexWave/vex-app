@@ -2,8 +2,8 @@ import type { ElectrobunConfig } from "electrobun";
 
 export default {
 	app: {
-		name: "react-tailwind-vite",
-		identifier: "reacttailwindvite.electrobun.dev",
+		name: "VexWave",
+		identifier: "app.vexwave",
 		version: "0.0.1",
 	},
 	build: {
@@ -22,6 +22,7 @@ export default {
 		},
 		win: {
 			bundleCEF: true,
+			icon: "assets/vex-logo.ico",
 		},
 	},
 } satisfies ElectrobunConfig;
