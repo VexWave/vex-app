@@ -1,14 +1,12 @@
 import { useState } from "react";
 import {
 	AlertCircle,
-	Cloud,
 	EllipsisVertical,
 	Loader2,
 	Music,
 	Play,
 	Trash2,
 	Users,
-	Volume2,
 } from "lucide-react";
 import { libraryService } from "@/api/LibraryService";
 import { ManageArtistsDialog } from "@/components/ManageArtistsDialog";
@@ -43,8 +41,8 @@ import type { Track } from "@/player/types";
 function PendingUploadRow({ upload }: { upload: UploadItem }) {
 	const failed = upload.status === "error";
 	return (
-		<div className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left opacity-80">
-			<div className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted">
+		<div className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left opacity-80">
+			<div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-inset ring-border/60">
 				<Music className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
 			</div>
 			<div className="min-w-0 flex-1">
@@ -64,6 +62,33 @@ function PendingUploadRow({ upload }: { upload: UploadItem }) {
 				<Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
 			)}
 		</div>
+	);
+}
+
+// Negative delays stagger the bars into different phases so they read as an
+// equalizer immediately, without a synchronized "all bars rise together" start.
+const BAR_DELAYS = ["-0.4s", "-0.15s", "-0.6s", "-0.25s"];
+
+/**
+ * Little equalizer whose bars bounce to mark the track that's currently
+ * playing (the caller only renders it while playback is active). Decorative
+ * only (the row is already highlighted), so it's hidden from assistive tech
+ * and honours prefers-reduced-motion.
+ */
+function NowPlayingBars() {
+	return (
+		<span
+			className="flex h-4 w-4 shrink-0 items-end justify-center gap-[2px]"
+			aria-hidden="true"
+		>
+			{BAR_DELAYS.map((delay, i) => (
+				<span
+					key={i}
+					className="h-full w-[2px] origin-bottom rounded-full bg-primary animate-equalize motion-reduce:animate-none"
+					style={{ animationDelay: delay }}
+				/>
+			))}
+		</span>
 	);
 }
 
@@ -128,11 +153,16 @@ export function TrackList() {
 												}
 											}}
 											className={cn(
-												"group flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent",
-												isCurrent && "bg-accent",
+												"group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors",
+												isCurrent ? "bg-accent" : "hover:bg-accent/60",
 											)}
 										>
-											<div className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted">
+											<div
+												className={cn(
+													"relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-inset ring-border/60 transition-shadow",
+													isCurrent && "ring-primary/40",
+												)}
+											>
 												{track.coverUrl ? (
 													<img
 														src={track.coverUrl}
@@ -142,17 +172,8 @@ export function TrackList() {
 												) : (
 													<Music className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
 												)}
-												<div
-													className={cn(
-														"absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100",
-														isCurrent && state.isPlaying && "opacity-100",
-													)}
-												>
-													{isCurrent && state.isPlaying ? (
-														<Volume2 className="h-4 w-4 text-white" />
-													) : (
-														<Play className="h-4 w-4 text-white" />
-													)}
+												<div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+													<Play className="h-4 w-4 fill-white text-white" />
 												</div>
 											</div>
 											<div className="min-w-0 flex-1">
@@ -168,16 +189,14 @@ export function TrackList() {
 													{track.artist ?? "Unknown artist"}
 												</p>
 											</div>
-											<span title="Streams from the server" className="shrink-0">
-												<Cloud className="h-3.5 w-3.5 text-muted-foreground" />
-											</span>
+											{isCurrent && state.isPlaying && <NowPlayingBars />}
 											<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
 												{formatTime(track.durationSec)}
 											</span>
 											<Button
 												variant="ghost"
 												size="icon"
-												className="h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+												className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
 												aria-label={`More options for ${track.title}`}
 												onClick={(e) => {
 													e.stopPropagation();
