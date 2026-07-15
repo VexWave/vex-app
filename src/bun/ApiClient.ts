@@ -3,6 +3,8 @@ import { ApiContract } from "../../contract/contract";
 import type {
 	CreateArtistParams,
 	DeleteArtistParams,
+	DeleteTrackParams,
+	EditTrackParams,
 	ListArtistsResult,
 	ListTracksResult,
 	LoginParams,
@@ -106,6 +108,56 @@ export class ApiClient {
 		}
 	}
 
+	async deleteTrack(params: DeleteTrackParams): Promise<RpcResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.deleteTrack({ body: { id: params.id } });
+			if (res.status === 200) return { ok: true };
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Deleting the track failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return { ok: false, error: "Deleting the track failed — server unreachable" };
+		}
+	}
+
+	async editTrack(params: EditTrackParams): Promise<RpcResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.editTrack({
+				body: {
+					id: params.id,
+					title: params.title,
+					artistIds: params.artistIds,
+				},
+			});
+			if (res.status === 200) return { ok: true };
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Editing the track failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return { ok: false, error: "Editing the track failed — server unreachable" };
+		}
+	}
+
 	/**
 	 * Server track listing. `urlForTrack` maps a server track id to its
 	 * stream-proxy URL so complete RemoteTracks are assembled in one place.
@@ -126,6 +178,7 @@ export class ApiClient {
 						id: track.id,
 						title: track.title,
 						artist: track.artists.join(", ") || undefined,
+						artists: track.artists,
 						durationSec: track.duration,
 						streamUrl: urlForTrack(track.id),
 					})),

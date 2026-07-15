@@ -10,6 +10,7 @@
 		"build:canary": "vite build && electrobun build --env=canary"
 	},
 	"dependencies": {
+		"@radix-ui/react-context-menu": "^2.3.3",
 		"@radix-ui/react-dialog": "^1.1.19",
 		"@radix-ui/react-scroll-area": "^1.2.14",
 		"@radix-ui/react-separator": "^1.1.11",

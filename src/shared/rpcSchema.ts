@@ -35,7 +35,11 @@ export interface RemoteTrack {
 	/** Server-side track id. */
 	id: number;
 	title: string;
+	/** Joined artist names for display (undefined when the track has none). */
 	artist?: string;
+	/** The track's linked artist names, as the server returns them — used to
+	 * pre-select the currently-linked artists when editing. */
+	artists: string[];
 	durationSec: number;
 	/**
 	 * Loopback URL of the bun-side stream proxy for this track. The audio
@@ -47,6 +51,19 @@ export interface RemoteTrack {
 }
 
 export type ListTracksResult = { ok: true; tracks: RemoteTrack[] } | RpcFailure;
+
+export interface DeleteTrackParams {
+	/** Server-side track id. */
+	id: number;
+}
+
+export interface EditTrackParams {
+	/** Server-side track id. */
+	id: number;
+	title?: string;
+	/** Replaces the track's artist links entirely (empty array clears them). */
+	artistIds?: number[];
+}
 
 export interface CreateArtistParams {
 	name: string;
@@ -75,6 +92,8 @@ export type PlayerRPC = {
 		requests: {
 			login: { params: LoginParams; response: RpcResult };
 			uploadTrack: { params: UploadTrackParams; response: RpcResult };
+			deleteTrack: { params: DeleteTrackParams; response: RpcResult };
+			editTrack: { params: EditTrackParams; response: RpcResult };
 			listTracks: { params: undefined; response: ListTracksResult };
 			listArtists: { params: undefined; response: ListArtistsResult };
 			createArtist: { params: CreateArtistParams; response: RpcResult };

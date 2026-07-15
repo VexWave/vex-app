@@ -10,6 +10,9 @@ export interface LibraryState {
 	error: string | null;
 }
 
+/** Result shape for track mutations the context menu shows inline. */
+export type MutationResult = { ok: true } | { ok: false; error: string };
+
 /**
  * Owns the server library: fetches it when a session starts and queues the
  * tracks (they stream progressively through the bun proxy), and removes all
@@ -21,6 +24,10 @@ export class LibraryService {
 	private subscribers = new Set<() => void>();
 	private snapshot: LibraryState = { loading: false, error: null };
 	private fetchSeq = 0;
+	// Server metadata for each queued remote track, keyed by the queue track
+	// id (`server-<id>`). The context menu reads it to map a queued Track back
+	// to its numeric server id and currently-linked artist names.
+	private remoteById = new Map<string, RemoteTrack>();
 
 	constructor() {
 		let previousStatus = sessionService.getSnapshot().status;
@@ -32,6 +39,7 @@ export class LibraryService {
 				void this.refresh();
 			} else if (status === "loggedOut") {
 				this.fetchSeq += 1; // drop in-flight results from the old session
+				this.remoteById.clear();
 				playerController.removeTracks((track) => track.origin === "remote");
 				this.update({ loading: false, error: null });
 			}
@@ -46,6 +54,11 @@ export class LibraryService {
 	};
 
 	getSnapshot = (): LibraryState => this.snapshot;
+
+	/** Server metadata for a queued remote track, or undefined for locals. */
+	getRemote(trackId: string): RemoteTrack | undefined {
+		return this.remoteById.get(trackId);
+	}
 
 	/** Re-fetch the server library and queue tracks that aren't queued yet. */
 	async refresh(): Promise<void> {
@@ -72,10 +85,77 @@ export class LibraryService {
 			this.update({ loading: false, error: result.error });
 			return;
 		}
-		// The queue skips ids that are already present, so a refresh only
-		// appends tracks that are new on the server.
+		this.remoteById = new Map(
+			result.tracks.map((remote) => [trackIdFor(remote), remote]),
+		);
+		// Update already-queued tracks (e.g. artists changed) in place — the
+		// queue dedupes by id so addTracks alone wouldn't refresh them...
+		for (const remote of result.tracks) {
+			playerController.updateTrack(trackIdFor(remote), {
+				title: remote.title,
+				artist: remote.artist,
+			});
+		}
+		// ...then append the ones that are new on the server.
 		playerController.addTracks(result.tracks.map(toTrack));
 		this.update({ loading: false, error: null });
+	}
+
+	/**
+	 * Delete a server track, then drop it from the queue. Failures land in the
+	 * snapshot's `error` (the confirm dialog has already closed, so the App
+	 * banner is where the user still is).
+	 */
+	async removeTrack(trackId: string): Promise<void> {
+		const remote = this.remoteById.get(trackId);
+		if (!remote) return;
+		let result;
+		try {
+			result = await bun.deleteTrack({ id: remote.id });
+		} catch (err) {
+			this.update({
+				error: err instanceof Error ? err.message : "Deleting the track failed",
+			});
+			return;
+		}
+		if (!result.ok) {
+			if (result.status === 401) {
+				sessionService.markExpired("Session expired — please log in again.");
+			}
+			this.update({ error: result.error });
+			return;
+		}
+		this.remoteById.delete(trackId);
+		playerController.removeTracks((track) => track.id === trackId);
+	}
+
+	/**
+	 * Replace a server track's artist links, then refetch so the queued
+	 * track's displayed artist updates. Returns the outcome instead of writing
+	 * to the snapshot so the manage-artists dialog can show it inline.
+	 */
+	async setArtists(trackId: string, artistIds: number[]): Promise<MutationResult> {
+		const remote = this.remoteById.get(trackId);
+		if (!remote) {
+			return { ok: false, error: "Only server tracks can have artists edited." };
+		}
+		let result;
+		try {
+			result = await bun.editTrack({ id: remote.id, artistIds });
+		} catch (err) {
+			return {
+				ok: false,
+				error: err instanceof Error ? err.message : "Editing the track failed",
+			};
+		}
+		if (!result.ok) {
+			if (result.status === 401) {
+				sessionService.markExpired("Session expired — please log in again.");
+			}
+			return { ok: false, error: result.error };
+		}
+		void this.refresh();
+		return { ok: true };
 	}
 
 	private update(patch: Partial<LibraryState>): void {
@@ -84,10 +164,14 @@ export class LibraryService {
 	}
 }
 
+/** Stable queue id for a server track, so refreshes dedupe against the queue. */
+function trackIdFor(remote: RemoteTrack): string {
+	return `server-${remote.id}`;
+}
+
 function toTrack(remote: RemoteTrack): Track {
 	return {
-		// Stable per server track, so refreshes dedupe against the queue.
-		id: `server-${remote.id}`,
+		id: trackIdFor(remote),
 		origin: "remote",
 		title: remote.title,
 		artist: remote.artist,

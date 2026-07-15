@@ -90,6 +90,15 @@ export class PlayerController {
 		this.refresh();
 	}
 
+	/**
+	 * Patch a queued track's metadata (e.g. after its artists were edited on
+	 * the server). No-op when the id isn't in the queue.
+	 */
+	updateTrack(id: string, patch: Partial<Track>): void {
+		this.queue.updateTrack(id, patch);
+		this.refresh();
+	}
+
 	/** Remove every track matching the predicate (e.g. all remote tracks). */
 	removeTracks(predicate: (track: Track) => boolean): void {
 		const current = this.queue.current;
