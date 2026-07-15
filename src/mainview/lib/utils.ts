@@ -15,3 +15,20 @@ export function formatTime(totalSeconds: number): string {
 	const ss = String(seconds).padStart(2, "0");
 	return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
+
+/**
+ * Read a blob's bytes as a base64 string (without the `data:…;base64,` prefix).
+ * FileReader avoids chunked btoa gymnastics for multi-MB blobs.
+ */
+export function blobToBase64(blob: Blob): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onerror = () =>
+			reject(reader.error ?? new Error("Failed to read file data"));
+		reader.onload = () => {
+			const dataUrl = reader.result as string;
+			resolve(dataUrl.slice(dataUrl.indexOf(",") + 1));
+		};
+		reader.readAsDataURL(blob);
+	});
+}

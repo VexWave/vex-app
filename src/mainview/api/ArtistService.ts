@@ -1,5 +1,6 @@
 import type {
 	CreateArtistParams,
+	EditArtistParams,
 	RemoteArtist,
 } from "../../shared/rpcSchema";
 import { bun } from "./rpc";
@@ -95,6 +96,33 @@ export class ArtistService {
 			return {
 				ok: false,
 				error: err instanceof Error ? err.message : "Creating the artist failed",
+			};
+		}
+		if (!result.ok) {
+			if (result.status === 401) {
+				sessionService.markExpired("Session expired — please log in again.");
+			}
+			return { ok: false, error: result.error };
+		}
+		void this.refresh();
+		return { ok: true };
+	}
+
+	/**
+	 * Edit an artist's name and/or avatar on the server, then refetch. Like
+	 * `create`, returns the outcome so the edit dialog can show a failure inline
+	 * and stay open.
+	 */
+	async edit(
+		input: EditArtistParams,
+	): Promise<{ ok: true } | { ok: false; error: string }> {
+		let result;
+		try {
+			result = await bun.editArtist(input);
+		} catch (err) {
+			return {
+				ok: false,
+				error: err instanceof Error ? err.message : "Editing the artist failed",
 			};
 		}
 		if (!result.ok) {

@@ -49,8 +49,10 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 				api.listTracks((serverId) => streamProxy.urlForTrack(serverId)),
 			deleteTrack: (params) => api.deleteTrack(params),
 			editTrack: (params) => api.editTrack(params),
-			listArtists: () => api.listArtists(),
+			listArtists: () =>
+				api.listArtists((artistId) => streamProxy.urlForArtistImage(artistId)),
 			createArtist: (params) => api.createArtist(params),
+			editArtist: (params) => api.editArtist(params),
 			deleteArtist: (params) => api.deleteArtist(params),
 		},
 	},

@@ -3,9 +3,11 @@
 // (credentials: test / test; uploaded tracks live in memory)
 import {
 	ApiContract,
-	CreateArtistSchema,
-	DeleteByIdSchema,
-	TrackSchema,
+	CreateArtistRequest,
+	CreateTrackRequest,
+	DeleteByIdRequest,
+	EditArtistRequest,
+	artistImagePath,
 } from "../contract/contract";
 
 const PORT = 8790;
@@ -26,7 +28,8 @@ const tracks = new Map<number, StoredTrack>();
 interface StoredArtist {
 	id: number;
 	name: string;
-	imageUrl?: string;
+	/** Raw image bytes, stored as-is; served from `/artist/:id/image`. */
+	image?: Uint8Array;
 }
 
 let nextArtistId = 1;
@@ -103,7 +106,7 @@ Bun.serve({
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
-				const parsed = TrackSchema.safeParse(await req.json());
+				const parsed = CreateTrackRequest.safeParse(await req.json());
 				if (!parsed.success) {
 					return new Response(parsed.error.message, { status: 400 });
 				}
@@ -130,13 +133,39 @@ Bun.serve({
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
-				const parsed = CreateArtistSchema.safeParse(await req.json());
+				const parsed = CreateArtistRequest.safeParse(await req.json());
 				if (!parsed.success) {
 					return new Response(parsed.error.message, { status: 400 });
 				}
+				const { name, image } = parsed.data;
 				const id = nextArtistId++;
-				artists.set(id, { id, ...parsed.data });
-				console.log(`postArtist ok: #${id} "${parsed.data.name}"`);
+				artists.set(id, {
+					id,
+					name,
+					image: image ? new Uint8Array(image) : undefined,
+				});
+				console.log(
+					`postArtist ok: #${id} "${name}"` +
+						(image ? ` image=${image.byteLength}B` : ""),
+				);
+				return new Response("ok");
+			},
+		},
+		"/editArtist": {
+			POST: async (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				const parsed = EditArtistRequest.safeParse(await req.json());
+				if (!parsed.success) {
+					return new Response(parsed.error.message, { status: 400 });
+				}
+				const { id, name, image } = parsed.data;
+				const artist = artists.get(id);
+				if (!artist) return new Response("not found", { status: 404 });
+				if (name !== undefined) artist.name = name;
+				if (image !== undefined) artist.image = new Uint8Array(image);
+				console.log(`editArtist ok: #${id} "${artist.name}"`);
 				return new Response("ok");
 			},
 		},
@@ -145,7 +174,7 @@ Bun.serve({
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
-				const parsed = DeleteByIdSchema.safeParse(await req.json());
+				const parsed = DeleteByIdRequest.safeParse(await req.json());
 				if (!parsed.success || !artists.delete(parsed.data.id)) {
 					return new Response("not found", { status: 404 });
 				}
@@ -158,7 +187,26 @@ Bun.serve({
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
-				return Response.json([...artists.values()]);
+				// Never inline image bytes: expose the image route's path instead,
+				// and only for artists that actually have an avatar.
+				return Response.json(
+					[...artists.values()].map(({ id, name, image }) => ({
+						id,
+						name,
+						imageUrl: image ? artistImagePath(id) : undefined,
+					})),
+				);
+			},
+		},
+		// ApiContract.getArtistImage ("/artist/:id/image"): raw stored image
+		// bytes, public (no auth) per the contract.
+		[ApiContract.getArtistImage.path]: {
+			GET: (req: Bun.BunRequest<typeof ApiContract.getArtistImage.path>) => {
+				const artist = artists.get(Number(req.params.id));
+				if (!artist?.image) return new Response("not found", { status: 404 });
+				return new Response(artist.image, {
+					headers: { "content-type": "application/octet-stream" },
+				});
 			},
 		},
 		"/tracks": {

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { AlertCircle, Loader2, Plus, Trash2, Users } from "lucide-react";
-import { CreateArtistDialog } from "@/components/CreateArtistDialog";
+import { AlertCircle, Loader2, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { ArtistDialog } from "@/components/ArtistDialog";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -17,9 +17,11 @@ import type { RemoteArtist } from "../../shared/rpcSchema";
 
 function ArtistCard({
 	artist,
+	onEdit,
 	onDelete,
 }: {
 	artist: RemoteArtist;
+	onEdit: () => void;
 	onDelete: () => void;
 }) {
 	return (
@@ -38,23 +40,45 @@ function ArtistCard({
 			<p className="w-full truncate text-center text-sm font-medium">
 				{artist.name}
 			</p>
-			<Button
-				variant="ghost"
-				size="icon"
-				className="absolute right-1 top-1 h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-				aria-label={`Delete ${artist.name}`}
-				onClick={onDelete}
-			>
-				<Trash2 className="h-4 w-4" />
-			</Button>
+			<div className="absolute right-1 top-1 flex opacity-0 transition-opacity group-hover:opacity-100">
+				<Button
+					variant="ghost"
+					size="icon"
+					className="h-7 w-7"
+					aria-label={`Edit ${artist.name}`}
+					onClick={onEdit}
+				>
+					<Pencil className="h-4 w-4" />
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon"
+					className="h-7 w-7"
+					aria-label={`Delete ${artist.name}`}
+					onClick={onDelete}
+				>
+					<Trash2 className="h-4 w-4" />
+				</Button>
+			</div>
 		</div>
 	);
 }
 
 export function ArtistsView() {
 	const { artists: state, service } = useArtists();
-	const [createOpen, setCreateOpen] = useState(false);
+	const [dialogOpen, setDialogOpen] = useState(false);
+	// The artist being edited, or null when the dialog is in "create" mode.
+	const [editing, setEditing] = useState<RemoteArtist | null>(null);
 	const [pendingDelete, setPendingDelete] = useState<RemoteArtist | null>(null);
+
+	const openCreate = () => {
+		setEditing(null);
+		setDialogOpen(true);
+	};
+	const openEdit = (artist: RemoteArtist) => {
+		setEditing(artist);
+		setDialogOpen(true);
+	};
 
 	const firstLoad = state.loading && state.artists.length === 0;
 
@@ -62,7 +86,7 @@ export function ArtistsView() {
 		<div className="flex h-full flex-col">
 			<div className="flex items-center justify-between px-4 py-2.5">
 				<h2 className="text-sm font-semibold">Artists</h2>
-				<Button variant="secondary" size="sm" onClick={() => setCreateOpen(true)}>
+				<Button variant="secondary" size="sm" onClick={openCreate}>
 					<Plus className="h-4 w-4" />
 					New artist
 				</Button>
@@ -92,6 +116,7 @@ export function ArtistsView() {
 							<li key={artist.id}>
 								<ArtistCard
 									artist={artist}
+									onEdit={() => openEdit(artist)}
 									onDelete={() => setPendingDelete(artist)}
 								/>
 							</li>
@@ -100,7 +125,11 @@ export function ArtistsView() {
 				</ScrollArea>
 			)}
 
-			<CreateArtistDialog open={createOpen} onOpenChange={setCreateOpen} />
+			<ArtistDialog
+				artist={editing}
+				open={dialogOpen}
+				onOpenChange={setDialogOpen}
+			/>
 
 			<Dialog
 				open={pendingDelete !== null}

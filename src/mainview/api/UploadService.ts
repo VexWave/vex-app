@@ -1,4 +1,5 @@
 import { parseBlob } from "music-metadata";
+import { blobToBase64 } from "@/lib/utils";
 import { bun } from "./rpc";
 import { libraryService } from "./LibraryService";
 import { sessionService } from "./SessionService";
@@ -118,20 +119,6 @@ export class UploadService {
 		this.snapshot = [...this.items];
 		this.subscribers.forEach((notify) => notify());
 	}
-}
-
-/** FileReader avoids chunked btoa gymnastics for multi-MB blobs. */
-function blobToBase64(blob: Blob): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onerror = () =>
-			reject(reader.error ?? new Error("Failed to read audio data"));
-		reader.onload = () => {
-			const dataUrl = reader.result as string;
-			resolve(dataUrl.slice(dataUrl.indexOf(",") + 1));
-		};
-		reader.readAsDataURL(blob);
-	});
 }
 
 /** App-wide singleton — uploads must survive component unmounts. */

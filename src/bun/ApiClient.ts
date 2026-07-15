@@ -4,6 +4,7 @@ import type {
 	CreateArtistParams,
 	DeleteArtistParams,
 	DeleteTrackParams,
+	EditArtistParams,
 	EditTrackParams,
 	ListArtistsResult,
 	ListTracksResult,
@@ -198,7 +199,15 @@ export class ApiClient {
 		}
 	}
 
-	async listArtists(): Promise<ListArtistsResult> {
+	/**
+	 * Server artist listing. `urlForArtistImage` maps an artist id to its
+	 * stream-proxy avatar URL; the server only sends `imageUrl` (its own image
+	 * route) for artists that actually have an image, so it stays undefined for
+	 * the rest — the webview never reaches the backend directly.
+	 */
+	async listArtists(
+		urlForArtistImage: (artistId: number) => string,
+	): Promise<ListArtistsResult> {
 		const client = this.session?.client;
 		if (!client) {
 			return { ok: false, status: 401, error: "Not logged in" };
@@ -211,7 +220,7 @@ export class ApiClient {
 					artists: res.body.map(({ id, name, imageUrl }) => ({
 						id,
 						name,
-						imageUrl,
+						imageUrl: imageUrl ? urlForArtistImage(id) : undefined,
 					})),
 				};
 			}
@@ -239,7 +248,7 @@ export class ApiClient {
 		}
 		try {
 			const res = await client.postArtist({
-				body: { name: params.name, imageUrl: params.imageUrl },
+				body: { name: params.name, image: params.imageBase64 },
 			});
 			if (res.status === 200) return { ok: true };
 			if (res.status === 401) this.expireSession();
@@ -253,6 +262,34 @@ export class ApiClient {
 			};
 		} catch {
 			return { ok: false, error: "Creating the artist failed — server unreachable" };
+		}
+	}
+
+	async editArtist(params: EditArtistParams): Promise<RpcResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.editArtist({
+				body: {
+					id: params.id,
+					name: params.name,
+					image: params.imageBase64,
+				},
+			});
+			if (res.status === 200) return { ok: true };
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Editing the artist failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return { ok: false, error: "Editing the artist failed — server unreachable" };
 		}
 	}
 

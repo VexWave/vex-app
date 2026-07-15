@@ -1,4 +1,4 @@
-import { trackAudioPath } from "../../contract/contract";
+import { artistImagePath, trackAudioPath } from "../../contract/contract";
 import type { ApiClient } from "./ApiClient";
 
 /**
@@ -16,34 +16,37 @@ const PASSTHROUGH_HEADERS = [
 ] as const;
 
 /**
- * Loopback HTTP server that lets the webview's audio element stream tracks
- * progressively. The audio element plays http://127.0.0.1:<port>/… URLs;
- * this proxy forwards each request to the backend's raw audio route with
- * the session token attached and pipes the response body straight through —
- * the token never enters the webview, and playback starts as soon as the
- * browser has buffered enough while the rest keeps downloading. `Range`
- * headers pass through both ways, which is what makes seeking into
- * not-yet-downloaded regions instant (Chromium re-requests from the offset).
+ * Loopback HTTP server that lets the webview load backend binary payloads it
+ * can't reach itself (no CORS, and the session token never enters the webview).
+ * The webview requests http://127.0.0.1:<port>/… URLs; this proxy forwards each
+ * to the matching backend route with the token attached and pipes the response
+ * body straight through. Two kinds of payload go through it:
+ *
+ * - Track audio: streamed progressively into the audio element — playback
+ *   starts as soon as the browser has buffered enough while the rest keeps
+ *   downloading. `Range` headers pass through both ways, which is what makes
+ *   seeking into not-yet-downloaded regions instant (Chromium re-requests from
+ *   the offset). A 401 here means the token died; `onUnauthorized` propagates
+ *   that (this round-trip doesn't go through an RPC request, so the caller
+ *   can't see the status otherwise).
+ * - Artist avatars: fetched by <img> tags. The backend's image route is public,
+ *   but the webview still can't address the backend directly, so it goes
+ *   through the same proxy.
  *
  * The server binds only the loopback interface, and the random path secret
- * keeps other local processes from guessing playable URLs.
+ * keeps other local processes from guessing proxy URLs.
  */
 export class StreamProxy {
 	private server: ReturnType<typeof Bun.serve> | null = null;
 	private readonly secret = crypto.randomUUID();
 
-	/**
-	 * `onUnauthorized` fires when the backend rejects the session token on a
-	 * stream request — the one server round-trip that doesn't go through an
-	 * RPC request, so the caller must propagate the expiry itself.
-	 */
 	constructor(
 		private readonly api: ApiClient,
 		private readonly onUnauthorized?: () => void,
 	) {}
 
-	/** Stable stream URL for a server track; starts the proxy on first use. */
-	urlForTrack(trackId: number): string {
+	/** The loopback server, started on first use. */
+	private ensureServer(): NonNullable<typeof this.server> {
 		if (!this.server) {
 			this.server = Bun.serve({
 				hostname: "127.0.0.1",
@@ -54,21 +57,43 @@ export class StreamProxy {
 				fetch: (req) => this.handle(req),
 			});
 		}
-		return `http://127.0.0.1:${this.server.port}/${this.secret}/track/${trackId}`;
+		return this.server;
+	}
+
+	/** Stable stream URL for a server track. */
+	urlForTrack(trackId: number): string {
+		const { port } = this.ensureServer();
+		return `http://127.0.0.1:${port}/${this.secret}/track/${trackId}`;
+	}
+
+	/** Stable avatar URL for a server artist. */
+	urlForArtistImage(artistId: number): string {
+		const { port } = this.ensureServer();
+		return `http://127.0.0.1:${port}/${this.secret}/artist/${artistId}/image`;
 	}
 
 	private async handle(req: Request): Promise<Response> {
-		const match = new URL(req.url).pathname.match(/^\/([^/]+)\/track\/(\d+)$/);
+		const { pathname } = new URL(req.url);
+		const trackMatch = pathname.match(/^\/([^/]+)\/track\/(\d+)$/);
+		const imageMatch = pathname.match(/^\/([^/]+)\/artist\/(\d+)\/image$/);
+		const match = trackMatch ?? imageMatch;
 		if (!match || match[1] !== this.secret) {
 			return new Response("not found", { status: 404 });
 		}
 		if (req.method !== "GET") {
 			return new Response("method not allowed", { status: 405 });
 		}
+		// Both payloads are only ever requested from the authenticated UI, and
+		// forwarding needs the server address either way — so a live session is
+		// required even though the image route itself is public.
 		const auth = this.api.auth;
 		if (!auth) {
 			return new Response("not logged in", { status: 401 });
 		}
+		const isTrack = trackMatch !== null;
+		const backendPath = isTrack
+			? trackAudioPath(Number(match[2]))
+			: artistImagePath(Number(match[2]));
 
 		const headers: Record<string, string> = { authorization: auth.token };
 		const range = req.headers.get("range");
@@ -76,14 +101,13 @@ export class StreamProxy {
 
 		let upstream: Response;
 		try {
-			upstream = await fetch(auth.baseUrl + trackAudioPath(Number(match[2])), {
-				headers,
-			});
+			upstream = await fetch(auth.baseUrl + backendPath, { headers });
 		} catch {
 			return new Response("backend unreachable", { status: 502 });
 		}
 
-		if (upstream.status === 401) this.onUnauthorized?.();
+		// Only track audio is token-gated; a 401 there means the session died.
+		if (isTrack && upstream.status === 401) this.onUnauthorized?.();
 
 		const responseHeaders = new Headers();
 		for (const name of PASSTHROUGH_HEADERS) {

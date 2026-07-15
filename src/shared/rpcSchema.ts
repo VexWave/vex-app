@@ -67,8 +67,19 @@ export interface EditTrackParams {
 
 export interface CreateArtistParams {
 	name: string;
-	/** Optional artist image URL, passed through to the server as-is. */
-	imageUrl?: string;
+	/** Raw avatar image bytes, base64-encoded. Omit for no avatar. */
+	imageBase64?: string;
+}
+
+export interface EditArtistParams {
+	/** Server-side artist id. */
+	id: number;
+	name?: string;
+	/**
+	 * New avatar image bytes, base64-encoded. Omit to leave the avatar
+	 * unchanged (the contract has no way to clear an existing avatar).
+	 */
+	imageBase64?: string;
 }
 
 export interface DeleteArtistParams {
@@ -80,6 +91,12 @@ export interface RemoteArtist {
 	/** Server-side artist id. */
 	id: number;
 	name: string;
+	/**
+	 * Loopback URL of the bun-side stream proxy for this artist's avatar, or
+	 * undefined when the artist has no image. The server returns the backend's
+	 * own image-route path; bun rewrites it to a proxy URL the webview can load
+	 * directly (the webview never reaches the backend).
+	 */
 	imageUrl?: string;
 }
 
@@ -97,6 +114,7 @@ export type PlayerRPC = {
 			listTracks: { params: undefined; response: ListTracksResult };
 			listArtists: { params: undefined; response: ListArtistsResult };
 			createArtist: { params: CreateArtistParams; response: RpcResult };
+			editArtist: { params: EditArtistParams; response: RpcResult };
 			deleteArtist: { params: DeleteArtistParams; response: RpcResult };
 		};
 	}>;
