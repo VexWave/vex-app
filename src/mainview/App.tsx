@@ -77,7 +77,7 @@ function App() {
 			    breakpoint — a responsive-hidden sidebar would be unreachable. */}
 			<main className="grid min-h-0 flex-1 grid-cols-[200px_1fr] gap-4 p-4">
 				<Sidebar view={view} onViewChange={setView} />
-				<div className="min-h-0 rounded-xl border bg-card">
+				<div className="min-h-0">
 					{view === "library" ? <TrackList /> : <ArtistsView />}
 				</div>
 			</main>
