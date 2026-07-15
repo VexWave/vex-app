@@ -1,6 +1,9 @@
 import { initClient } from "@ts-rest/core";
 import { ApiContract } from "../../contract/contract";
 import type {
+	CreateArtistParams,
+	DeleteArtistParams,
+	ListArtistsResult,
 	ListTracksResult,
 	LoginParams,
 	RpcResult,
@@ -139,6 +142,86 @@ export class ApiClient {
 			};
 		} catch {
 			return { ok: false, error: "Loading the track list failed — server unreachable" };
+		}
+	}
+
+	async listArtists(): Promise<ListArtistsResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.getArtists();
+			if (res.status === 200) {
+				return {
+					ok: true,
+					artists: res.body.map(({ id, name, imageUrl }) => ({
+						id,
+						name,
+						imageUrl,
+					})),
+				};
+			}
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Loading the artist list failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return {
+				ok: false,
+				error: "Loading the artist list failed — server unreachable",
+			};
+		}
+	}
+
+	async createArtist(params: CreateArtistParams): Promise<RpcResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.postArtist({
+				body: { name: params.name, imageUrl: params.imageUrl },
+			});
+			if (res.status === 200) return { ok: true };
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Creating the artist failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return { ok: false, error: "Creating the artist failed — server unreachable" };
+		}
+	}
+
+	async deleteArtist(params: DeleteArtistParams): Promise<RpcResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.deleteArtist({ body: { id: params.id } });
+			if (res.status === 200) return { ok: true };
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Deleting the artist failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return { ok: false, error: "Deleting the artist failed — server unreachable" };
 		}
 	}
 }

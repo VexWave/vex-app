@@ -1,7 +1,12 @@
 // Throwaway dev server for manually testing login, gzip track upload and
 // progressive streaming. Run: bun run scripts/test-server.ts
 // (credentials: test / test; uploaded tracks live in memory)
-import { ApiContract, TrackSchema } from "../contract/contract";
+import {
+	ApiContract,
+	CreateArtistSchema,
+	DeleteByIdSchema,
+	TrackSchema,
+} from "../contract/contract";
 
 const PORT = 8790;
 const tokens = new Set<string>();
@@ -17,6 +22,15 @@ interface StoredTrack {
 
 let nextTrackId = 1;
 const tracks = new Map<number, StoredTrack>();
+
+interface StoredArtist {
+	id: number;
+	name: string;
+	imageUrl?: string;
+}
+
+let nextArtistId = 1;
+const artists = new Map<number, StoredArtist>();
 
 function authorized(req: Request): boolean {
 	const auth = req.headers.get("authorization");
@@ -109,6 +123,42 @@ Bun.serve({
 						`compressed=${compressed_data.byteLength}B raw=${raw.byteLength}B`,
 				);
 				return new Response("ok");
+			},
+		},
+		"/postArtist": {
+			POST: async (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				const parsed = CreateArtistSchema.safeParse(await req.json());
+				if (!parsed.success) {
+					return new Response(parsed.error.message, { status: 400 });
+				}
+				const id = nextArtistId++;
+				artists.set(id, { id, ...parsed.data });
+				console.log(`postArtist ok: #${id} "${parsed.data.name}"`);
+				return new Response("ok");
+			},
+		},
+		"/deleteArtist": {
+			POST: async (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				const parsed = DeleteByIdSchema.safeParse(await req.json());
+				if (!parsed.success || !artists.delete(parsed.data.id)) {
+					return new Response("not found", { status: 404 });
+				}
+				console.log(`deleteArtist ok: #${parsed.data.id}`);
+				return new Response("ok");
+			},
+		},
+		"/artists": {
+			GET: (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				return Response.json([...artists.values()]);
 			},
 		},
 		"/tracks": {

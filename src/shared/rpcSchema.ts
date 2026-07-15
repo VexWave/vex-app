@@ -48,12 +48,37 @@ export interface RemoteTrack {
 
 export type ListTracksResult = { ok: true; tracks: RemoteTrack[] } | RpcFailure;
 
+export interface CreateArtistParams {
+	name: string;
+	/** Optional artist image URL, passed through to the server as-is. */
+	imageUrl?: string;
+}
+
+export interface DeleteArtistParams {
+	/** Server-side artist id. */
+	id: number;
+}
+
+export interface RemoteArtist {
+	/** Server-side artist id. */
+	id: number;
+	name: string;
+	imageUrl?: string;
+}
+
+export type ListArtistsResult =
+	| { ok: true; artists: RemoteArtist[] }
+	| RpcFailure;
+
 export type PlayerRPC = {
 	bun: RPCSchema<{
 		requests: {
 			login: { params: LoginParams; response: RpcResult };
 			uploadTrack: { params: UploadTrackParams; response: RpcResult };
 			listTracks: { params: undefined; response: ListTracksResult };
+			listArtists: { params: undefined; response: ListArtistsResult };
+			createArtist: { params: CreateArtistParams; response: RpcResult };
+			deleteArtist: { params: DeleteArtistParams; response: RpcResult };
 		};
 	}>;
 	webview: RPCSchema<{

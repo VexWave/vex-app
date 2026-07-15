@@ -1,12 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 160">
   <defs>
-    <path id="panel" d="m87 38.9-73.1-29.4c-2-.8-4.5 1.4-3.8 4 .8 2.9 72.6 133.5 75.7 136.1.8.7 2.2 1 2.2.7v-111l-1-.4z"/>
-    <path id="wing" d="M88 39.3 87 38.9 13.9 9.5c-2-.8-4.5 1.4-3.8 4L88 66.8z"/>
+    <!-- Inner spine pinned to x=88 (the mirror axis). Panel and wing share the
+         anchor point (88, 39.3) so the two halves close with no seam. -->
+    <path id="panel" d="M88 39.3 13.9 9.5c-2-.8-4.5 1.4-3.8 4 .8 2.9 72.6 133.5 75.7 136.1.8.7 2.2 1 2.2.7z"/>
+    <path id="wing"  d="M88 39.3 13.9 9.5c-2-.8-4.5 1.4-3.8 4L88 66.8z"/>
+
+    <!-- Shading is intentionally NOT mirrored: left face is lit, right face is
+         in shadow. This is what gives the mark its folded, 3D read. -->
     <linearGradient id="leftPanel" x1="9.65" x2="88" y1="81.3" y2="81.3" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#8B3DEE"/>
       <stop offset="1" stop-color="#A231FF"/>
     </linearGradient>
-    <linearGradient id="leftWing" x1="43.8" x2="87" y1="20" y2="47.3" gradientUnits="userSpaceOnUse">
+    <linearGradient id="leftWing" x1="43.8" x2="88" y1="20" y2="47.3" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#AD61EB"/>
       <stop offset="1" stop-color="#BB69FA"/>
     </linearGradient>
@@ -14,16 +19,17 @@
       <stop offset="0" stop-color="#6236C4"/>
       <stop offset="1" stop-color="#41188F"/>
     </linearGradient>
-    <linearGradient id="rightWing" x1="11" x2="90" y1="37.7" y2="37.7" gradientUnits="userSpaceOnUse">
+    <linearGradient id="rightWing" x1="11" x2="88" y1="37.7" y2="37.7" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#AC61ED"/>
       <stop offset=".486" stop-color="#923AF0"/>
       <stop offset="1" stop-color="#6C3BD1"/>
     </linearGradient>
   </defs>
+
   <use href="#panel" fill="url(#leftPanel)"/>
-  <use href="#wing" fill="url(#leftWing)"/>
+  <use href="#wing"  fill="url(#leftWing)"/>
   <g transform="translate(176 0) scale(-1 1)">
     <use href="#panel" fill="url(#rightPanel)"/>
-    <use href="#wing" fill="url(#rightWing)"/>
+    <use href="#wing"  fill="url(#rightWing)"/>
   </g>
 </svg>

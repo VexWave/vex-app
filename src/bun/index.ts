@@ -47,6 +47,9 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			uploadTrack: (params) => api.uploadTrack(params),
 			listTracks: () =>
 				api.listTracks((serverId) => streamProxy.urlForTrack(serverId)),
+			listArtists: () => api.listArtists(),
+			createArtist: (params) => api.createArtist(params),
+			deleteArtist: (params) => api.deleteArtist(params),
 		},
 	},
 });

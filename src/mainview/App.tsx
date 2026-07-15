@@ -2,10 +2,11 @@ import { useState, type DragEvent } from "react";
 import { AlertCircle, Trash2 } from "lucide-react";
 import { uploadService } from "@/api/UploadService";
 import { AddTracksButton } from "@/components/AddTracksButton";
+import { ArtistsView } from "@/components/ArtistsView";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
-import { NowPlaying } from "@/components/NowPlaying";
 import { PlayerBar } from "@/components/PlayerBar";
+import { Sidebar, type MainView } from "@/components/Sidebar";
 import { TrackList } from "@/components/TrackList";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -22,6 +23,7 @@ function App() {
 	// LibraryService fetches the server library per login and drops remote
 	// tracks on logout; the component only renders its error state.
 	const { library } = useLibrary();
+	const [view, setView] = useState<MainView>("library");
 	const [isDragging, setIsDragging] = useState(false);
 
 	const handleDrop = async (e: DragEvent) => {
@@ -70,12 +72,13 @@ function App() {
 			</header>
 			<Separator />
 
-			<main className="grid min-h-0 flex-1 gap-4 p-4 md:grid-cols-[280px_1fr]">
-				<div className="hidden md:block">
-					<NowPlaying />
-				</div>
+			{/* Always-visible sidebar: this is a fixed-size desktop window, and on
+			    HiDPI displays the CSS viewport can sit below Tailwind's `md`
+			    breakpoint — a responsive-hidden sidebar would be unreachable. */}
+			<main className="grid min-h-0 flex-1 grid-cols-[200px_1fr] gap-4 p-4">
+				<Sidebar view={view} onViewChange={setView} />
 				<div className="min-h-0 rounded-xl border bg-card">
-					<TrackList />
+					{view === "library" ? <TrackList /> : <ArtistsView />}
 				</div>
 			</main>
 

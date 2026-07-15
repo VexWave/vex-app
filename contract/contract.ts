@@ -25,7 +25,7 @@ export const PlaylistSchema = z.object({
 });
 
 export const ArtistSchema = z.object({
-  id: z.string(),
+  id: z.int32(),
   name: z.string(),
   imageUrl: z.string().optional(),
 });
@@ -67,6 +67,7 @@ export const ApiContract = c.router(
       body: CreateArtistSchema,
       responses: {
         200: z.string(),
+        400: z.string(),
         401: z.string(),
         500: z.string(),
       },
@@ -115,6 +116,16 @@ export const ApiContract = c.router(
         500: z.string(),
       },
       summary: "List all tracks available for streaming",
+    },
+    getArtists: {
+      method: "GET",
+      path: "/artists",
+      responses: {
+        200: z.array(ArtistSchema),
+        401: z.string(),
+        500: z.string(),
+      },
+      summary: "List all artists",
     },
     getTrackAudio: {
       method: "GET",
