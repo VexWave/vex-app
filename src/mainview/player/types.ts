@@ -1,15 +1,10 @@
 /**
- * A playable track. `src` is any URL the webview's audio element can play:
- * a blob: object URL for local files, or the bun stream proxy's loopback
- * http URL for server tracks.
+ * A playable track. Every track streams from the backend: `src` is the bun
+ * stream proxy's loopback http URL, which the webview's audio element plays
+ * while the bun process attaches the session token and forwards the bytes.
  */
 export interface Track {
 	id: string;
-	/**
-	 * Where the track comes from — set by the loader that produced it.
-	 * Consumers branch on this, never on the URL scheme of `src`.
-	 */
-	origin: "local" | "remote";
 	title: string;
 	artist?: string;
 	album?: string;

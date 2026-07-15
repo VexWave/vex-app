@@ -1,5 +1,4 @@
 import { AudioPlayer } from "./AudioPlayer";
-import { LocalTrackLoader } from "./LocalTrackLoader";
 import { PlaybackQueue } from "./PlaybackQueue";
 import type { PlayerState, RepeatMode, Track } from "./types";
 
@@ -86,7 +85,6 @@ export class PlayerController {
 			this.player.load(replacement);
 			if (replacement && wasPlaying) void this.player.play();
 		}
-		LocalTrackLoader.dispose(removed);
 		this.refresh();
 	}
 
@@ -105,21 +103,10 @@ export class PlayerController {
 		const wasPlaying = this.player.isPlaying;
 		const removed = this.queue.removeMatching(predicate);
 		if (removed.length === 0) return;
-		for (const track of removed) {
-			LocalTrackLoader.dispose(track);
-		}
 		if (current && removed.includes(current)) {
 			const replacement = this.queue.current;
 			this.player.load(replacement);
 			if (replacement && wasPlaying) void this.player.play();
-		}
-		this.refresh();
-	}
-
-	clearQueue(): void {
-		this.player.load(null);
-		for (const track of this.queue.clear()) {
-			LocalTrackLoader.dispose(track);
 		}
 		this.refresh();
 	}

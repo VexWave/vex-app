@@ -1,5 +1,5 @@
 import { useState, type DragEvent } from "react";
-import { AlertCircle, Trash2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { uploadService } from "@/api/UploadService";
 import { AddTracksButton } from "@/components/AddTracksButton";
 import { ArtistsView } from "@/components/ArtistsView";
@@ -8,30 +8,26 @@ import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
 import { Sidebar, type MainView } from "@/components/Sidebar";
 import { TrackList } from "@/components/TrackList";
-import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useSession } from "@/hooks/useSession";
-import { LocalTrackLoader } from "@/player/LocalTrackLoader";
-
-const loader = new LocalTrackLoader();
 
 function App() {
-	const { state, controller } = usePlayer();
+	const { state } = usePlayer();
 	const { session } = useSession();
-	// LibraryService fetches the server library per login and drops remote
-	// tracks on logout; the component only renders its error state.
+	// LibraryService fetches the server library per login and clears the queue
+	// on logout; the component only renders its error state.
 	const { library } = useLibrary();
 	const [view, setView] = useState<MainView>("library");
 	const [isDragging, setIsDragging] = useState(false);
 
-	const handleDrop = async (e: DragEvent) => {
+	// Dropped files are uploaded to the server; they re-enter the queue as
+	// streaming tracks once the upload completes.
+	const handleDrop = (e: DragEvent) => {
 		e.preventDefault();
 		setIsDragging(false);
-		const tracks = await loader.loadFiles(e.dataTransfer.files);
-		controller.addTracks(tracks);
-		uploadService.enqueue(tracks);
+		uploadService.enqueue(e.dataTransfer.files);
 	};
 
 	// Blocking login: the player UI is only reachable with a live session.
@@ -49,7 +45,7 @@ function App() {
 			onDragLeave={(e) => {
 				if (e.currentTarget === e.target) setIsDragging(false);
 			}}
-			onDrop={(e) => void handleDrop(e)}
+			onDrop={handleDrop}
 		>
 			<header className="flex items-center justify-between px-6 py-4">
 				<div className="flex items-center gap-2">
@@ -57,16 +53,6 @@ function App() {
 					<h1 className="text-xl font-bold tracking-tight">VexWave</h1>
 				</div>
 				<div className="flex items-center gap-2">
-					{state.tracks.length > 0 && (
-						<Button
-							variant="ghost"
-							size="icon"
-							aria-label="Clear queue"
-							onClick={() => controller.clearQueue()}
-						>
-							<Trash2 className="h-4 w-4" />
-						</Button>
-					)}
 					<AddTracksButton />
 				</div>
 			</header>

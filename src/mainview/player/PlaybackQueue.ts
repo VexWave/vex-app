@@ -43,7 +43,7 @@ export class PlaybackQueue {
 		this.items = [...this.items, ...fresh];
 	}
 
-	/** Remove a track; returns it so the caller can release its resources. */
+	/** Remove a track at a position; returns it, or null when out of range. */
 	removeAt(position: number): Track | null {
 		const removed = this.items[position];
 		if (!removed) return null;
@@ -58,7 +58,7 @@ export class PlaybackQueue {
 	}
 
 	/**
-	 * Remove every track matching the predicate; returns them for cleanup.
+	 * Remove every track matching the predicate; returns the removed tracks.
 	 * The current index follows the current track when it survives, else it
 	 * clamps to the item now occupying the current position.
 	 */
@@ -82,14 +82,6 @@ export class PlaybackQueue {
 				? Math.min(keptBeforeCurrent, kept.length - 1)
 				: keptBeforeCurrent;
 		}
-		return removed;
-	}
-
-	/** Empty the queue; returns the removed tracks for cleanup. */
-	clear(): Track[] {
-		const removed = this.items;
-		this.items = [];
-		this.index = -1;
 		return removed;
 	}
 

@@ -15,10 +15,10 @@ export type MutationResult = { ok: true } | { ok: false; error: string };
 
 /**
  * Owns the server library: fetches it when a session starts and queues the
- * tracks (they stream progressively through the bun proxy), and removes all
- * remote tracks when the session ends — their stream URLs are only valid
- * against the session that produced them, so letting them survive a
- * re-login would play another server's audio under stale metadata.
+ * tracks (they stream progressively through the bun proxy), and clears the
+ * queue when the session ends — the stream URLs are only valid against the
+ * session that produced them, so letting them survive a re-login would play
+ * another server's audio under stale metadata.
  */
 export class LibraryService {
 	private subscribers = new Set<() => void>();
@@ -40,7 +40,9 @@ export class LibraryService {
 			} else if (status === "loggedOut") {
 				this.fetchSeq += 1; // drop in-flight results from the old session
 				this.remoteById.clear();
-				playerController.removeTracks((track) => track.origin === "remote");
+				// Every queued track streams from this session's server, so the
+				// whole queue is invalidated when the session ends.
+				playerController.removeTracks(() => true);
 				this.update({ loading: false, error: null });
 			}
 		});
@@ -60,8 +62,14 @@ export class LibraryService {
 		return this.remoteById.get(trackId);
 	}
 
-	/** Re-fetch the server library and queue tracks that aren't queued yet. */
-	async refresh(): Promise<void> {
+	/**
+	 * Re-fetch the server library and queue tracks that aren't queued yet.
+	 * Resolves `true` once a fresh list has been applied (or a newer refresh
+	 * has superseded this one and will apply it), `false` if the fetch failed
+	 * — callers that just uploaded a track use this to know it actually landed
+	 * in the queue before dropping their pending placeholder.
+	 */
+	async refresh(): Promise<boolean> {
 		const seq = ++this.fetchSeq;
 		this.update({ loading: true, error: null });
 		let result;
@@ -69,21 +77,21 @@ export class LibraryService {
 			result = await bun.listTracks();
 		} catch (err) {
 			// RPC transport failure or timeout (e.g. bun process unreachable).
-			if (seq !== this.fetchSeq) return;
+			if (seq !== this.fetchSeq) return true; // superseded by a newer refresh
 			this.update({
 				loading: false,
 				error:
 					err instanceof Error ? err.message : "Failed to load server library",
 			});
-			return;
+			return false;
 		}
-		if (seq !== this.fetchSeq) return;
+		if (seq !== this.fetchSeq) return true; // superseded by a newer refresh
 		if (!result.ok) {
 			if (result.status === 401) {
 				sessionService.markExpired("Session expired — please log in again.");
 			}
 			this.update({ loading: false, error: result.error });
-			return;
+			return false;
 		}
 		this.remoteById = new Map(
 			result.tracks.map((remote) => [trackIdFor(remote), remote]),
@@ -99,6 +107,7 @@ export class LibraryService {
 		// ...then append the ones that are new on the server.
 		playerController.addTracks(result.tracks.map(toTrack));
 		this.update({ loading: false, error: null });
+		return true;
 	}
 
 	/**
@@ -172,7 +181,6 @@ function trackIdFor(remote: RemoteTrack): string {
 function toTrack(remote: RemoteTrack): Track {
 	return {
 		id: trackIdFor(remote),
-		origin: "remote",
 		title: remote.title,
 		artist: remote.artist,
 		durationSec: remote.durationSec,

@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
 	AlertCircle,
 	Cloud,
-	CloudUpload,
 	EllipsisVertical,
 	Loader2,
 	Music,
@@ -33,29 +32,38 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useUploads } from "@/hooks/useUploads";
 import { cn, formatTime } from "@/lib/utils";
-import type { UploadEntry } from "@/api/UploadService";
+import type { UploadItem } from "@/api/UploadService";
 import type { Track } from "@/player/types";
 
-function UploadIndicator({ upload }: { upload: UploadEntry | undefined }) {
-	if (!upload) return null;
-	if (upload.status === "uploading") {
-		return (
-			<span title="Uploading to server…" className="shrink-0">
-				<Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-			</span>
-		);
-	}
-	if (upload.status === "done") {
-		return (
-			<span title="Uploaded to server" className="shrink-0">
-				<CloudUpload className="h-3.5 w-3.5 text-muted-foreground" />
-			</span>
-		);
-	}
+/**
+ * A file that is being uploaded to the server. It has no queue row yet — it
+ * reappears as a streaming track once the upload finishes — so it renders as
+ * a non-interactive placeholder showing progress or the failure reason.
+ */
+function PendingUploadRow({ upload }: { upload: UploadItem }) {
+	const failed = upload.status === "error";
 	return (
-		<span title={upload.error ?? "Upload failed"} className="shrink-0">
-			<AlertCircle className="h-3.5 w-3.5 text-destructive" />
-		</span>
+		<div className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left opacity-80">
+			<div className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted">
+				<Music className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
+			</div>
+			<div className="min-w-0 flex-1">
+				<p className="truncate text-sm font-medium">{upload.title}</p>
+				<p
+					className={cn(
+						"truncate text-xs text-muted-foreground",
+						failed && "text-destructive",
+					)}
+				>
+					{failed ? (upload.error ?? "Upload failed") : "Uploading to server…"}
+				</p>
+			</div>
+			{failed ? (
+				<AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+			) : (
+				<Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+			)}
+		</div>
 	);
 }
 
@@ -83,14 +91,7 @@ export function TrackList() {
 	const [manageTrack, setManageTrack] = useState<Track | null>(null);
 	const [deleteTrack, setDeleteTrack] = useState<Track | null>(null);
 
-	// Local tracks are removed from the queue only; remote (server) tracks are
-	// deleted on the server after a confirmation, since that can't be undone.
-	const requestDelete = (track: Track, index: number) => {
-		if (track.origin === "remote") setDeleteTrack(track);
-		else controller.removeTrack(index);
-	};
-
-	if (state.tracks.length === 0) {
+	if (state.tracks.length === 0 && uploads.length === 0) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
 				<Music className="h-12 w-12" />
@@ -105,9 +106,13 @@ export function TrackList() {
 		<>
 			<ScrollArea className="h-full">
 				<ul className="flex flex-col gap-1 p-2">
+					{uploads.map((upload) => (
+						<li key={upload.id}>
+							<PendingUploadRow upload={upload} />
+						</li>
+					))}
 					{state.tracks.map((track, index) => {
 						const isCurrent = index === state.currentIndex;
-						const isRemote = track.origin === "remote";
 						return (
 							<li key={track.id}>
 								<ContextMenu>
@@ -163,13 +168,9 @@ export function TrackList() {
 													{track.artist ?? "Unknown artist"}
 												</p>
 											</div>
-											{isRemote ? (
-												<span title="Streams from the server" className="shrink-0">
-													<Cloud className="h-3.5 w-3.5 text-muted-foreground" />
-												</span>
-											) : (
-												<UploadIndicator upload={uploads[track.id]} />
-											)}
+											<span title="Streams from the server" className="shrink-0">
+												<Cloud className="h-3.5 w-3.5 text-muted-foreground" />
+											</span>
 											<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
 												{formatTime(track.durationSec)}
 											</span>
@@ -188,20 +189,17 @@ export function TrackList() {
 										</div>
 									</ContextMenuTrigger>
 									<ContextMenuContent className="w-44">
-										<ContextMenuItem
-											disabled={!isRemote}
-											onSelect={() => setManageTrack(track)}
-										>
+										<ContextMenuItem onSelect={() => setManageTrack(track)}>
 											<Users className="h-4 w-4" />
 											Artists…
 										</ContextMenuItem>
 										<ContextMenuSeparator />
 										<ContextMenuItem
 											className="text-destructive focus:text-destructive"
-											onSelect={() => requestDelete(track, index)}
+											onSelect={() => setDeleteTrack(track)}
 										>
 											<Trash2 className="h-4 w-4" />
-											{isRemote ? "Delete from server" : "Remove from queue"}
+											Delete from server
 										</ContextMenuItem>
 									</ContextMenuContent>
 								</ContextMenu>

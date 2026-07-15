@@ -1,26 +1,38 @@
-import type { Track } from "@/player/types";
+import { parseBlob } from "music-metadata";
 import { bun } from "./rpc";
+import { libraryService } from "./LibraryService";
 import { sessionService } from "./SessionService";
 
-export interface UploadEntry {
-	status: "uploading" | "done" | "error";
+export interface UploadItem {
+	/** Client-side id for this pending upload — not the server track id. */
+	id: string;
+	/** Display title: the file name until metadata is parsed, then its tag. */
+	title: string;
+	status: "uploading" | "error";
 	error?: string;
 }
 
-/** Immutable per-track upload status by track id. */
-export type UploadSnapshot = Readonly<Record<string, UploadEntry>>;
+/** Immutable, ordered list of in-flight/failed uploads. */
+export type UploadSnapshot = readonly UploadItem[];
+
+interface QueueEntry {
+	item: UploadItem;
+	file: File;
+}
 
 /**
- * Fire-and-forget upload queue. Tracks are read back from their blob URLs,
- * base64-encoded and sent to the bun process, which gzips and POSTs them.
- * Uploads run sequentially (one in flight) to bound memory usage; local
- * playback is never affected by upload failures.
+ * Upload queue for picked/dropped audio files. Each file is read, its
+ * title/duration tags parsed, gzipped and POSTed by the bun process. Uploads
+ * run sequentially (one in flight) to bound memory use. There is no local
+ * playback: a successful upload triggers a library refresh, so the track
+ * re-enters the queue as a server track that streams through the bun proxy.
+ * Failures stay in the snapshot so the list can surface them.
  */
 export class UploadService {
 	private subscribers = new Set<() => void>();
-	private statuses = new Map<string, UploadEntry>();
-	private snapshot: UploadSnapshot = {};
-	private queue: Track[] = [];
+	private items: UploadItem[] = [];
+	private snapshot: UploadSnapshot = [];
+	private queue: QueueEntry[] = [];
 	private working = false;
 
 	// --- useSyncExternalStore contract (arrow fns keep `this` bound) ---
@@ -32,11 +44,19 @@ export class UploadService {
 
 	getSnapshot = (): UploadSnapshot => this.snapshot;
 
-	enqueue(tracks: Track[]): void {
-		if (tracks.length === 0) return;
-		for (const track of tracks) {
-			this.statuses.set(track.id, { status: "uploading" });
-			this.queue.push(track);
+	enqueue(files: Iterable<File>): void {
+		const audioFiles = [...files].filter(
+			(file) => file.type.startsWith("audio/") || file.type === "video/mp4",
+		);
+		if (audioFiles.length === 0) return;
+		for (const file of audioFiles) {
+			const item: UploadItem = {
+				id: crypto.randomUUID(),
+				title: file.name.replace(/\.[^.]+$/, ""),
+				status: "uploading",
+			};
+			this.items.push(item);
+			this.queue.push({ item, file });
 		}
 		this.refresh();
 		void this.work();
@@ -46,29 +66,41 @@ export class UploadService {
 		if (this.working) return;
 		this.working = true;
 		try {
-			let track: Track | undefined;
-			while ((track = this.queue.shift())) {
-				await this.upload(track);
+			let entry: QueueEntry | undefined;
+			while ((entry = this.queue.shift())) {
+				await this.upload(entry);
 			}
 		} finally {
 			this.working = false;
 		}
 	}
 
-	private async upload(track: Track): Promise<void> {
+	private async upload({ item, file }: QueueEntry): Promise<void> {
 		try {
-			// The blob URL keeps the bytes alive even if the queue entry is
-			// removed mid-upload.
-			const blob = await (await fetch(track.src)).blob();
+			// Tags are best-effort: an unreadable/absent title keeps the file
+			// name, and a missing duration lets the server/player fill it in.
+			const metadata = await parseBlob(file).catch(() => null);
+			if (metadata?.common.title) item.title = metadata.common.title;
+			this.refresh();
 			const result = await bun.uploadTrack({
-				title: track.title,
-				durationSec: track.durationSec,
-				dataBase64: await blobToBase64(blob),
+				title: item.title,
+				durationSec: metadata?.format.duration ?? 0,
+				dataBase64: await blobToBase64(file),
 			});
 			if (result.ok) {
-				this.statuses.set(track.id, { status: "done" });
+				// The track only leaves the pending list once the library refresh
+				// has actually put it back in the queue as a streaming track —
+				// dropping the placeholder first would make an uploaded track
+				// vanish from the UI if that refresh failed.
+				if (await libraryService.refresh()) {
+					this.items = this.items.filter((i) => i !== item);
+				} else {
+					item.status = "error";
+					item.error = "Uploaded, but refreshing the library failed.";
+				}
 			} else {
-				this.statuses.set(track.id, { status: "error", error: result.error });
+				item.status = "error";
+				item.error = result.error;
 				if (result.status === 401) {
 					sessionService.markExpired(
 						"Session expired — please log in again.",
@@ -76,16 +108,14 @@ export class UploadService {
 				}
 			}
 		} catch (err) {
-			this.statuses.set(track.id, {
-				status: "error",
-				error: err instanceof Error ? err.message : "Upload failed",
-			});
+			item.status = "error";
+			item.error = err instanceof Error ? err.message : "Upload failed";
 		}
 		this.refresh();
 	}
 
 	private refresh(): void {
-		this.snapshot = Object.fromEntries(this.statuses);
+		this.snapshot = [...this.items];
 		this.subscribers.forEach((notify) => notify());
 	}
 }
