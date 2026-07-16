@@ -7,34 +7,84 @@ import { sessionService } from "./SessionService";
 export interface UploadItem {
 	/** Client-side id for this pending upload — not the server track id. */
 	id: string;
-	/** Display title: the file name until metadata is parsed, then its tag. */
+	/** Display title: the edited title confirmed in the review dialog. */
 	title: string;
 	status: "uploading" | "error";
 	error?: string;
 }
 
-/** Immutable, ordered list of in-flight/failed uploads. */
-export type UploadSnapshot = readonly UploadItem[];
+/**
+ * A picked/dropped file whose tags have been parsed and that is now awaiting
+ * review in the upload dialog. Prefilled from the file's metadata; the user
+ * can edit the title, cover and artist links before confirming the upload.
+ */
+export interface StagedUpload {
+	id: string;
+	file: File;
+	/** For the dialog subtitle. */
+	fileName: string;
+	/** common.title ?? filename stem. */
+	title: string;
+	/** Math.round((format.duration ?? 0) * 1000). */
+	durationMs: number;
+	/** Embedded cover art (common.picture[0]), or null when absent. */
+	coverBlob: Blob | null;
+}
+
+/** Immutable snapshot of the whole upload state, consumed by React. */
+export interface UploadState {
+	/** In-flight/failed uploads. */
+	uploads: readonly UploadItem[];
+	/** Files awaiting review, FIFO. */
+	staged: readonly StagedUpload[];
+	/** Confirmed+skipped in the current batch → drives the "N of M" indicator. */
+	reviewedCount: number;
+}
 
 interface QueueEntry {
 	item: UploadItem;
 	file: File;
+	durationMs: number;
+	coverBlob: Blob | null;
+	artistIds: number[];
+}
+
+/** Edits confirmed for a staged file in the review dialog. */
+export interface ConfirmEdits {
+	title: string;
+	artistIds: number[];
+	coverBlob: Blob | null;
 }
 
 /**
- * Upload queue for picked/dropped audio files. Each file is read, its
- * title/duration tags parsed, gzipped and POSTed by the bun process. Uploads
- * run sequentially (one in flight) to bound memory use. There is no local
- * playback: a successful upload triggers a library refresh, so the track
- * re-enters the queue as a server track that streams through the bun proxy.
- * Failures stay in the snapshot so the list can surface them.
+ * Upload queue for picked/dropped audio files. Each file is first parsed and
+ * staged for review (cover/title/artists), and only uploaded once the user
+ * confirms it in the dialog. Confirmed files are gzipped and POSTed by the bun
+ * process; uploads run sequentially (one in flight) to bound memory use. There
+ * is no local playback: a successful upload triggers a library refresh, so the
+ * track re-enters the queue as a server track that streams through the bun
+ * proxy. Failures stay in the snapshot so the list can surface them.
  */
 export class UploadService {
 	private subscribers = new Set<() => void>();
 	private items: UploadItem[] = [];
-	private snapshot: UploadSnapshot = [];
+	private staged: StagedUpload[] = [];
+	private reviewedCount = 0;
+	private snapshot: UploadState = { uploads: [], staged: [], reviewedCount: 0 };
 	private queue: QueueEntry[] = [];
 	private working = false;
+
+	constructor() {
+		let previousStatus = sessionService.getSnapshot().status;
+		sessionService.subscribe(() => {
+			const status = sessionService.getSnapshot().status;
+			if (status === previousStatus) return;
+			previousStatus = status;
+			// Staged files carry session-scoped artist ids and stream URLs, so a
+			// half-reviewed batch can't outlive the session that produced it.
+			if (status === "loggedOut") this.cancelAll();
+		});
+	}
 
 	// --- useSyncExternalStore contract (arrow fns keep `this` bound) ---
 
@@ -43,24 +93,93 @@ export class UploadService {
 		return () => this.subscribers.delete(onChange);
 	};
 
-	getSnapshot = (): UploadSnapshot => this.snapshot;
+	getSnapshot = (): UploadState => this.snapshot;
 
-	enqueue(files: Iterable<File>): void {
+	/**
+	 * Parse the picked/dropped audio files and stage them for review. Files are
+	 * parsed sequentially and appended as each one is ready, so the dialog opens
+	 * as soon as the first file has been parsed.
+	 */
+	async enqueue(files: Iterable<File>): Promise<void> {
 		const audioFiles = [...files].filter(
 			(file) => file.type.startsWith("audio/") || file.type === "video/mp4",
 		);
 		if (audioFiles.length === 0) return;
 		for (const file of audioFiles) {
-			const item: UploadItem = {
+			// Tags are best-effort: an unreadable/absent title falls back to the
+			// file name, a missing duration to 0, and no picture to no cover.
+			const metadata = await parseBlob(file).catch(() => null);
+			const pic = metadata?.common.picture?.[0];
+			this.staged.push({
 				id: crypto.randomUUID(),
-				title: file.name.replace(/\.[^.]+$/, ""),
-				status: "uploading",
-			};
-			this.items.push(item);
-			this.queue.push({ item, file });
+				file,
+				fileName: file.name,
+				title: metadata?.common.title ?? file.name.replace(/\.[^.]+$/, ""),
+				durationMs: Math.round((metadata?.format.duration ?? 0) * 1000),
+				coverBlob: pic
+					? new Blob([new Uint8Array(pic.data)], { type: pic.format })
+					: null,
+			});
+			this.emit();
 		}
-		this.refresh();
+	}
+
+	/** Confirm a staged file's edits and start uploading it. */
+	confirm(stagedId: string, edits: ConfirmEdits): void {
+		const staged = this.staged.find((s) => s.id === stagedId);
+		if (!staged) return;
+		this.staged = this.staged.filter((s) => s !== staged);
+		this.reviewedCount += 1;
+		const item: UploadItem = {
+			id: crypto.randomUUID(),
+			title: edits.title,
+			status: "uploading",
+		};
+		this.items.push(item);
+		this.queue.push({
+			item,
+			file: staged.file,
+			durationMs: staged.durationMs,
+			coverBlob: edits.coverBlob,
+			artistIds: edits.artistIds,
+		});
+		this.settleReviewedCount();
+		this.emit();
 		void this.work();
+	}
+
+	/** Discard a staged file without uploading it. */
+	skip(stagedId: string): void {
+		if (!this.staged.some((s) => s.id === stagedId)) return;
+		this.staged = this.staged.filter((s) => s.id !== stagedId);
+		this.reviewedCount += 1;
+		this.settleReviewedCount();
+		this.emit();
+	}
+
+	/** Drop every staged file (Esc/X on the review dialog, or logout). */
+	cancelAll(): void {
+		if (this.staged.length === 0) return;
+		this.staged = [];
+		this.reviewedCount = 0;
+		this.emit();
+	}
+
+	/** Upload every remaining staged file with its prefilled title/cover and no
+	 * artists ("Upload all" button). */
+	confirmAll(): void {
+		for (const staged of [...this.staged]) {
+			this.confirm(staged.id, {
+				title: staged.title,
+				artistIds: [],
+				coverBlob: staged.coverBlob,
+			});
+		}
+	}
+
+	/** Once the batch is fully reviewed, the next one starts back at "1 of M". */
+	private settleReviewedCount(): void {
+		if (this.staged.length === 0) this.reviewedCount = 0;
 	}
 
 	private async work(): Promise<void> {
@@ -76,17 +195,15 @@ export class UploadService {
 		}
 	}
 
-	private async upload({ item, file }: QueueEntry): Promise<void> {
+	private async upload(entry: QueueEntry): Promise<void> {
+		const { item, file, durationMs, coverBlob, artistIds } = entry;
 		try {
-			// Tags are best-effort: an unreadable/absent title keeps the file
-			// name, and a missing duration lets the server/player fill it in.
-			const metadata = await parseBlob(file).catch(() => null);
-			if (metadata?.common.title) item.title = metadata.common.title;
-			this.refresh();
 			const result = await bun.uploadTrack({
 				title: item.title,
-				durationSec: metadata?.format.duration ?? 0,
+				durationMs,
 				dataBase64: await blobToBase64(file),
+				coverBase64: coverBlob ? await blobToBase64(coverBlob) : undefined,
+				artistIds,
 			});
 			if (result.ok) {
 				// The track only leaves the pending list once the library refresh
@@ -112,11 +229,15 @@ export class UploadService {
 			item.status = "error";
 			item.error = err instanceof Error ? err.message : "Upload failed";
 		}
-		this.refresh();
+		this.emit();
 	}
 
-	private refresh(): void {
-		this.snapshot = [...this.items];
+	private emit(): void {
+		this.snapshot = {
+			uploads: [...this.items],
+			staged: [...this.staged],
+			reviewedCount: this.reviewedCount,
+		};
 		this.subscribers.forEach((notify) => notify());
 	}
 }

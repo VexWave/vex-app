@@ -110,7 +110,7 @@ function openRowMenu(button: HTMLElement) {
 
 export function TrackList() {
 	const { state, controller } = usePlayer();
-	const uploads = useUploads();
+	const { uploads } = useUploads();
 	// Both dialogs are rendered once for the whole list; the context menu sets
 	// which track they target.
 	const [manageTrack, setManageTrack] = useState<Track | null>(null);

@@ -85,8 +85,12 @@ export class ApiClient {
 			const res = await client.postTrack({
 				body: {
 					title: params.title,
-					duration: Math.round(params.durationSec),
+					// Already an integer (the webview rounds the tag's float seconds).
+					duration: params.durationMs,
 					compressed_data: Buffer.from(gzipped).toString("base64"),
+					// Cover passes through as base64; only the audio is gzipped.
+					cover: params.coverBase64,
+					artistIds: params.artistIds,
 				},
 			});
 			if (res.status === 200) return { ok: true };
@@ -161,10 +165,13 @@ export class ApiClient {
 
 	/**
 	 * Server track listing. `urlForTrack` maps a server track id to its
-	 * stream-proxy URL so complete RemoteTracks are assembled in one place.
+	 * stream-proxy URL, and `urlForTrackImage` to its cover-image proxy URL, so
+	 * complete RemoteTracks are assembled in one place. Like `listArtists`'
+	 * imageUrl rewrite, `coverUrl` stays undefined unless the server sent one.
 	 */
 	async listTracks(
 		urlForTrack: (serverId: number) => string,
+		urlForTrackImage: (serverId: number) => string,
 	): Promise<ListTracksResult> {
 		const client = this.session?.client;
 		if (!client) {
@@ -180,8 +187,9 @@ export class ApiClient {
 						title: track.title,
 						artist: track.artists.join(", ") || undefined,
 						artists: track.artists,
-						durationSec: track.duration,
+						durationMs: track.duration,
 						streamUrl: urlForTrack(track.id),
+						coverUrl: track.coverUrl ? urlForTrackImage(track.id) : undefined,
 					})),
 				};
 			}

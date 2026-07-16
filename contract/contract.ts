@@ -15,9 +15,15 @@ export const LoginRequest = z.object({
 
 export const CreateTrackRequest = z.object({
   title: z.string(),
+  // Track length in milliseconds.
   duration: z.int32(),
-  artistId: z.int32().optional(),
+  artistIds: z.array(z.int32()).optional(),
   compressed_data: z.base64().transform((b) => Buffer.from(b, "base64")),
+  // Raw cover-image bytes, sent base64-encoded and stored as-is (bytea).
+  cover: z
+    .base64()
+    .transform((b) => Buffer.from(b, "base64"))
+    .optional(),
 });
 
 export const EditTrackRequest = z.object({
@@ -56,8 +62,12 @@ export const DeleteByIdRequest = z.object({ id: z.int32() });
 export const TrackResponse = z.object({
   id: z.int32(),
   title: z.string(),
+  // Track length in milliseconds.
   duration: z.int32(),
   artists: z.array(z.string()),
+  // URL of the `getTrackImage` route when the track has a cover, else absent.
+  // The raw image bytes are fetched separately from that route.
+  coverUrl: z.string().optional(),
 });
 
 export const ArtistResponse = z.object({
@@ -170,6 +180,21 @@ export const ApiContract = c.router(
       },
       summary: "Get an artist's raw image bytes (public, no auth required)",
     },
+    getTrackImage: {
+      method: "GET",
+      path: "/track/:id/image",
+      pathParams: z.object({ id: z.coerce.number() }),
+      responses: {
+        // Raw stored image bytes. The declared contentType is a fallback;
+        // servers should send the real image MIME when they know it.
+        200: c.otherResponse({
+          contentType: "application/octet-stream",
+          body: c.type<Uint8Array>(),
+        }),
+        404: z.string(),
+      },
+      summary: "Get a track's raw cover image bytes (public, no auth required)",
+    },
     editArtist: {
       method: "POST",
       path: "/editArtist",
@@ -254,4 +279,14 @@ export const artistImagePath = (artistId: number) =>
   insertParamsIntoPath({
     path: ApiContract.getArtistImage.path,
     params: { id: String(artistId) },
+  });
+
+/**
+ * Concrete request path for `getTrackImage`. Returned as `coverUrl` on track
+ * listings so clients know where to fetch the raw cover-image bytes.
+ */
+export const trackImagePath = (trackId: number) =>
+  insertParamsIntoPath({
+    path: ApiContract.getTrackImage.path,
+    params: { id: String(trackId) },
   });

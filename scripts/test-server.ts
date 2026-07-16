@@ -8,6 +8,7 @@ import {
 	DeleteByIdRequest,
 	EditArtistRequest,
 	artistImagePath,
+	trackImagePath,
 } from "../contract/contract";
 
 const PORT = 8790;
@@ -16,10 +17,13 @@ const tokens = new Set<string>();
 interface StoredTrack {
 	id: number;
 	title: string;
+	/** Track length in milliseconds. */
 	duration: number;
 	artists: string[];
 	contentType: string;
 	data: Uint8Array;
+	/** Raw cover-image bytes, served from `/track/:id/image`. */
+	cover?: Uint8Array;
 }
 
 let nextTrackId = 1;
@@ -110,20 +114,28 @@ Bun.serve({
 				if (!parsed.success) {
 					return new Response(parsed.error.message, { status: 400 });
 				}
-				const { title, duration, compressed_data } = parsed.data;
+				const { title, duration, artistIds, compressed_data, cover } =
+					parsed.data;
 				const raw = Bun.gunzipSync(new Uint8Array(compressed_data));
 				const id = nextTrackId++;
+				// Resolve artist ids to names, dropping ids that don't exist.
+				const artistNames = (artistIds ?? [])
+					.map((artistId) => artists.get(artistId)?.name)
+					.filter((name): name is string => name !== undefined);
 				tracks.set(id, {
 					id,
 					title,
 					duration,
-					artists: [],
+					artists: artistNames,
 					contentType: sniffAudioType(raw),
 					data: raw,
+					cover: cover ? new Uint8Array(cover) : undefined,
 				});
 				console.log(
-					`postTrack ok: #${id} "${title}" duration=${duration}s ` +
-						`compressed=${compressed_data.byteLength}B raw=${raw.byteLength}B`,
+					`postTrack ok: #${id} "${title}" duration=${duration}ms ` +
+						`compressed=${compressed_data.byteLength}B raw=${raw.byteLength}B` +
+						(cover ? ` cover=${cover.byteLength}B` : "") +
+						(artistNames.length ? ` artists=${artistNames.join(", ")}` : ""),
 				);
 				return new Response("ok");
 			},
@@ -209,18 +221,32 @@ Bun.serve({
 				});
 			},
 		},
+		// ApiContract.getTrackImage ("/track/:id/image"): raw stored cover-image
+		// bytes, public (no auth) per the contract.
+		[ApiContract.getTrackImage.path]: {
+			GET: (req: Bun.BunRequest<typeof ApiContract.getTrackImage.path>) => {
+				const track = tracks.get(Number(req.params.id));
+				if (!track?.cover) return new Response("not found", { status: 404 });
+				return new Response(track.cover, {
+					headers: { "content-type": "application/octet-stream" },
+				});
+			},
+		},
 		"/tracks": {
 			GET: (req) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
 				return Response.json(
-					[...tracks.values()].map(({ id, title, duration, artists }) => ({
-						id,
-						title,
-						duration,
-						artists,
-					})),
+					[...tracks.values()].map(
+						({ id, title, duration, artists, cover }) => ({
+							id,
+							title,
+							duration,
+							artists,
+							coverUrl: cover ? trackImagePath(id) : undefined,
+						}),
+					),
 				);
 			},
 		},

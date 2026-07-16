@@ -102,6 +102,8 @@ export class LibraryService {
 			playerController.updateTrack(trackIdFor(remote), {
 				title: remote.title,
 				artist: remote.artist,
+				coverUrl: remote.coverUrl,
+				durationSec: remote.durationMs / 1000,
 			});
 		}
 		// ...then append the ones that are new on the server.
@@ -183,7 +185,11 @@ function toTrack(remote: RemoteTrack): Track {
 		id: trackIdFor(remote),
 		title: remote.title,
 		artist: remote.artist,
-		durationSec: remote.durationSec,
+		// ms→s at the player boundary: Track.durationSec / AudioPlayer /
+		// PlayerBar / formatTime all live in the seconds domain, matching
+		// HTMLAudioElement.
+		durationSec: remote.durationMs / 1000,
+		coverUrl: remote.coverUrl,
 		src: remote.streamUrl,
 	};
 }

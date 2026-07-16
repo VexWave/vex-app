@@ -8,6 +8,7 @@ import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
 import { Sidebar, type MainView } from "@/components/Sidebar";
 import { TrackList } from "@/components/TrackList";
+import { UploadReviewDialog } from "@/components/UploadReviewDialog";
 import { Separator } from "@/components/ui/separator";
 import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
@@ -82,6 +83,8 @@ function App() {
 			)}
 
 			<PlayerBar />
+
+			<UploadReviewDialog />
 
 			{isDragging && (
 				<div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center border-4 border-dashed border-primary/60 bg-background/80">

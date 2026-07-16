@@ -1,4 +1,8 @@
-import { artistImagePath, trackAudioPath } from "../../contract/contract";
+import {
+	artistImagePath,
+	trackAudioPath,
+	trackImagePath,
+} from "../../contract/contract";
 import type { ApiClient } from "./ApiClient";
 
 /**
@@ -72,20 +76,31 @@ export class StreamProxy {
 		return `http://127.0.0.1:${port}/${this.secret}/artist/${artistId}/image`;
 	}
 
+	/** Stable cover-image URL for a server track. */
+	urlForTrackImage(trackId: number): string {
+		const { port } = this.ensureServer();
+		return `http://127.0.0.1:${port}/${this.secret}/track/${trackId}/image`;
+	}
+
 	private async handle(req: Request): Promise<Response> {
 		const { pathname } = new URL(req.url);
+		// The audio regex is `$`-anchored on the bare id, so a `/image` suffix
+		// can never match it — no ambiguity between audio and cover-image URLs.
 		const trackMatch = pathname.match(/^\/([^/]+)\/track\/(\d+)$/);
-		const imageMatch = pathname.match(/^\/([^/]+)\/artist\/(\d+)\/image$/);
-		const match = trackMatch ?? imageMatch;
+		const artistImageMatch = pathname.match(
+			/^\/([^/]+)\/artist\/(\d+)\/image$/,
+		);
+		const trackImageMatch = pathname.match(/^\/([^/]+)\/track\/(\d+)\/image$/);
+		const match = trackMatch ?? artistImageMatch ?? trackImageMatch;
 		if (!match || match[1] !== this.secret) {
 			return new Response("not found", { status: 404 });
 		}
 		if (req.method !== "GET") {
 			return new Response("method not allowed", { status: 405 });
 		}
-		// Both payloads are only ever requested from the authenticated UI, and
+		// Every payload is only ever requested from the authenticated UI, and
 		// forwarding needs the server address either way — so a live session is
-		// required even though the image route itself is public.
+		// required even though the image routes themselves are public.
 		const auth = this.api.auth;
 		if (!auth) {
 			return new Response("not logged in", { status: 401 });
@@ -93,7 +108,9 @@ export class StreamProxy {
 		const isTrack = trackMatch !== null;
 		const backendPath = isTrack
 			? trackAudioPath(Number(match[2]))
-			: artistImagePath(Number(match[2]));
+			: trackImageMatch
+				? trackImagePath(Number(match[2]))
+				: artistImagePath(Number(match[2]));
 
 		const headers: Record<string, string> = { authorization: auth.token };
 		const range = req.headers.get("range");

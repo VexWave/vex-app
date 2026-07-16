@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Check, Loader2, Users } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { libraryService } from "@/api/LibraryService";
+import { ArtistMultiSelect } from "@/components/ArtistMultiSelect";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -10,9 +11,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useArtists } from "@/hooks/useArtists";
-import { cn } from "@/lib/utils";
 import type { Track } from "@/player/types";
 
 /**
@@ -84,55 +83,13 @@ export function ManageArtistsDialog({
 					</DialogDescription>
 				</DialogHeader>
 
-				{artistState.artists.length === 0 ? (
-					<div className="flex flex-col items-center gap-2 py-6 text-center text-muted-foreground">
-						<Users className="h-8 w-8" />
-						<p className="text-sm">
-							No artists yet — create some in the Artists tab first.
-						</p>
-					</div>
-				) : (
-					<ScrollArea className="max-h-64">
-						<ul className="flex flex-col gap-1 pr-3">
-							{artistState.artists.map((artist) => {
-								const checked = selected.has(artist.id);
-								return (
-									<li key={artist.id}>
-										<button
-											type="button"
-											disabled={submitting}
-											onClick={() => toggle(artist.id)}
-											className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent disabled:opacity-50"
-										>
-											<span
-												className={cn(
-													"flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-													checked
-														? "border-primary bg-primary text-primary-foreground"
-														: "border-input",
-												)}
-											>
-												{checked && <Check className="h-3 w-3" />}
-											</span>
-											<span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted">
-												{artist.imageUrl ? (
-													<img
-														src={artist.imageUrl}
-														alt=""
-														className="h-full w-full object-cover"
-													/>
-												) : (
-													<Users className="absolute inset-0 m-auto h-4 w-4 text-muted-foreground" />
-												)}
-											</span>
-											<span className="truncate">{artist.name}</span>
-										</button>
-									</li>
-								);
-							})}
-						</ul>
-					</ScrollArea>
-				)}
+				<ArtistMultiSelect
+					artists={artistState.artists}
+					selected={selected}
+					onToggle={toggle}
+					disabled={submitting}
+					className="max-h-64"
+				/>
 
 				{error && (
 					<div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

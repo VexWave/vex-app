@@ -25,10 +25,14 @@ export type RpcResult = { ok: true } | RpcFailure;
 
 export interface UploadTrackParams {
 	title: string;
-	/** Float; the bun side rounds it to the contract's int32. */
-	durationSec: number;
+	/** Integer milliseconds; the webview converts the tag's float seconds once. */
+	durationMs: number;
 	/** Raw (uncompressed) file bytes, base64-encoded. */
 	dataBase64: string;
+	/** Raw cover-image bytes, base64-encoded. Omit for no cover. */
+	coverBase64?: string;
+	/** Artist ids to link to the track (empty/omitted → none). */
+	artistIds?: number[];
 }
 
 export interface RemoteTrack {
@@ -40,7 +44,8 @@ export interface RemoteTrack {
 	/** The track's linked artist names, as the server returns them — used to
 	 * pre-select the currently-linked artists when editing. */
 	artists: string[];
-	durationSec: number;
+	/** Track length in milliseconds, as the server returns it. */
+	durationMs: number;
 	/**
 	 * Loopback URL of the bun-side stream proxy for this track. The audio
 	 * element plays it directly; bytes stream through the bun process, which
@@ -48,6 +53,13 @@ export interface RemoteTrack {
 	 * buffered while the rest keeps downloading.
 	 */
 	streamUrl: string;
+	/**
+	 * Loopback URL of the bun-side stream proxy for this track's cover image,
+	 * or undefined when the track has no cover. Same pattern as
+	 * `RemoteArtist.imageUrl`: the webview loads it directly and never reaches
+	 * the backend.
+	 */
+	coverUrl?: string;
 }
 
 export type ListTracksResult = { ok: true; tracks: RemoteTrack[] } | RpcFailure;
