@@ -4,12 +4,12 @@ import {
 	EllipsisVertical,
 	Loader2,
 	Music,
+	Pencil,
 	Play,
 	Trash2,
-	Users,
 } from "lucide-react";
 import { libraryService } from "@/api/LibraryService";
-import { ManageArtistsDialog } from "@/components/ManageArtistsDialog";
+import { EditTrackDialog } from "@/components/EditTrackDialog";
 import { Button } from "@/components/ui/button";
 import {
 	ContextMenu,
@@ -113,7 +113,7 @@ export function TrackList() {
 	const { uploads } = useUploads();
 	// Both dialogs are rendered once for the whole list; the context menu sets
 	// which track they target.
-	const [manageTrack, setManageTrack] = useState<Track | null>(null);
+	const [editTrack, setEditTrack] = useState<Track | null>(null);
 	const [deleteTrack, setDeleteTrack] = useState<Track | null>(null);
 
 	if (state.tracks.length === 0 && uploads.length === 0) {
@@ -208,9 +208,9 @@ export function TrackList() {
 										</div>
 									</ContextMenuTrigger>
 									<ContextMenuContent className="w-44">
-										<ContextMenuItem onSelect={() => setManageTrack(track)}>
-											<Users className="h-4 w-4" />
-											Artists…
+										<ContextMenuItem onSelect={() => setEditTrack(track)}>
+											<Pencil className="h-4 w-4" />
+											Edit…
 										</ContextMenuItem>
 										<ContextMenuSeparator />
 										<ContextMenuItem
@@ -228,11 +228,11 @@ export function TrackList() {
 				</ul>
 			</ScrollArea>
 
-			<ManageArtistsDialog
-				track={manageTrack}
-				open={manageTrack !== null}
+			<EditTrackDialog
+				track={editTrack}
+				open={editTrack !== null}
 				onOpenChange={(open) => {
-					if (!open) setManageTrack(null);
+					if (!open) setEditTrack(null);
 				}}
 			/>
 

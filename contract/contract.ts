@@ -30,6 +30,13 @@ export const EditTrackRequest = z.object({
   id: z.int32(),
   title: z.string().min(1).optional(),
   artistIds: z.array(z.int32()).optional(),
+  // New cover-image bytes, base64-encoded; `null` removes the cover;
+  // omit to leave it unchanged.
+  cover: z
+    .base64()
+    .transform((b) => Buffer.from(b, "base64"))
+    .nullable()
+    .optional(),
 });
 
 export const CreateArtistRequest = z.object({
@@ -44,10 +51,12 @@ export const CreateArtistRequest = z.object({
 export const EditArtistRequest = z.object({
   id: z.int32(),
   name: z.string().min(1).optional(),
-  // New avatar image bytes, base64-encoded. Omit to leave the avatar unchanged.
+  // New avatar image bytes, base64-encoded; `null` removes the avatar;
+  // omit to leave it unchanged.
   image: z
     .base64()
     .transform((b) => Buffer.from(b, "base64"))
+    .nullable()
     .optional(),
 });
 
@@ -205,7 +214,7 @@ export const ApiContract = c.router(
         401: z.string(),
         404: z.string(),
       },
-      summary: "Edit an artist's name and/or avatar image",
+      summary: "Edit an artist's name and/or avatar image (send null to remove)",
     },
     getTrackAudio: {
       method: "GET",
@@ -251,7 +260,8 @@ export const ApiContract = c.router(
         401: z.string(),
         404: z.string(),
       },
-      summary: "Edit a track's title and/or replace its artist links",
+      summary:
+        "Edit a track's title, cover image, and/or replace its artist links",
     },
   },
   {

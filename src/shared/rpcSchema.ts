@@ -75,6 +75,8 @@ export interface EditTrackParams {
 	title?: string;
 	/** Replaces the track's artist links entirely (empty array clears them). */
 	artistIds?: number[];
+	/** New cover bytes, base64; `null` removes the cover; omit = unchanged. */
+	coverBase64?: string | null;
 }
 
 export interface CreateArtistParams {
@@ -88,10 +90,10 @@ export interface EditArtistParams {
 	id: number;
 	name?: string;
 	/**
-	 * New avatar image bytes, base64-encoded. Omit to leave the avatar
-	 * unchanged (the contract has no way to clear an existing avatar).
+	 * New avatar image bytes, base64-encoded; `null` removes the avatar;
+	 * omit to leave it unchanged.
 	 */
-	imageBase64?: string;
+	imageBase64?: string | null;
 }
 
 export interface DeleteArtistParams {

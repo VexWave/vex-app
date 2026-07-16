@@ -146,6 +146,8 @@ export class ApiClient {
 					id: params.id,
 					title: params.title,
 					artistIds: params.artistIds,
+					// undefined drops off the wire (unchanged); null survives (remove).
+					cover: params.coverBase64,
 				},
 			});
 			if (res.status === 200) return { ok: true };
@@ -283,6 +285,7 @@ export class ApiClient {
 				body: {
 					id: params.id,
 					name: params.name,
+					// undefined drops off the wire (unchanged); null survives (remove).
 					image: params.imageBase64,
 				},
 			});

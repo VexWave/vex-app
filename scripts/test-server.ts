@@ -7,6 +7,7 @@ import {
 	CreateTrackRequest,
 	DeleteByIdRequest,
 	EditArtistRequest,
+	EditTrackRequest,
 	artistImagePath,
 	trackImagePath,
 } from "../contract/contract";
@@ -140,6 +141,37 @@ Bun.serve({
 				return new Response("ok");
 			},
 		},
+		"/editTrack": {
+			POST: async (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				const parsed = EditTrackRequest.safeParse(await req.json());
+				if (!parsed.success) {
+					return new Response(parsed.error.message, { status: 400 });
+				}
+				const { id, title, artistIds, cover } = parsed.data;
+				const track = tracks.get(id);
+				if (!track) return new Response("not found", { status: 404 });
+				if (title !== undefined) track.title = title;
+				if (artistIds !== undefined) {
+					track.artists = artistIds
+						.map((artistId) => artists.get(artistId)?.name)
+						.filter((name): name is string => name !== undefined);
+				}
+				if (cover === null) track.cover = undefined;
+				else if (cover !== undefined) track.cover = new Uint8Array(cover);
+				console.log(
+					`editTrack ok: #${id} "${track.title}"` +
+						(cover === null
+							? " cover=removed"
+							: cover !== undefined
+								? ` cover=${cover.byteLength}B`
+								: ""),
+				);
+				return new Response("ok");
+			},
+		},
 		"/postArtist": {
 			POST: async (req) => {
 				if (!authorized(req)) {
@@ -176,8 +208,16 @@ Bun.serve({
 				const artist = artists.get(id);
 				if (!artist) return new Response("not found", { status: 404 });
 				if (name !== undefined) artist.name = name;
-				if (image !== undefined) artist.image = new Uint8Array(image);
-				console.log(`editArtist ok: #${id} "${artist.name}"`);
+				if (image === null) artist.image = undefined;
+				else if (image !== undefined) artist.image = new Uint8Array(image);
+				console.log(
+					`editArtist ok: #${id} "${artist.name}"` +
+						(image === null
+							? " image=removed"
+							: image !== undefined
+								? ` image=${image.byteLength}B`
+								: ""),
+				);
 				return new Response("ok");
 			},
 		},

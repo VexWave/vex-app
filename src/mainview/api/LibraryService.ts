@@ -1,6 +1,7 @@
 import { playerController } from "@/hooks/usePlayer";
+import { CacheBuster } from "@/lib/cacheBuster";
 import type { Track } from "@/player/types";
-import type { RemoteTrack } from "../../shared/rpcSchema";
+import type { EditTrackParams, RemoteTrack } from "../../shared/rpcSchema";
 import { bun } from "./rpc";
 import { sessionService } from "./SessionService";
 
@@ -12,6 +13,9 @@ export interface LibraryState {
 
 /** Result shape for track mutations the context menu shows inline. */
 export type MutationResult = { ok: true } | { ok: false; error: string };
+
+/** The mutable fields of an edit — everything except the track id. */
+export type EditTrackChanges = Omit<EditTrackParams, "id">;
 
 /**
  * Owns the server library: fetches it when a session starts and queues the
@@ -28,6 +32,10 @@ export class LibraryService {
 	// id (`server-<id>`). The context menu reads it to map a queued Track back
 	// to its numeric server id and currently-linked artist names.
 	private remoteById = new Map<string, RemoteTrack>();
+	// The StreamProxy cover URL for a track never changes and forwards no cache
+	// headers, so after a cover is replaced we bust it (keyed by queue track id)
+	// to force Chromium to re-fetch. See CacheBuster.
+	private coverCache = new CacheBuster();
 
 	constructor() {
 		let previousStatus = sessionService.getSnapshot().status;
@@ -40,6 +48,7 @@ export class LibraryService {
 			} else if (status === "loggedOut") {
 				this.fetchSeq += 1; // drop in-flight results from the old session
 				this.remoteById.clear();
+				this.coverCache.clear();
 				// Every queued track streams from this session's server, so the
 				// whole queue is invalidated when the session ends.
 				playerController.removeTracks(() => true);
@@ -93,12 +102,18 @@ export class LibraryService {
 			this.update({ loading: false, error: result.error });
 			return false;
 		}
+		// Apply the cover cache-buster once so getRemote (dialog preview) and the
+		// queue rows all see the same busted URL.
+		const remotes = result.tracks.map((remote) => ({
+			...remote,
+			coverUrl: this.coverCache.apply(trackIdFor(remote), remote.coverUrl),
+		}));
 		this.remoteById = new Map(
-			result.tracks.map((remote) => [trackIdFor(remote), remote]),
+			remotes.map((remote) => [trackIdFor(remote), remote]),
 		);
 		// Update already-queued tracks (e.g. artists changed) in place — the
 		// queue dedupes by id so addTracks alone wouldn't refresh them...
-		for (const remote of result.tracks) {
+		for (const remote of remotes) {
 			playerController.updateTrack(trackIdFor(remote), {
 				title: remote.title,
 				artist: remote.artist,
@@ -107,7 +122,7 @@ export class LibraryService {
 			});
 		}
 		// ...then append the ones that are new on the server.
-		playerController.addTracks(result.tracks.map(toTrack));
+		playerController.addTracks(remotes.map(toTrack));
 		this.update({ loading: false, error: null });
 		return true;
 	}
@@ -141,18 +156,21 @@ export class LibraryService {
 	}
 
 	/**
-	 * Replace a server track's artist links, then refetch so the queued
-	 * track's displayed artist updates. Returns the outcome instead of writing
-	 * to the snapshot so the manage-artists dialog can show it inline.
+	 * Edit a server track (title, cover, and/or artist links), then refetch so
+	 * the queued track updates. Returns the outcome instead of writing to the
+	 * snapshot so the edit dialog can show it inline.
 	 */
-	async setArtists(trackId: string, artistIds: number[]): Promise<MutationResult> {
+	async editTrack(
+		trackId: string,
+		changes: EditTrackChanges,
+	): Promise<MutationResult> {
 		const remote = this.remoteById.get(trackId);
 		if (!remote) {
-			return { ok: false, error: "Only server tracks can have artists edited." };
+			return { ok: false, error: "Only server tracks can be edited." };
 		}
 		let result;
 		try {
-			result = await bun.editTrack({ id: remote.id, artistIds });
+			result = await bun.editTrack({ id: remote.id, ...changes });
 		} catch (err) {
 			return {
 				ok: false,
@@ -165,6 +183,9 @@ export class LibraryService {
 			}
 			return { ok: false, error: result.error };
 		}
+		// The cover URL is stable, so bust it to force a re-fetch before the
+		// refresh maps it onto the queue and dialog preview.
+		if (changes.coverBase64 !== undefined) this.coverCache.bump(trackId);
 		void this.refresh();
 		return { ok: true };
 	}

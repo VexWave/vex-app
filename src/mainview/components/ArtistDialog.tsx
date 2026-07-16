@@ -15,10 +15,20 @@ import { blobToBase64 } from "@/lib/utils";
 import type { RemoteArtist } from "../../shared/rpcSchema";
 
 /**
+ * Avatar editing is three-state: leave the existing image untouched, replace it
+ * with a picked file, or remove it. `removed` sends `image: null`; `unchanged`
+ * omits the field entirely. In create mode there is nothing to remove, so only
+ * `unchanged` (no avatar) and `new` occur.
+ */
+type ImageEdit =
+	| { kind: "unchanged" }
+	| { kind: "new"; file: File }
+	| { kind: "removed" };
+
+/**
  * Create a new artist or edit an existing one (`artist === null` → create).
  * The avatar is uploaded as raw image bytes; in edit mode the current avatar
- * shows as a preview and is only replaced when a new file is picked (the
- * contract has no way to clear an avatar).
+ * shows as a preview and can be replaced with a new file or removed entirely.
  */
 export function ArtistDialog({
 	artist,
@@ -31,7 +41,7 @@ export function ArtistDialog({
 }) {
 	const isEdit = artist !== null;
 	const [name, setName] = useState("");
-	const [file, setFile] = useState<File | null>(null);
+	const [image, setImage] = useState<ImageEdit>({ kind: "unchanged" });
 	const [preview, setPreview] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -41,20 +51,28 @@ export function ArtistDialog({
 	useEffect(() => {
 		if (!open) return;
 		setName(artist?.name ?? "");
-		setFile(null);
-		setPreview(artist?.imageUrl ?? null);
+		setImage({ kind: "unchanged" });
 		setSubmitting(false);
 		setError(null);
 	}, [open, artist]);
 
-	// Show a local preview of a freshly picked file; revoke the object URL when
-	// it's replaced or the dialog closes.
+	// Preview follows the image edit: a picked file gets an object URL (revoked
+	// on change/unmount), removal shows the fallback, unchanged shows the current
+	// avatar (if any).
 	useEffect(() => {
-		if (!file) return;
-		const url = URL.createObjectURL(file);
-		setPreview(url);
-		return () => URL.revokeObjectURL(url);
-	}, [file]);
+		if (image.kind === "new") {
+			const url = URL.createObjectURL(image.file);
+			setPreview(url);
+			return () => URL.revokeObjectURL(url);
+		}
+		setPreview(image.kind === "removed" ? null : (artist?.imageUrl ?? null));
+	}, [image, artist]);
+
+	const removeImage = () => {
+		// Removing an artist that has no avatar is a no-op edit — revert to
+		// unchanged rather than sending a pointless `image: null`.
+		setImage(artist?.imageUrl ? { kind: "removed" } : { kind: "unchanged" });
+	};
 
 	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
@@ -66,20 +84,27 @@ export function ArtistDialog({
 		setError(null);
 		setSubmitting(true);
 
-		let imageBase64: string | undefined;
-		if (file) {
+		// undefined = unchanged/no avatar; null = remove; string = new bytes.
+		let imageBase64: string | null | undefined;
+		if (image.kind === "new") {
 			try {
-				imageBase64 = await blobToBase64(file);
+				imageBase64 = await blobToBase64(image.file);
 			} catch {
 				setSubmitting(false);
 				setError("Could not read the selected image.");
 				return;
 			}
+		} else if (image.kind === "removed") {
+			imageBase64 = null;
 		}
 
 		const result = isEdit
 			? await artistService.edit({ id: artist.id, name: trimmedName, imageBase64 })
-			: await artistService.create({ name: trimmedName, imageBase64 });
+			: await artistService.create({
+					name: trimmedName,
+					// create has no null state; only a picked file produces bytes.
+					imageBase64: imageBase64 ?? undefined,
+				});
 		setSubmitting(false);
 		if (result.ok) {
 			onOpenChange(false);
@@ -130,19 +155,36 @@ export function ArtistDialog({
 								<span className="text-muted-foreground">(optional)</span>
 							</span>
 							<span className="text-xs text-muted-foreground">
-								{file
-									? file.name
-									: isEdit
-										? "Pick a new image to replace it."
-										: "Click the circle to choose an image."}
+								{image.kind === "new"
+									? image.file.name
+									: image.kind === "removed"
+										? "Avatar will be removed."
+										: isEdit
+											? "Pick a new image to replace it."
+											: "Click the circle to choose an image."}
 							</span>
+							{preview && (
+								<button
+									type="button"
+									onClick={removeImage}
+									disabled={submitting}
+									className="self-start text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+								>
+									Remove
+								</button>
+							)}
 						</div>
 						<input
 							ref={fileInputRef}
 							type="file"
 							accept="image/*"
 							className="hidden"
-							onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+							onChange={(e) => {
+								const file = e.target.files?.[0];
+								if (file) setImage({ kind: "new", file });
+								// Reset so re-picking the same file fires onChange again.
+								e.target.value = "";
+							}}
 						/>
 					</div>
 					<div className="flex flex-col gap-1.5">

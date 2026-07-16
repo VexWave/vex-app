@@ -3,6 +3,7 @@ import type {
 	EditArtistParams,
 	RemoteArtist,
 } from "../../shared/rpcSchema";
+import { CacheBuster } from "@/lib/cacheBuster";
 import { bun } from "./rpc";
 import { sessionService } from "./SessionService";
 
@@ -28,6 +29,10 @@ export class ArtistService {
 		error: null,
 	};
 	private fetchSeq = 0;
+	// The StreamProxy avatar URL for an artist never changes and forwards no
+	// cache headers, so after an avatar is replaced we bust it (keyed by artist
+	// id) to force Chromium to re-fetch. See CacheBuster.
+	private imageCache = new CacheBuster();
 
 	constructor() {
 		let previousStatus = sessionService.getSnapshot().status;
@@ -39,6 +44,7 @@ export class ArtistService {
 				void this.refresh();
 			} else if (status === "loggedOut") {
 				this.fetchSeq += 1; // drop in-flight results from the old session
+				this.imageCache.clear();
 				this.update({ artists: [], loading: false, error: null });
 			}
 		});
@@ -78,7 +84,13 @@ export class ArtistService {
 			this.update({ loading: false, error: result.error });
 			return;
 		}
-		this.update({ artists: result.artists, loading: false, error: null });
+		// Bust replaced avatars: their imageUrl is stable, so map the fresh list
+		// through the cache-buster before it reaches the UI.
+		const artists = result.artists.map((artist) => ({
+			...artist,
+			imageUrl: this.imageCache.apply(String(artist.id), artist.imageUrl),
+		}));
+		this.update({ artists, loading: false, error: null });
 	}
 
 	/**
@@ -131,6 +143,9 @@ export class ArtistService {
 			}
 			return { ok: false, error: result.error };
 		}
+		// The avatar URL is stable, so bust it when the image changed (new bytes
+		// or removal) before the refresh maps it onto the list.
+		if (input.imageBase64 !== undefined) this.imageCache.bump(String(input.id));
 		void this.refresh();
 		return { ok: true };
 	}
