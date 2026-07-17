@@ -1,5 +1,6 @@
 import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { ApiClient } from "./ApiClient";
+import { BinaryManager } from "./BinaryManager";
 import { StreamProxy } from "./StreamProxy";
 import type { PlayerRPC } from "../shared/rpcSchema";
 
@@ -38,6 +39,11 @@ const streamProxy = new StreamProxy(api, () => {
 	});
 });
 
+// Same forward-reference pattern as StreamProxy: progress messages only flow
+// after the webview kicks off an install over RPC, so `rpc` exists by then.
+const binaryManager = new BinaryManager((msg) => rpc.send.binaryProgress(msg));
+binaryManager.startUpdateCheckIfInstalled();
+
 const rpc = BrowserView.defineRPC<PlayerRPC>({
 	// Default is 1s; logins and multi-MB uploads need far more.
 	maxRequestTime: 120_000,
@@ -57,6 +63,10 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			createArtist: (params) => api.createArtist(params),
 			editArtist: (params) => api.editArtist(params),
 			deleteArtist: (params) => api.deleteArtist(params),
+			getBinaryStatus: () => binaryManager.getStatus(),
+			installMissingBinaries: () => binaryManager.startInstall(),
+			updateYtDlp: () => binaryManager.startYtDlpUpdate(),
+			checkYtDlpUpdate: () => binaryManager.checkYtDlpUpdate(),
 		},
 	},
 });

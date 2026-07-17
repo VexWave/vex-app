@@ -3,13 +3,16 @@ import { AlertCircle } from "lucide-react";
 import { uploadService } from "@/api/UploadService";
 import { AddTracksButton } from "@/components/AddTracksButton";
 import { ArtistsView } from "@/components/ArtistsView";
+import { BinarySetupScreen } from "@/components/BinarySetupScreen";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
 import { Sidebar, type MainView } from "@/components/Sidebar";
 import { TrackList } from "@/components/TrackList";
 import { UploadReviewDialog } from "@/components/UploadReviewDialog";
+import { YtDlpUpdateBanner } from "@/components/YtDlpUpdateBanner";
 import { Separator } from "@/components/ui/separator";
+import { useBinaries } from "@/hooks/useBinaries";
 import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useSession } from "@/hooks/useSession";
@@ -17,6 +20,7 @@ import { useSession } from "@/hooks/useSession";
 function App() {
 	const { state } = usePlayer();
 	const { session } = useSession();
+	const { binaries } = useBinaries();
 	// LibraryService fetches the server library per login and clears the queue
 	// on logout; the component only renders its error state.
 	const { library } = useLibrary();
@@ -30,6 +34,10 @@ function App() {
 		setIsDragging(false);
 		uploadService.enqueue(e.dataTransfer.files);
 	};
+
+	// Hard gate before login: the helper binaries (yt-dlp/ffmpeg/deno) must
+	// exist before anything else, so a fresh machine sets up first.
+	if (binaries.phase !== "ready") return <BinarySetupScreen />;
 
 	// Blocking login: the player UI is only reachable with a live session.
 	// The player singleton survives this unmount, so a mid-session 401
@@ -58,6 +66,7 @@ function App() {
 				</div>
 			</header>
 			<Separator />
+			<YtDlpUpdateBanner />
 
 			{/* Always-visible sidebar: this is a fixed-size desktop window, and on
 			    HiDPI displays the CSS viewport can sit below Tailwind's `md`

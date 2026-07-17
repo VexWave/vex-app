@@ -118,6 +118,58 @@ export type ListArtistsResult =
 	| { ok: true; artists: RemoteArtist[] }
 	| RpcFailure;
 
+// --- Binary manager --------------------------------------------------------
+
+/**
+ * The managed external executables (downloaded at runtime, not bundled).
+ * "ffmpeg" implicitly includes ffprobe — they install and report as one unit.
+ */
+export type BinaryName = "ytDlp" | "ffmpeg" | "deno";
+
+export interface BinaryStatus {
+	installed: BinaryName[];
+	missing: BinaryName[];
+	/** Manifest version tag of installed yt-dlp; absent when missing/unknown. */
+	ytDlpVersion?: string;
+}
+
+export type BinaryStatusResult = ({ ok: true } & BinaryStatus) | RpcFailure;
+
+/**
+ * Never a failure shape: the update check is best-effort and fails silently
+ * (offline / GitHub rate limit → `updateAvailable: false`).
+ */
+export interface YtDlpUpdateResult {
+	ok: true;
+	updateAvailable: boolean;
+	/** Present only when `updateAvailable`. */
+	latestVersion?: string;
+	installedVersion?: string;
+}
+
+export type BinaryInstallStep = "downloading" | "extracting";
+
+/**
+ * Pushed by bun while an install/update run is active. The install requests
+ * only *start* runs (a 100 MB download would blow `maxRequestTime`), so
+ * completion also arrives here, as "finished" or "failed".
+ */
+export type BinaryProgressMessage =
+	| {
+			type: "progress";
+			binary: BinaryName;
+			step: BinaryInstallStep;
+			receivedBytes: number;
+			/** Absent when the server sent no content-length (indeterminate). */
+			totalBytes?: number;
+			/** 1-based; macOS ffmpeg is two downloads (ffmpeg + ffprobe). */
+			part: number;
+			partCount: number;
+	  }
+	| { type: "binaryInstalled"; binary: BinaryName }
+	| { type: "finished" }
+	| { type: "failed"; binary: BinaryName; error: string };
+
 export type PlayerRPC = {
 	bun: RPCSchema<{
 		requests: {
@@ -130,6 +182,16 @@ export type PlayerRPC = {
 			createArtist: { params: CreateArtistParams; response: RpcResult };
 			editArtist: { params: EditArtistParams; response: RpcResult };
 			deleteArtist: { params: DeleteArtistParams; response: RpcResult };
+			getBinaryStatus: { params: undefined; response: BinaryStatusResult };
+			/**
+			 * Kicks off an install of all missing binaries and returns
+			 * immediately; progress and completion arrive as `binaryProgress`
+			 * messages. No-op success while a run is already active.
+			 */
+			installMissingBinaries: { params: undefined; response: RpcResult };
+			/** Forced re-download of yt-dlp only; same async machinery. */
+			updateYtDlp: { params: undefined; response: RpcResult };
+			checkYtDlpUpdate: { params: undefined; response: YtDlpUpdateResult };
 		};
 	}>;
 	webview: RPCSchema<{
@@ -141,6 +203,8 @@ export type PlayerRPC = {
 			 * request, so the webview can't see the status itself.
 			 */
 			sessionExpired: { reason: string };
+			/** Progress/completion stream of a running binary install/update. */
+			binaryProgress: BinaryProgressMessage;
 		};
 	}>;
 };
