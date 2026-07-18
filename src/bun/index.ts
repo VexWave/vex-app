@@ -2,6 +2,7 @@ import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { ApiClient } from "./ApiClient";
 import { BinaryManager } from "./BinaryManager";
 import { StreamProxy } from "./StreamProxy";
+import { UrlImporter } from "./UrlImporter";
 import type { PlayerRPC } from "../shared/rpcSchema";
 
 const DEV_SERVER_PORT = 5173;
@@ -32,17 +33,31 @@ const api = new ApiClient();
 // push the expiry to the webview (media errors carry no HTTP status, so the
 // webview can't detect this itself). `rpc` is initialized below; streams
 // can't run before it exists because logging in requires the RPC.
-const streamProxy = new StreamProxy(api, () => {
-	api.expireSession();
-	rpc.send.sessionExpired({
-		reason: "Session expired — please log in again.",
-	});
-});
+// Explicit types break the streamProxy ↔ importer inference cycle (each one's
+// constructor closes over the other).
+const streamProxy: StreamProxy = new StreamProxy(
+	api,
+	() => {
+		api.expireSession();
+		rpc.send.sessionExpired({
+			reason: "Session expired — please log in again.",
+		});
+	},
+	// Forward reference: import files are only requested after an import
+	// finished, so `importer` exists long before this resolver ever runs.
+	(importId) => importer.filePathFor(importId),
+);
 
 // Same forward-reference pattern as StreamProxy: progress messages only flow
 // after the webview kicks off an install over RPC, so `rpc` exists by then.
 const binaryManager = new BinaryManager((msg) => rpc.send.binaryProgress(msg));
 binaryManager.startUpdateCheckIfInstalled();
+
+const importer: UrlImporter = new UrlImporter(
+	binaryManager,
+	(msg) => rpc.send.urlImportProgress(msg),
+	(importId) => streamProxy.urlForImportFile(importId),
+);
 
 const rpc = BrowserView.defineRPC<PlayerRPC>({
 	// Default is 1s; logins and multi-MB uploads need far more.
@@ -65,8 +80,24 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			deleteArtist: (params) => api.deleteArtist(params),
 			getBinaryStatus: () => binaryManager.getStatus(),
 			installMissingBinaries: () => binaryManager.startInstall(),
-			updateYtDlp: () => binaryManager.startYtDlpUpdate(),
+			// A running yt-dlp.exe can't be overwritten on Windows, so the
+			// updater and the importer mutually exclude each other.
+			updateYtDlp: () =>
+				importer.isActive
+					? {
+							ok: false as const,
+							error: "A URL import is running — try again when it's done.",
+						}
+					: binaryManager.startYtDlpUpdate(),
 			checkYtDlpUpdate: () => binaryManager.checkYtDlpUpdate(),
+			importFromUrl: (params) =>
+				binaryManager.isBusy
+					? {
+							ok: false as const,
+							error: "Components are updating — try again in a moment.",
+						}
+					: importer.start(params),
+			discardImport: (params) => importer.discard(params),
 		},
 	},
 });

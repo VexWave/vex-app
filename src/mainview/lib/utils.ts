@@ -16,6 +16,11 @@ export function formatTime(totalSeconds: number): string {
 	return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** 1_500_000 → "1.4 MB". */
+export function formatMb(bytes: number): string {
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /**
  * Read a blob's bytes as a base64 string (without the `data:…;base64,` prefix).
  * FileReader avoids chunked btoa gymnastics for multi-MB blobs.

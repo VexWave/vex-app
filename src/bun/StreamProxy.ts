@@ -36,6 +36,9 @@ const PASSTHROUGH_HEADERS = [
  * - Artist avatars: fetched by <img> tags. The backend's image route is public,
  *   but the webview still can't address the backend directly, so it goes
  *   through the same proxy.
+ * - Finished URL imports: local temp mp3s produced bun-side by the UrlImporter.
+ *   No backend involved — the webview fetches the file to stage it through the
+ *   regular upload-review flow, so this route needs no session.
  *
  * The server binds only the loopback interface, and the random path secret
  * keeps other local processes from guessing proxy URLs.
@@ -47,6 +50,8 @@ export class StreamProxy {
 	constructor(
 		private readonly api: ApiClient,
 		private readonly onUnauthorized?: () => void,
+		/** importId → local file path, or null when unknown/already discarded. */
+		private readonly resolveImportFile?: (importId: string) => string | null,
 	) {}
 
 	/** The loopback server, started on first use. */
@@ -82,8 +87,37 @@ export class StreamProxy {
 		return `http://127.0.0.1:${port}/${this.secret}/track/${trackId}/image`;
 	}
 
+	/** URL of a finished URL-import's local mp3 (valid until discarded). */
+	urlForImportFile(importId: string): string {
+		const { port } = this.ensureServer();
+		return `http://127.0.0.1:${port}/${this.secret}/import/${importId}`;
+	}
+
 	private async handle(req: Request): Promise<Response> {
 		const { pathname } = new URL(req.url);
+
+		// Local import files short-circuit before the session check — they never
+		// touch the backend, so a live session is irrelevant.
+		const importMatch = pathname.match(/^\/([^/]+)\/import\/([^/]+)$/);
+		if (importMatch && importMatch[1] === this.secret) {
+			// Unlike the audio/img consumers (no-cors element loads), imports are
+			// read with a programmatic fetch(), which IS CORS-checked — and the
+			// webview origin (localhost:5173 in dev, views:// in prod) never
+			// matches this loopback origin. Without the header every response,
+			// success or error, is blocked before the caller can see it. The
+			// path secret already gates access, so "*" gives up nothing.
+			const cors = { "access-control-allow-origin": "*" };
+			if (req.method !== "GET") {
+				return new Response("method not allowed", { status: 405, headers: cors });
+			}
+			const filePath = this.resolveImportFile?.(importMatch[2]) ?? null;
+			if (!filePath) {
+				return new Response("not found", { status: 404, headers: cors });
+			}
+			return new Response(Bun.file(filePath), {
+				headers: { ...cors, "content-type": "audio/mpeg" },
+			});
+		}
 		// The audio regex is `$`-anchored on the bare id, so a `/image` suffix
 		// can never match it — no ambiguity between audio and cover-image URLs.
 		const trackMatch = pathname.match(/^\/([^/]+)\/track\/(\d+)$/);

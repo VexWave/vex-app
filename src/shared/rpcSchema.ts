@@ -170,6 +170,53 @@ export type BinaryProgressMessage =
 	| { type: "finished" }
 	| { type: "failed"; binary: BinaryName; error: string };
 
+// --- URL import ------------------------------------------------------------
+
+export interface ImportFromUrlParams {
+	/**
+	 * Webview-generated UUID for this import job. The webview picks the id so
+	 * its pending row exists before the RPC even resolves — progress messages
+	 * can never race ahead of an id handshake.
+	 */
+	importId: string;
+	/** A YouTube or SoundCloud page URL (validated webview-side). */
+	url: string;
+}
+
+export interface DiscardImportParams {
+	importId: string;
+}
+
+export type UrlImportStep = "starting" | "downloading" | "converting";
+
+/**
+ * Pushed by bun while a URL import runs. Like binary installs, the
+ * `importFromUrl` request only *starts* the job (a media download would blow
+ * `maxRequestTime`), so completion also arrives here. On "finished" the webview
+ * fetches the converted mp3 from `fileUrl` (a loopback StreamProxy URL) and
+ * stages it through the normal upload-review flow, then discards the temp file.
+ */
+export type UrlImportProgressMessage =
+	| {
+			type: "progress";
+			importId: string;
+			step: UrlImportStep;
+			/** Media title, present once yt-dlp has resolved the page metadata. */
+			title?: string;
+			receivedBytes?: number;
+			/** Absent when yt-dlp doesn't know the download size (indeterminate). */
+			totalBytes?: number;
+	  }
+	| {
+			type: "finished";
+			importId: string;
+			/** Sanitized `<title>.mp3` — becomes the staged File's name. */
+			fileName: string;
+			/** Loopback URL serving the finished mp3 to the webview. */
+			fileUrl: string;
+	  }
+	| { type: "failed"; importId: string; error: string };
+
 export type PlayerRPC = {
 	bun: RPCSchema<{
 		requests: {
@@ -192,6 +239,13 @@ export type PlayerRPC = {
 			/** Forced re-download of yt-dlp only; same async machinery. */
 			updateYtDlp: { params: undefined; response: RpcResult };
 			checkYtDlpUpdate: { params: undefined; response: YtDlpUpdateResult };
+			/**
+			 * Queues a yt-dlp download of the URL and returns immediately;
+			 * progress and completion arrive as `urlImportProgress` messages.
+			 */
+			importFromUrl: { params: ImportFromUrlParams; response: RpcResult };
+			/** Deletes a finished import's temp mp3 once the webview has it. */
+			discardImport: { params: DiscardImportParams; response: RpcResult };
 		};
 	}>;
 	webview: RPCSchema<{
@@ -205,6 +259,8 @@ export type PlayerRPC = {
 			sessionExpired: { reason: string };
 			/** Progress/completion stream of a running binary install/update. */
 			binaryProgress: BinaryProgressMessage;
+			/** Progress/completion stream of running URL imports. */
+			urlImportProgress: UrlImportProgressMessage;
 		};
 	}>;
 };

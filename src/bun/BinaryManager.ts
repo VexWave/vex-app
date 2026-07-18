@@ -72,7 +72,14 @@ export class BinaryManager {
 		this.tmpDir = path.join(this.binDir, ".tmp");
 	}
 
-	// --- Paths (consumed by the future URL-import downloader) ---
+	/** True while an install/update run is replacing binaries on disk — a
+	 * spawned yt-dlp must not be running then (Windows can't overwrite a
+	 * running exe), so URL imports are refused for the duration. */
+	get isBusy(): boolean {
+		return this.installTask !== null;
+	}
+
+	// --- Paths (consumed by the URL-import downloader) ---
 
 	ytDlpPath(): string {
 		return this.destPath(this.exe("yt-dlp"));
@@ -480,7 +487,7 @@ export class BinaryManager {
 	}
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
+export async function fileExists(filePath: string): Promise<boolean> {
 	try {
 		return (await stat(filePath)).isFile();
 	} catch {
@@ -488,6 +495,6 @@ async function fileExists(filePath: string): Promise<boolean> {
 	}
 }
 
-function describeError(err: unknown): string {
+export function describeError(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }

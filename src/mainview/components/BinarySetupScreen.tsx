@@ -10,6 +10,7 @@ import {
 import { Logo } from "@/components/Logo";
 import { Progress } from "@/components/ui/progress";
 import { useBinaries } from "@/hooks/useBinaries";
+import { formatMb } from "@/lib/utils";
 import type { BinaryName } from "../../shared/rpcSchema";
 import type { BinaryProgressInfo } from "@/api/BinaryService";
 
@@ -18,10 +19,6 @@ const BINARY_INFO: Record<BinaryName, { name: string; purpose: string }> = {
 	ffmpeg: { name: "FFmpeg", purpose: "audio conversion" },
 	deno: { name: "Deno", purpose: "JS runtime for yt-dlp" },
 };
-
-function formatMb(bytes: number): string {
-	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function InstallRow({
 	binary,

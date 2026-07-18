@@ -4,6 +4,7 @@ import { uploadService } from "@/api/UploadService";
 import { AddTracksButton } from "@/components/AddTracksButton";
 import { ArtistsView } from "@/components/ArtistsView";
 import { BinarySetupScreen } from "@/components/BinarySetupScreen";
+import { ImportUrlButton } from "@/components/ImportUrlButton";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
@@ -62,6 +63,7 @@ function App() {
 					<h1 className="text-xl font-bold tracking-tight">VexWave</h1>
 				</div>
 				<div className="flex items-center gap-2">
+					<ImportUrlButton />
 					<AddTracksButton />
 				</div>
 			</header>
@@ -73,7 +75,9 @@ function App() {
 			    breakpoint — a responsive-hidden sidebar would be unreachable. */}
 			<main className="grid min-h-0 flex-1 grid-cols-[200px_1fr] gap-4 p-4">
 				<Sidebar view={view} onViewChange={setView} />
-				<div className="min-h-0">
+				{/* min-w-0: grid items default to min-width:auto, so one nowrap
+				    track title would widen the 1fr column past the window. */}
+				<div className="min-h-0 min-w-0">
 					{view === "library" ? <TrackList /> : <ArtistsView />}
 				</div>
 			</main>
