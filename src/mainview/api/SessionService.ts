@@ -1,3 +1,4 @@
+import { storage } from "@/lib/storage";
 import { bun, onBunMessage } from "./rpc";
 
 export type SessionStatus = "loggedOut" | "loggingIn" | "loggedIn";
@@ -16,10 +17,6 @@ export interface SessionState {
 	restoring: boolean;
 }
 
-const HOST_KEY = "player.server.host";
-const PORT_KEY = "player.server.port";
-const TOKEN_KEY = "player.server.token";
-
 /**
  * Tracks whether the user is logged in to a server. The session token is
  * persisted in localStorage so the login survives a restart: on startup the
@@ -32,8 +29,8 @@ export class SessionService {
 	private snapshot: SessionState = {
 		status: "loggedOut",
 		error: null,
-		lastHost: localStorage.getItem(HOST_KEY) ?? "",
-		lastPort: localStorage.getItem(PORT_KEY) ?? "",
+		lastHost: storage.session.host.get() ?? "",
+		lastPort: storage.session.port.get() ?? "",
 		// Attempt a silent restore whenever every piece of a session is stored.
 		restoring: hasStoredSession(),
 	};
@@ -48,9 +45,9 @@ export class SessionService {
 	 * and a 401 there clears the token and drops back to the login screen.
 	 */
 	private async restore(): Promise<void> {
-		const host = localStorage.getItem(HOST_KEY) ?? "";
-		const port = Number(localStorage.getItem(PORT_KEY));
-		const token = localStorage.getItem(TOKEN_KEY) ?? "";
+		const host = storage.session.host.get() ?? "";
+		const port = Number(storage.session.port.get() ?? "");
+		const token = storage.session.token.get() ?? "";
 		try {
 			const result = await bun.restoreSession({ host, port, token });
 			if (result.ok) {
@@ -93,10 +90,10 @@ export class SessionService {
 			return;
 		}
 		if (result.ok) {
-			localStorage.setItem(HOST_KEY, host);
-			localStorage.setItem(PORT_KEY, String(port));
+			storage.session.host.set(host);
+			storage.session.port.set(String(port));
 			// Persist the token so the session survives a restart (see restore()).
-			localStorage.setItem(TOKEN_KEY, result.token);
+			storage.session.token.set(result.token);
 			this.update({
 				status: "loggedIn",
 				lastHost: host,
@@ -130,7 +127,7 @@ export class SessionService {
 	}
 
 	private clearStoredToken(): void {
-		localStorage.removeItem(TOKEN_KEY);
+		storage.session.token.remove();
 	}
 
 	private update(patch: Partial<SessionState>): void {
@@ -142,9 +139,9 @@ export class SessionService {
 /** Whether a full session (host + port + token) is persisted for restore. */
 function hasStoredSession(): boolean {
 	return (
-		!!localStorage.getItem(HOST_KEY) &&
-		!!localStorage.getItem(PORT_KEY) &&
-		!!localStorage.getItem(TOKEN_KEY)
+		!!storage.session.host.get() &&
+		!!storage.session.port.get() &&
+		!!storage.session.token.get()
 	);
 }
 

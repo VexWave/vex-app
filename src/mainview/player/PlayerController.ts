@@ -1,3 +1,4 @@
+import { storage } from "@/lib/storage";
 import { AudioPlayer } from "./AudioPlayer";
 import { PlaybackQueue } from "./PlaybackQueue";
 import type { PlayerState, RepeatMode, Track } from "./types";
@@ -17,6 +18,7 @@ export class PlayerController {
 	private snapshot: PlayerState;
 
 	constructor() {
+		this.restoreSettings();
 		this.snapshot = this.buildSnapshot();
 
 		this.player.on("play", () => this.refresh());
@@ -163,10 +165,12 @@ export class PlayerController {
 	setVolume(volume: number): void {
 		this.player.setVolume(volume);
 		if (volume > 0) this.player.setMuted(false);
+		this.persistSettings();
 	}
 
 	toggleMute(): void {
 		this.player.setMuted(!this.player.muted);
+		this.persistSettings();
 	}
 
 	cycleRepeatMode(): void {
@@ -174,10 +178,31 @@ export class PlayerController {
 		this.queue.setRepeatMode(
 			REPEAT_CYCLE[(current + 1) % REPEAT_CYCLE.length],
 		);
+		this.persistSettings();
 		this.refresh();
 	}
 
 	// --- internals ---
+
+	/**
+	 * Load persisted volume/mute/repeat from localStorage into the player and
+	 * queue. Runs before the first snapshot so the UI opens on the last-used
+	 * settings. Malformed or missing values fall back to the constructor defaults.
+	 */
+	private restoreSettings(): void {
+		const volume = storage.player.volume.get();
+		if (volume !== null) this.player.setVolume(volume);
+		if (storage.player.muted.get()) this.player.setMuted(true);
+		const repeat = storage.player.repeat.get();
+		if (repeat !== null) this.queue.setRepeatMode(repeat);
+	}
+
+	/** Persist the current volume/mute/repeat so they survive a restart. */
+	private persistSettings(): void {
+		storage.player.volume.set(this.player.volume);
+		storage.player.muted.set(this.player.muted);
+		storage.player.repeat.set(this.queue.repeatMode);
+	}
 
 	private buildSnapshot(): PlayerState {
 		const current = this.player.currentTrack;
