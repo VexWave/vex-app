@@ -108,13 +108,13 @@ export class PlayerController {
 	/** Remove every track matching the predicate (e.g. all remote tracks). */
 	removeTracks(predicate: (track: Track) => boolean): void {
 		const current = this.queue.current;
-		const wasPlaying = this.player.isPlaying;
 		const removed = this.queue.removeMatching(predicate);
 		if (removed.length === 0) return;
 		if (current && removed.includes(current)) {
-			const replacement = this.queue.current;
-			this.player.load(replacement);
-			if (replacement && wasPlaying) void this.player.play();
+			// Deleting the track that's playing stops playback rather than
+			// auto-advancing — the replacement is loaded (so the UI shows it)
+			// but left paused.
+			this.player.load(this.queue.current);
 		}
 		this.refresh();
 	}
