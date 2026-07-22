@@ -2,15 +2,16 @@ import { RefreshCw } from "lucide-react";
 import { artistService } from "@/api/ArtistService";
 import { libraryService } from "@/api/LibraryService";
 import { AddTracksButton } from "@/components/AddTracksButton";
+import { HeaderAction } from "@/components/HeaderAction";
 import { ImportUrlButton } from "@/components/ImportUrlButton";
 import { Logo } from "@/components/Logo";
-import { Button } from "@/components/ui/button";
 import { useLibrary } from "@/hooks/useLibrary";
 import { cn } from "@/lib/utils";
 
 /**
  * The app bar: the wordmark on the left, refresh and the two "get music in"
- * actions on the right.
+ * actions on the right. The right side rests as a row of bare glyphs — each
+ * names itself by growing leftwards on hover (`HeaderAction`).
  */
 export function AppHeader() {
 	const { library } = useLibrary();
@@ -36,21 +37,15 @@ export function AppHeader() {
 				</h1>
 			</div>
 
-			<div className="ml-auto flex min-w-0 items-center gap-2">
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-9 w-9 shrink-0 rounded-lg text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-					aria-label="Refresh library"
-					title="Refresh library"
+			{/* justify-end so the growing labels eat into the empty space to the
+			    left instead of pushing the row past the window edge. */}
+			<div className="ml-auto flex min-w-0 items-center justify-end gap-1">
+				<HeaderAction
+					icon={<RefreshCw className={cn(library.loading && "animate-spin")} />}
+					label="Refresh"
 					disabled={library.loading}
 					onClick={refresh}
-				>
-					<RefreshCw className={cn(library.loading && "animate-spin")} />
-				</Button>
-
-				<span aria-hidden="true" className="mx-1 h-6 w-px shrink-0 bg-border" />
-
+				/>
 				<ImportUrlButton />
 				<AddTracksButton />
 			</div>

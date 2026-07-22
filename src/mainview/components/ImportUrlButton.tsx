@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { AlertCircle, Link2 } from "lucide-react";
 import { importService, parseImportUrl } from "@/api/ImportService";
+import { HeaderAction } from "@/components/HeaderAction";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -42,14 +43,11 @@ export function ImportUrlButton() {
 
 	return (
 		<>
-			<Button
-				variant="outline"
-				className="h-9 shrink-0 rounded-lg"
+			<HeaderAction
+				icon={<Link2 />}
+				label="From URL"
 				onClick={() => setOpen(true)}
-			>
-				<Link2 className="h-4 w-4" />
-				From URL
-			</Button>
+			/>
 
 			<Dialog
 				open={open}

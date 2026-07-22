@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { Plus } from "lucide-react";
 import { uploadService } from "@/api/UploadService";
-import { Button } from "@/components/ui/button";
+import { HeaderAction } from "@/components/HeaderAction";
 
 export function AddTracksButton() {
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -26,15 +26,11 @@ export function AddTracksButton() {
 					e.target.value = "";
 				}}
 			/>
-			{/* The header's primary action — the filled variant against the
-			    outlined URL import gives the pair a clear hierarchy. */}
-			<Button
-				className="h-9 shrink-0 rounded-lg"
+			<HeaderAction
+				icon={<Plus />}
+				label="Add songs"
 				onClick={() => inputRef.current?.click()}
-			>
-				<Plus className="h-4 w-4" />
-				Add songs
-			</Button>
+			/>
 		</>
 	);
 }
