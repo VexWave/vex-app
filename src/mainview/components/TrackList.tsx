@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { importService } from "@/api/ImportService";
 import { libraryService } from "@/api/LibraryService";
+import { uploadService } from "@/api/UploadService";
 import { EditTrackDialog } from "@/components/EditTrackDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,7 +65,18 @@ function PendingUploadRow({ upload }: { upload: UploadItem }) {
 				</p>
 			</div>
 			{failed ? (
-				<AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+				<>
+					<AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+						aria-label="Dismiss failed upload"
+						onClick={() => uploadService.dismiss(upload.id)}
+					>
+						<X className="h-4 w-4" />
+					</Button>
+				</>
 			) : (
 				<Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
 			)}

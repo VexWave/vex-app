@@ -157,6 +157,15 @@ export class UploadService {
 		this.emit();
 	}
 
+	/** Remove a failed upload's row. Only failed items can be dismissed — an
+	 * in-flight upload keeps its row until it settles. */
+	dismiss(id: string): void {
+		const item = this.items.find((i) => i.id === id);
+		if (!item || item.status !== "error") return;
+		this.items = this.items.filter((i) => i !== item);
+		this.emit();
+	}
+
 	/** Drop every staged file (Esc/X on the review dialog, or logout). */
 	cancelAll(): void {
 		if (this.staged.length === 0) return;

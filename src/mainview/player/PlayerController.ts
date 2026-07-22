@@ -97,6 +97,12 @@ export class PlayerController {
 		this.refresh();
 	}
 
+	/** Reorder the queue in place; the current track stays loaded and playing. */
+	sortTracks(compare: (a: Track, b: Track) => number): void {
+		this.queue.sort(compare);
+		this.refresh();
+	}
+
 	/** Remove every track matching the predicate (e.g. all remote tracks). */
 	removeTracks(predicate: (track: Track) => boolean): void {
 		const current = this.queue.current;

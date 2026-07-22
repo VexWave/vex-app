@@ -103,11 +103,14 @@ export class LibraryService {
 			return false;
 		}
 		// Apply the cover cache-buster once so getRemote (dialog preview) and the
-		// queue rows all see the same busted URL.
-		const remotes = result.tracks.map((remote) => ({
-			...remote,
-			coverUrl: this.coverCache.apply(trackIdFor(remote), remote.coverUrl),
-		}));
+		// queue rows all see the same busted URL. Newest first (descending id) so
+		// the empty-queue preload picks the newest track, matching the sorted list.
+		const remotes = result.tracks
+			.map((remote) => ({
+				...remote,
+				coverUrl: this.coverCache.apply(trackIdFor(remote), remote.coverUrl),
+			}))
+			.sort((a, b) => b.id - a.id);
 		this.remoteById = new Map(
 			remotes.map((remote) => [trackIdFor(remote), remote]),
 		);
@@ -123,6 +126,10 @@ export class LibraryService {
 		}
 		// ...then append the ones that are new on the server.
 		playerController.addTracks(remotes.map(toTrack));
+		// Server ids increase with upload order, so sorting the queue by id
+		// descending puts the newest uploads at the top — including one that was
+		// just uploaded and would otherwise land at the end of the queue.
+		playerController.sortTracks((a, b) => serverIdOf(b) - serverIdOf(a));
 		this.update({ loading: false, error: null });
 		return true;
 	}
@@ -199,6 +206,12 @@ export class LibraryService {
 /** Stable queue id for a server track, so refreshes dedupe against the queue. */
 function trackIdFor(remote: RemoteTrack): string {
 	return `server-${remote.id}`;
+}
+
+/** Recover the numeric server id from a queue track id (`server-<id>`). */
+function serverIdOf(track: Track): number {
+	const id = Number(track.id.slice("server-".length));
+	return Number.isFinite(id) ? id : 0;
 }
 
 function toTrack(remote: RemoteTrack): Track {

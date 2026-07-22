@@ -96,6 +96,16 @@ export class PlaybackQueue {
 	}
 
 	/**
+	 * Reorder the queue by a comparator. The current track keeps playing: its
+	 * index is recomputed by identity, so only the surrounding order changes.
+	 */
+	sort(compare: (a: Track, b: Track) => number): void {
+		const current = this.current;
+		this.items = [...this.items].sort(compare);
+		if (current) this.index = this.items.indexOf(current);
+	}
+
+	/**
 	 * Advance to the next track. When `wrap` is true (auto-advance after a
 	 * track ends), the end of the queue only wraps around under repeat "all".
 	 * Manual skips (wrap false) always wrap.
