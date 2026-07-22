@@ -3,6 +3,7 @@ import { ApiClient } from "./ApiClient";
 import { BinaryManager } from "./BinaryManager";
 import { StreamProxy } from "./StreamProxy";
 import { UrlImporter } from "./UrlImporter";
+import { applyWindowChrome } from "./WindowChrome";
 import type { PlayerRPC } from "../shared/rpcSchema";
 
 const DEV_SERVER_PORT = 5173;
@@ -126,12 +127,17 @@ const initialFrame = {
 	y: 200,
 };
 
+const WINDOW_TITLE = "VexWave";
+
 export const mainWindow = new BrowserWindow({
-	title: "VexWave",
+	title: WINDOW_TITLE,
 	url,
 	frame: initialFrame,
 	rpc,
 });
+
+// Dark title bar + window icon on Windows; both are outside Electrobun's API.
+applyWindowChrome(mainWindow, WINDOW_TITLE);
 
 // Windows + bundled CEF paints its first frame before CEF has settled on the
 // monitor's device scale factor, so on HiDPI displays (scaling != 100%) the

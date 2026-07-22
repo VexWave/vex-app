@@ -1,10 +1,9 @@
 import { useState, type DragEvent } from "react";
 import { AlertCircle } from "lucide-react";
 import { uploadService } from "@/api/UploadService";
-import { AddTracksButton } from "@/components/AddTracksButton";
+import { AppHeader } from "@/components/AppHeader";
 import { ArtistsView } from "@/components/ArtistsView";
 import { BinarySetupScreen } from "@/components/BinarySetupScreen";
-import { ImportUrlButton } from "@/components/ImportUrlButton";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
@@ -12,7 +11,6 @@ import { Sidebar, type MainView } from "@/components/Sidebar";
 import { TrackList } from "@/components/TrackList";
 import { UploadReviewDialog } from "@/components/UploadReviewDialog";
 import { YtDlpUpdateBanner } from "@/components/YtDlpUpdateBanner";
-import { Separator } from "@/components/ui/separator";
 import { useBinaries } from "@/hooks/useBinaries";
 import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
@@ -67,17 +65,7 @@ function App() {
 			}}
 			onDrop={handleDrop}
 		>
-			<header className="flex items-center justify-between px-6 py-4">
-				<div className="flex items-center gap-2">
-					<Logo className="h-6 w-6" />
-					<h1 className="text-xl font-bold tracking-tight">VexWave</h1>
-				</div>
-				<div className="flex items-center gap-2">
-					<ImportUrlButton />
-					<AddTracksButton />
-				</div>
-			</header>
-			<Separator />
+			<AppHeader />
 			<YtDlpUpdateBanner />
 
 			{/* Always-visible sidebar: this is a fixed-size desktop window, and on

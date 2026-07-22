@@ -26,8 +26,10 @@ export function AddTracksButton() {
 					e.target.value = "";
 				}}
 			/>
+			{/* The header's primary action — the filled variant against the
+			    outlined URL import gives the pair a clear hierarchy. */}
 			<Button
-				variant="secondary"
+				className="h-9 shrink-0 rounded-lg"
 				onClick={() => inputRef.current?.click()}
 			>
 				<Plus className="h-4 w-4" />

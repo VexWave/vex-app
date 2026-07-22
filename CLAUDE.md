@@ -30,6 +30,7 @@ Two contexts, per Electrobun's model.
 | `TrackCache.ts` | Byte-bounded in-memory LRU of fully-downloaded tracks. |
 | `BinaryManager.ts` | Downloads yt-dlp/ffmpeg/ffprobe/deno into a per-user bin dir. |
 | `UrlImporter.ts` | Runs yt-dlp, one job at a time. |
+| `WindowChrome.ts` | Win32 FFI (`bun:ffi`) for the dark title bar and the window/taskbar icon. Windows-only, best-effort. |
 
 **All server I/O runs bun-side** — the webview never issues HTTP to the backend (avoids CORS entirely) and never learns the backend's address. Anything the UI needs from the network goes through RPC or a `StreamProxy` loopback URL.
 
@@ -71,4 +72,5 @@ Don't "fix" these without reading the reasoning.
 ## Gotchas
 
 - **`win.bundleCEF: true` is intentional** — the system WebView2 path renders blurry on HiDPI displays because Electrobun's launcher doesn't declare DPI awareness (open bug: https://github.com/blackboardsh/electrobun/issues/324). Bundled CEF sets its own DPI awareness. Don't switch it back to `false` without checking that issue; side effect: CEF triggers a one-time Windows location-permission prompt (benign Chromium behavior).
+- **The Windows title bar and window icon are set by us, not Electrobun** (`src/bun/WindowChrome.ts`, called right after the window is created). Electrobun exposes no option for either: the caption would come up in the *system* theme (white) next to an app that is always dark, and its build step fails to embed `build.win.icon` into `bun.exe` (rcedit is resolved from a path baked into their CI), so the window would keep CEF's default icon. The icon is loaded at runtime from `Resources/app.ico` in the bundle — which the build *does* produce — and set with `WM_SETICON`, so it doesn't depend on the broken embedding step. All of it is best-effort: any failure logs a warning and leaves the stock chrome.
 - Electrobun's real docs are at https://framework.blackboard.sh/electrobun/ and https://github.com/blackboardsh/electrobun — the `blackboard.sh/electrobun/*` URLs in `llms.txt` redirect to a marketing SPA.

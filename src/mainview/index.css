@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Outfit SemiBold, self-hosted for the "VexWave" wordmark only (Tailwind's
+ * `font-wordmark`). The app ships offline, so the file is vendored under
+ * assets/ rather than pulled from Google's CDN at runtime; it's the latin
+ * subset at the single weight the wordmark uses.
+ */
+@font-face {
+	font-family: "Outfit";
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url("./assets/fonts/outfit-600-latin.woff2") format("woff2");
+}
+
 @layer base {
 	:root {
 		--background: 0 0% 100%;

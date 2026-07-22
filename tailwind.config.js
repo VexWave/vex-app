@@ -6,6 +6,10 @@ export default {
 	content: ["./src/mainview/**/*.{html,js,ts,jsx,tsx}"],
 	theme: {
 		extend: {
+			fontFamily: {
+				// Wordmark only — see the @font-face in index.css.
+				wordmark: ["Outfit", "ui-sans-serif", "system-ui", "sans-serif"],
+			},
 			colors: {
 				border: "hsl(var(--border))",
 				input: "hsl(var(--input))",
