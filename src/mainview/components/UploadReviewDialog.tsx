@@ -1,13 +1,8 @@
-import {
-	useEffect,
-	useRef,
-	useState,
-	type FormEvent,
-} from "react";
-import { AlertCircle, ImagePlus, Music } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AlertCircle, ImagePlus, Loader2, Music } from "lucide-react";
 import { artistService } from "@/api/ArtistService";
 import { uploadService, type StagedUpload } from "@/api/UploadService";
-import { ArtistMultiSelect } from "@/components/ArtistMultiSelect";
+import { ArtistSuggestion } from "@/components/ArtistSuggestion";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -18,9 +13,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useArtists } from "@/hooks/useArtists";
 import { useUploads } from "@/hooks/useUploads";
-import type { RemoteArtist } from "../../shared/rpcSchema";
 
 /**
  * Per-file review step shown before uploading picked/dropped audio. One dialog
@@ -32,12 +25,12 @@ import type { RemoteArtist } from "../../shared/rpcSchema";
  */
 export function UploadReviewDialog() {
 	const { staged, reviewedCount } = useUploads();
-	const { artists: artistState } = useArtists();
 	const head = staged[0];
 	const hasBatch = head !== undefined;
 
-	// Refresh the artist list once when a batch opens, so artists created just
-	// before picking files show up in the multi-select.
+	// Refresh the artist list once when a batch opens, so a proposed import
+	// artist can be matched against the freshest library (and any artist created
+	// just before shows up).
 	const prevHasBatch = useRef(false);
 	useEffect(() => {
 		if (hasBatch && !prevHasBatch.current) void artistService.refresh();
@@ -62,7 +55,6 @@ export function UploadReviewDialog() {
 						position={reviewedCount + 1}
 						total={reviewedCount + staged.length}
 						remaining={staged.length}
-						artists={artistState.artists}
 					/>
 				)}
 			</DialogContent>
@@ -75,19 +67,20 @@ function ReviewForm({
 	position,
 	total,
 	remaining,
-	artists,
 }: {
 	item: StagedUpload;
 	position: number;
 	total: number;
 	remaining: number;
-	artists: RemoteArtist[];
 }) {
+	const suggestion = item.suggestedArtist;
 	const [title, setTitle] = useState(item.title);
 	const [coverBlob, setCoverBlob] = useState<Blob | null>(item.coverBlob);
-	const [selected, setSelected] = useState<Set<number>>(new Set());
+	// Whether the proposed artist is opted in; on by default.
+	const [linkArtist, setLinkArtist] = useState(true);
 	const [preview, setPreview] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [submitting, setSubmitting] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	// Object-URL preview for the current cover (embedded blob or picked file),
@@ -102,34 +95,33 @@ function ReviewForm({
 		return () => URL.revokeObjectURL(url);
 	}, [coverBlob]);
 
-	const toggle = (id: number) => {
-		setSelected((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
-	};
-
-	/** Validate + confirm the head; returns false (and shows an error) if the
-	 * title is empty. */
-	const confirmHead = (): boolean => {
+	/** Validate + confirm the head; resolves/creates the opted-in artist first.
+	 * Returns false (and shows an error) on any failure. */
+	const confirmHead = async (): Promise<boolean> => {
 		const trimmed = title.trim();
 		if (!trimmed) {
 			setError("A title is required.");
 			return false;
 		}
-		uploadService.confirm(item.id, {
-			title: trimmed,
-			artistIds: [...selected],
-			coverBlob,
-		});
+		const artistIds: number[] = [];
+		if (suggestion && linkArtist) {
+			setSubmitting(true);
+			setError(null);
+			const resolved = await artistService.resolveOrCreate(suggestion);
+			if (!resolved.ok) {
+				setSubmitting(false);
+				setError(`${suggestion.name}: ${resolved.error}`);
+				return false;
+			}
+			artistIds.push(resolved.id);
+		}
+		uploadService.confirm(item.id, { title: trimmed, artistIds, coverBlob });
 		return true;
 	};
 
 	const handleSubmit = (e: FormEvent) => {
 		e.preventDefault();
-		confirmHead();
+		void confirmHead();
 	};
 
 	return (
@@ -198,24 +190,23 @@ function ReviewForm({
 						id="upload-title"
 						autoFocus
 						value={title}
-						onFocus={(e) => e.target.select()}
 						onChange={(e) => setTitle(e.target.value)}
+						disabled={submitting}
 					/>
 				</div>
 			</div>
 
-			<div className="flex flex-col gap-1.5">
-				<span className="text-sm font-medium leading-none">Artists</span>
-				<ArtistMultiSelect
-					artists={artists}
-					selected={selected}
-					onToggle={toggle}
-					className="max-h-48"
-				/>
-				<span className="text-xs text-muted-foreground">
-					{selected.size} selected
-				</span>
-			</div>
+			{suggestion && (
+				<div className="flex flex-col gap-1.5">
+					<span className="text-sm font-medium leading-none">Artist</span>
+					<ArtistSuggestion
+						suggestion={suggestion}
+						checked={linkArtist}
+						disabled={submitting}
+						onCheckedChange={setLinkArtist}
+					/>
+				</div>
+			)}
 
 			{error && (
 				<div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -229,6 +220,7 @@ function ReviewForm({
 					<Button
 						type="button"
 						variant="ghost"
+						disabled={submitting}
 						onClick={() => uploadService.skip(item.id)}
 					>
 						Skip
@@ -237,15 +229,21 @@ function ReviewForm({
 						<Button
 							type="button"
 							variant="outline"
+							disabled={submitting}
 							onClick={() => {
-								if (confirmHead()) uploadService.confirmAll();
+								void confirmHead().then((ok) => {
+									if (ok) void uploadService.confirmAll();
+								});
 							}}
 						>
 							Upload all {remaining}
 						</Button>
 					)}
 				</div>
-				<Button type="submit">Upload</Button>
+				<Button type="submit" disabled={submitting}>
+					{submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+					{submitting ? "Uploading…" : "Upload"}
+				</Button>
 			</DialogFooter>
 		</form>
 	);

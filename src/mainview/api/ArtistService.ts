@@ -3,6 +3,7 @@ import type {
 	EditArtistParams,
 	RemoteArtist,
 } from "../../shared/rpcSchema";
+import { findMatchingArtist } from "@/lib/artistMatch";
 import { CacheBuster } from "@/lib/cacheBuster";
 import { bun } from "./rpc";
 import { sessionService } from "./SessionService";
@@ -94,8 +95,9 @@ export class ArtistService {
 	}
 
 	/**
-	 * Create an artist on the server, then refetch. Returns the outcome
-	 * instead of writing `error` to the snapshot so the create dialog can
+	 * Create an artist on the server, then refetch. The refetch is awaited so
+	 * the new artist is in the snapshot by the time this resolves. Returns the
+	 * outcome instead of writing `error` to the snapshot so the create dialog can
 	 * show the failure inline and stay open.
 	 */
 	async create(
@@ -116,8 +118,41 @@ export class ArtistService {
 			}
 			return { ok: false, error: result.error };
 		}
-		void this.refresh();
+		await this.refresh();
 		return { ok: true };
+	}
+
+	/**
+	 * Resolve a proposed artist (from a URL import) to an existing id, creating
+	 * it first when nothing matches. Fuzzy-matches by name so casing/punctuation/
+	 * near-duplicate variants reuse the existing artist instead of spawning a
+	 * duplicate; only a genuine miss creates a new one (with the fetched avatar).
+	 * Returns the linkable id, or a failure the caller can surface inline.
+	 */
+	async resolveOrCreate(
+		input: CreateArtistParams,
+	): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
+		// The already-loaded list answers the common case. Only a miss is worth a
+		// round-trip: the dialog may have been open a while, and another import
+		// could have created this artist since.
+		const known = findMatchingArtist(input.name, this.snapshot.artists);
+		if (known) return { ok: true, id: known.id };
+		await this.refresh();
+		const existing = findMatchingArtist(input.name, this.snapshot.artists);
+		if (existing) return { ok: true, id: existing.id };
+
+		// The create route returns no id, so the artist has to be located by name
+		// in the list create() refetched — an exact match by now.
+		const created = await this.create(input);
+		if (!created.ok) return created;
+		const now = findMatchingArtist(input.name, this.snapshot.artists);
+		if (!now) {
+			return {
+				ok: false,
+				error: "Artist was created but could not be found afterwards.",
+			};
+		}
+		return { ok: true, id: now.id };
 	}
 
 	/**

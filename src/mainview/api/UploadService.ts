@@ -1,5 +1,7 @@
 import { parseBlob } from "music-metadata";
+import type { ImportedArtist } from "../../shared/rpcSchema";
 import { blobToBase64 } from "@/lib/utils";
+import { artistService } from "./ArtistService";
 import { bun } from "./rpc";
 import { libraryService } from "./LibraryService";
 import { sessionService } from "./SessionService";
@@ -14,9 +16,19 @@ export interface UploadItem {
 }
 
 /**
+ * The artist proposed for a staged upload — currently only produced by URL
+ * imports, where yt-dlp resolves the media's creator. The review dialog offers
+ * it as a one-click link. Kept in the wire shape (base64, not a Blob) because
+ * that is what both consumers want: a `data:` URL for the preview and the raw
+ * base64 for `createArtist`.
+ */
+export type SuggestedArtist = ImportedArtist;
+
+/**
  * A picked/dropped file whose tags have been parsed and that is now awaiting
  * review in the upload dialog. Prefilled from the file's metadata; the user
- * can edit the title, cover and artist links before confirming the upload.
+ * can edit the title and cover before confirming the upload. `suggestedArtist`
+ * is set for URL imports so the dialog can offer to link that artist.
  */
 export interface StagedUpload {
 	id: string;
@@ -29,6 +41,8 @@ export interface StagedUpload {
 	durationMs: number;
 	/** Embedded cover art (common.picture[0]), or null when absent. */
 	coverBlob: Blob | null;
+	/** Artist proposed by a URL import; null for picked/dropped files. */
+	suggestedArtist: SuggestedArtist | null;
 }
 
 /** Immutable snapshot of the whole upload state, consumed by React. */
@@ -58,8 +72,8 @@ export interface ConfirmEdits {
 
 /**
  * Upload queue for picked/dropped audio files. Each file is first parsed and
- * staged for review (cover/title/artists), and only uploaded once the user
- * confirms it in the dialog. Confirmed files are gzipped and POSTed by the bun
+ * staged for review (cover/title, plus a proposed artist for URL imports), and
+ * only uploaded once the user confirms it in the dialog. Confirmed files are gzipped and POSTed by the bun
  * process; uploads run sequentially (one in flight) to bound memory use. There
  * is no local playback: a successful upload triggers a library refresh, so the
  * track re-enters the queue as a server track that streams through the bun
@@ -100,7 +114,10 @@ export class UploadService {
 	 * parsed sequentially and appended as each one is ready, so the dialog opens
 	 * as soon as the first file has been parsed.
 	 */
-	async enqueue(files: Iterable<File>): Promise<void> {
+	async enqueue(
+		files: Iterable<File>,
+		suggestedArtist: SuggestedArtist | null = null,
+	): Promise<void> {
 		const audioFiles = [...files].filter(
 			(file) => file.type.startsWith("audio/") || file.type === "video/mp4",
 		);
@@ -119,6 +136,7 @@ export class UploadService {
 				coverBlob: pic
 					? new Blob([new Uint8Array(pic.data)], { type: pic.format })
 					: null,
+				suggestedArtist,
 			});
 			this.emit();
 		}
@@ -174,13 +192,26 @@ export class UploadService {
 		this.emit();
 	}
 
-	/** Upload every remaining staged file with its prefilled title/cover and no
-	 * artists ("Upload all" button). */
-	confirmAll(): void {
+	/**
+	 * Upload every remaining staged file with its prefilled title and cover
+	 * ("Upload all" button). Each file's proposed artist is still linked — the
+	 * suggestion is opted in by default, so skipping it here would silently drop
+	 * the artist of every file the user didn't review one by one. Resolving is
+	 * best-effort: a failure uploads the track without the artist rather than
+	 * stalling a bulk action behind an error the user can't see.
+	 */
+	async confirmAll(): Promise<void> {
 		for (const staged of [...this.staged]) {
+			let artistIds: number[] = [];
+			if (staged.suggestedArtist) {
+				const resolved = await artistService.resolveOrCreate(
+					staged.suggestedArtist,
+				);
+				if (resolved.ok) artistIds = [resolved.id];
+			}
 			this.confirm(staged.id, {
 				title: staged.title,
-				artistIds: [],
+				artistIds,
 				coverBlob: staged.coverBlob,
 			});
 		}

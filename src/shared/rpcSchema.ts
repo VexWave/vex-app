@@ -220,6 +220,19 @@ export interface DiscardImportParams {
 export type UrlImportStep = "starting" | "downloading" | "converting";
 
 /**
+ * The creator an import resolved (YouTube channel / SoundCloud uploader), which
+ * the upload-review dialog proposes as an artist to link. The image is the
+ * creator's YouTube channel avatar when a best-effort second yt-dlp lookup found
+ * one — SoundCloud imports never carry one. Avatars are small, so the bytes ride
+ * the message as base64 rather than through a proxy URL.
+ */
+export interface ImportedArtist {
+	name: string;
+	imageBase64?: string;
+	imageMime?: string;
+}
+
+/**
  * Pushed by bun while a URL import runs. Like binary installs, the
  * `importFromUrl` request only *starts* the job (a media download would blow
  * `maxRequestTime`), so completion also arrives here. On "finished" the webview
@@ -244,6 +257,8 @@ export type UrlImportProgressMessage =
 			fileName: string;
 			/** Loopback URL serving the finished mp3 to the webview. */
 			fileUrl: string;
+			/** Absent when yt-dlp resolved no creator at all. */
+			artist?: ImportedArtist;
 	  }
 	| { type: "failed"; importId: string; error: string };
 

@@ -1,4 +1,7 @@
-import type { UrlImportProgressMessage } from "../../shared/rpcSchema";
+import type {
+	ImportedArtist,
+	UrlImportProgressMessage,
+} from "../../shared/rpcSchema";
 import { bun, onBunMessage } from "./rpc";
 import { uploadService } from "./UploadService";
 
@@ -125,7 +128,7 @@ export class ImportService {
 				}));
 				break;
 			case "finished":
-				void this.stage(msg.importId, msg.fileName, msg.fileUrl);
+				void this.stage(msg.importId, msg.fileName, msg.fileUrl, msg.artist);
 				break;
 			case "failed":
 				this.fail(msg.importId, msg.error);
@@ -141,6 +144,7 @@ export class ImportService {
 		jobId: string,
 		fileName: string,
 		fileUrl: string,
+		artist: ImportedArtist | undefined,
 	): Promise<void> {
 		this.patch(jobId, (job) => ({ ...job, step: "staging" }));
 		try {
@@ -148,7 +152,8 @@ export class ImportService {
 			if (!res.ok) throw new Error(`Fetching the import failed (${res.status})`);
 			const blob = await res.blob();
 			const file = new File([blob], fileName, { type: "audio/mpeg" });
-			await uploadService.enqueue([file]);
+			// yt-dlp resolved the creator → propose them in the review dialog.
+			await uploadService.enqueue([file], artist ?? null);
 			this.dismiss(jobId);
 			// Discard only after a successful hand-off — a staging failure must
 			// not destroy the finished download (the next startup sweeps it).

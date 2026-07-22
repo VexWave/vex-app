@@ -16,6 +16,14 @@ import { describeError, fileExists, type BinaryManager } from "./BinaryManager";
 const TITLE_MARK = "VEX>T ";
 const DOWNLOAD_MARK = "VEX>D ";
 const POSTPROCESS_MARK = "VEX>P";
+const ARTIST_MARK = "VEX>A "; // the media's creator (channel/uploader)
+const CHANNEL_URL_MARK = "VEX>U "; // the creator's page, for the avatar lookup
+const AVATAR_MARK = "VEX>I "; // %(thumbnails)j of the creator's channel page
+
+/** Largest avatar we'll pull back over the RPC message. */
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+/** Cap on the whole avatar lookup so it can't stall an otherwise-done import. */
+const AVATAR_LOOKUP_TIMEOUT_MS = 20_000;
 
 /** Only ids the webview minted with crypto.randomUUID() touch the filesystem. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -23,6 +31,19 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 interface ImportJob {
 	id: string;
 	url: string;
+}
+
+/** Mutable metadata collected from yt-dlp's marker lines during a job. */
+interface JobState {
+	title: string | undefined;
+	/** The media's creator: YouTube channel or SoundCloud uploader. */
+	artist: string | undefined;
+	/**
+	 * The creator's avatar, started as soon as their page URL is printed (before
+	 * the audio download begins) so the lookup overlaps it instead of delaying
+	 * the finished message. Null while unstarted or for a non-YouTube creator.
+	 */
+	avatar: Promise<{ base64: string; mime: string } | null> | null;
 }
 
 /**
@@ -148,6 +169,11 @@ export class UrlImporter {
 		const binDir = this.binaries.binDir;
 
 		const args = [
+			// Force UTF-8 stdout: yt-dlp otherwise encodes --print output in the
+			// Windows console codepage, which mangles accents in titles and artist
+			// names. yt-dlp's own flag works where PYTHONIOENCODING doesn't (the
+			// binary is frozen).
+			"--encoding", "UTF-8",
 			// A URL that names both a video and a playlist means the video; a pure
 			// playlist/set URL imports its first track (one job = one file).
 			"--no-playlist",
@@ -163,33 +189,37 @@ export class UrlImporter {
 			`download:${DOWNLOAD_MARK}%(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s`,
 			"--progress-template", `postprocess:${POSTPROCESS_MARK}`,
 			"--print", `before_dl:${TITLE_MARK}%(title)s`,
+			// The single artist to propose: whoever published the media. Platform
+			// "artist" metadata is only a fallback — it packs co-credits into one
+			// string in a format that differs per platform.
+			"--print", `before_dl:${ARTIST_MARK}%(channel,uploader,artist,creator)s`,
+			"--print", `before_dl:${CHANNEL_URL_MARK}%(channel_url,uploader_url)s`,
 			"-o", path.join(this.importsDir, `${job.id}.%(ext)s`),
 			job.url,
 		];
 
-		// yt-dlp discovers deno (and ffprobe) by scanning PATH. The existing key
-		// must be overwritten in place: a GUI-launched app inherits "Path", and
-		// spreading plus a new "PATH" key would put BOTH in the child's block —
-		// with the original (bin-dir-less) one winning the %PATH% lookup.
-		const env: Record<string, string | undefined> = { ...process.env };
-		const pathKey =
-			Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
-		env[pathKey] = binDir + path.delimiter + (env[pathKey] ?? "");
-
 		const proc = Bun.spawn([this.binaries.ytDlpPath(), ...args], {
-			env,
+			env: this.childEnv(binDir),
 			stdout: "pipe",
 			stderr: "pipe",
 		});
 
-		const state = { title: undefined as string | undefined };
+		const state: JobState = {
+			title: undefined,
+			artist: undefined,
+			avatar: null,
+		};
 		const stderrTail = this.collectStderr(proc.stderr);
-		await this.parseStdout(proc.stdout, job.id, state);
+		await this.parseStdout(proc.stdout, job.id, state, binDir);
 		const exitCode = await proc.exited;
 
 		if (exitCode !== 0 || !(await fileExists(outPath))) {
 			throw new Error(await describeYtDlpFailure(exitCode, stderrTail));
 		}
+
+		// Started back at before_dl, so by now it has usually long resolved.
+		const name = cleanArtistName(state.artist);
+		const avatar = name ? await state.avatar : null;
 
 		this.finishedFiles.set(job.id, outPath);
 		this.sendProgress({
@@ -197,14 +227,88 @@ export class UrlImporter {
 			importId: job.id,
 			fileName: `${sanitizeFileName(state.title ?? "Imported track")}.mp3`,
 			fileUrl: this.fileUrlFor(job.id),
+			artist: name
+				? { name, imageBase64: avatar?.base64, imageMime: avatar?.mime }
+				: undefined,
 		});
+	}
+
+	/**
+	 * The creator's avatar, as YouTube itself serves it — no third-party lookup.
+	 * It lives on the channel's "/about" page (a bare channel URL resolves to the
+	 * first video's thumbnails instead), so this is a second, short yt-dlp run
+	 * with the entry list suppressed. SoundCloud exposes no avatar through yt-dlp
+	 * at all, so a non-YouTube creator page returns null without spawning
+	 * anything. Purely decorative, so every failure — timeout, no avatar, an
+	 * oversized or non-image response — resolves to null rather than throwing.
+	 */
+	private async fetchChannelAvatar(
+		channelUrl: string,
+		binDir: string,
+	): Promise<{ base64: string; mime: string } | null> {
+		const aboutUrl = youTubeAboutUrl(channelUrl);
+		if (!aboutUrl) return null;
+
+		const proc = Bun.spawn(
+			[
+				this.binaries.ytDlpPath(),
+				"--encoding", "UTF-8",
+				// Metadata only: --playlist-items 0 matches no entry, so nothing is
+				// resolved beyond the channel page the `playlist:` print reads.
+				"--flat-playlist", "--playlist-items", "0",
+				"--print", `playlist:${AVATAR_MARK}%(thumbnails)j`,
+				aboutUrl,
+			],
+			{ env: this.childEnv(binDir), stdout: "pipe", stderr: "ignore" },
+		);
+		const timeout = setTimeout(() => proc.kill(), AVATAR_LOOKUP_TIMEOUT_MS);
+		let stdout: string;
+		try {
+			stdout = await new Response(proc.stdout).text();
+			await proc.exited;
+		} finally {
+			clearTimeout(timeout);
+		}
+
+		const line = stdout
+			.split(/\r?\n/)
+			.find((l) => l.startsWith(AVATAR_MARK));
+		if (!line) return null;
+		const imageUrl = pickAvatarUrl(line.slice(AVATAR_MARK.length));
+		if (!imageUrl) return null;
+
+		const res = await fetch(imageUrl, {
+			signal: AbortSignal.timeout(AVATAR_LOOKUP_TIMEOUT_MS),
+		});
+		if (!res.ok) return null;
+		const mime = res.headers.get("content-type")?.split(";")[0]?.trim();
+		if (!mime?.startsWith("image/")) return null;
+		const bytes = new Uint8Array(await res.arrayBuffer());
+		if (bytes.byteLength === 0 || bytes.byteLength > MAX_AVATAR_BYTES) return null;
+		return { base64: Buffer.from(bytes).toString("base64"), mime };
+	}
+
+	/**
+	 * Child env with the managed bin dir prepended to PATH. yt-dlp discovers
+	 * deno (and ffprobe) by scanning PATH. The existing key must be overwritten
+	 * in place: a GUI-launched app inherits "Path", and spreading plus a new
+	 * "PATH" key would put BOTH in the child's block — with the original
+	 * (bin-dir-less) one winning the %PATH% lookup.
+	 */
+	private childEnv(binDir: string): Record<string, string | undefined> {
+		const env: Record<string, string | undefined> = { ...process.env };
+		const pathKey =
+			Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
+		env[pathKey] = binDir + path.delimiter + (env[pathKey] ?? "");
+		return env;
 	}
 
 	/** Streams stdout, turning marker lines into throttled progress messages. */
 	private async parseStdout(
 		stdout: ReadableStream<Uint8Array>,
 		importId: string,
-		state: { title: string | undefined },
+		state: JobState,
+		binDir: string,
 	): Promise<void> {
 		let lastEmit = 0;
 		const emit = (msg: UrlImportProgressMessage, always = false) => {
@@ -227,6 +331,16 @@ export class UrlImporter {
 			if (line.startsWith(TITLE_MARK)) {
 				state.title = line.slice(TITLE_MARK.length).trim() || undefined;
 				progress("starting", undefined, true);
+			} else if (line.startsWith(ARTIST_MARK)) {
+				state.artist = cleanField(line.slice(ARTIST_MARK.length));
+			} else if (line.startsWith(CHANNEL_URL_MARK)) {
+				const channelUrl = cleanField(line.slice(CHANNEL_URL_MARK.length));
+				// Kicked off here rather than at the end of the job so it runs
+				// during the download; .catch keeps it from ever rejecting while
+				// nothing is awaiting it yet.
+				state.avatar = channelUrl
+					? this.fetchChannelAvatar(channelUrl, binDir).catch(() => null)
+					: null;
 			} else if (line.startsWith(DOWNLOAD_MARK)) {
 				const [received, total, estimate] = line
 					.slice(DOWNLOAD_MARK.length)
@@ -249,6 +363,60 @@ export class UrlImporter {
 			() => "",
 		);
 	}
+}
+
+/** Trim a printed field, mapping yt-dlp's "NA" / empty to undefined. */
+function cleanField(raw: string): string | undefined {
+	const value = raw.trim();
+	return value && value !== "NA" ? value : undefined;
+}
+
+/**
+ * Like cleanField, but also drops YouTube's auto-generated " - Topic" suffix on
+ * artist channel names so the proposed artist matches how they're stored.
+ */
+function cleanArtistName(raw: string | undefined): string | undefined {
+	return cleanField(raw ?? "")?.replace(/\s*-\s*Topic$/i, "").trim() || undefined;
+}
+
+/** The "/about" page of a YouTube creator URL; null for any other host. */
+function youTubeAboutUrl(channelUrl: string): string | null {
+	let url: URL;
+	try {
+		url = new URL(channelUrl);
+	} catch {
+		return null;
+	}
+	const host = url.hostname.toLowerCase();
+	if (host !== "youtube.com" && !host.endsWith(".youtube.com")) return null;
+	url.pathname = `${url.pathname.replace(/\/+$/, "")}/about`;
+	return url.toString();
+}
+
+/**
+ * The avatar URL out of a channel page's %(thumbnails)j. YouTube tags it
+ * "avatar_uncropped" and also lists it by index; the size fallback exists so a
+ * renamed/dropped tag degrades to the right image instead of to none — banners
+ * are the only other thumbnails a channel carries, and they are never square.
+ */
+function pickAvatarUrl(rawJson: string): string | undefined {
+	let thumbnails: { id?: string; url?: string; width?: number; height?: number }[];
+	try {
+		const parsed = JSON.parse(rawJson.trim());
+		if (!Array.isArray(parsed)) return undefined;
+		thumbnails = parsed.filter((t) => typeof t?.url === "string");
+	} catch {
+		return undefined;
+	}
+	const tagged = thumbnails.find((t) => t.id === "avatar_uncropped");
+	if (tagged) return tagged.url;
+	let best: { url?: string; width?: number } | undefined;
+	for (const thumb of thumbnails) {
+		const { width, height } = thumb;
+		if (!width || !height || width !== height) continue;
+		if (!best || width > (best.width ?? 0)) best = thumb;
+	}
+	return best?.url;
 }
 
 /** yt-dlp prints "NA" (or nothing) for unknown fields, and floats for bytes. */
