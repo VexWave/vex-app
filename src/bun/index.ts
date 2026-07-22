@@ -46,6 +46,9 @@ const streamProxy: StreamProxy = new StreamProxy(
 	// Forward reference: import files are only requested after an import
 	// finished, so `importer` exists long before this resolver ever runs.
 	(importId) => importer.filePathFor(importId),
+	// Same forward reference: the cache can only change after a stream request,
+	// which requires a login, which requires the RPC.
+	(trackIds) => rpc.send.trackCacheChanged({ trackIds }),
 );
 
 // Same forward-reference pattern as StreamProxy: progress messages only flow
@@ -71,7 +74,11 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 					(serverId) => streamProxy.urlForTrack(serverId),
 					(serverId) => streamProxy.urlForTrackImage(serverId),
 				),
-			deleteTrack: (params) => api.deleteTrack(params),
+			deleteTrack: async (params) => {
+				const result = await api.deleteTrack(params);
+				if (result.ok) streamProxy.evictTrack(params.id);
+				return result;
+			},
 			editTrack: (params) => api.editTrack(params),
 			listArtists: () =>
 				api.listArtists((artistId) => streamProxy.urlForArtistImage(artistId)),
@@ -98,6 +105,7 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 						}
 					: importer.start(params),
 			discardImport: (params) => importer.discard(params),
+			getCachedTracks: () => ({ trackIds: streamProxy.cachedTrackIds() }),
 		},
 	},
 });

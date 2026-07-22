@@ -1,6 +1,7 @@
 import { memo, useCallback, useState } from "react";
 import {
 	AlertCircle,
+	CircleArrowDown,
 	EllipsisVertical,
 	Link2,
 	Loader2,
@@ -32,6 +33,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useImports } from "@/hooks/useImports";
 import { usePlayer } from "@/hooks/usePlayer";
+import { useTrackCache } from "@/hooks/useTrackCache";
 import { useUploads } from "@/hooks/useUploads";
 import { cn, formatMb, formatTime } from "@/lib/utils";
 import type { ImportJob } from "@/api/ImportService";
@@ -172,6 +174,23 @@ function NowPlayingBars() {
 }
 
 /**
+ * Marks a track whose full audio sits in the bun memory cache — replaying or
+ * seeking through it is instant, no server round-trip.
+ */
+function CachedBadge() {
+	return (
+		<span
+			className="shrink-0 text-primary/70"
+			title="Downloaded — plays instantly"
+			aria-label="Downloaded — plays instantly"
+			role="img"
+		>
+			<CircleArrowDown className="h-3.5 w-3.5" />
+		</span>
+	);
+}
+
+/**
  * Open the row's context menu from a left-click on the kebab button: Radix's
  * ContextMenuTrigger listens for `contextmenu`, so we synthesize one anchored
  * at the button. Native right-click on the row keeps working unchanged.
@@ -191,14 +210,15 @@ function openRowMenu(button: HTMLElement) {
  * One playable library row. Memoized: TrackList re-renders on every player
  * timeupdate and on every import/upload progress tick, and without this each
  * of those rebuilt every row (incl. a Radix ContextMenu apiece). All props are
- * referentially stable except the two booleans, which only change for the
- * rows entering/leaving the current-track state.
+ * referentially stable except the booleans, which only change for rows
+ * entering/leaving the current-track or cached state.
  */
 const TrackRow = memo(function TrackRow({
 	track,
 	index,
 	isCurrent,
 	showBars,
+	isCached,
 	onPlay,
 	onEdit,
 	onDelete,
@@ -207,6 +227,7 @@ const TrackRow = memo(function TrackRow({
 	index: number;
 	isCurrent: boolean;
 	showBars: boolean;
+	isCached: boolean;
 	onPlay: (index: number) => void;
 	onEdit: (track: Track) => void;
 	onDelete: (track: Track) => void;
@@ -262,6 +283,7 @@ const TrackRow = memo(function TrackRow({
 						</p>
 					</div>
 					{showBars && <NowPlayingBars />}
+					{isCached && <CachedBadge />}
 					<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
 						{formatTime(track.durationSec)}
 					</span>
@@ -301,6 +323,7 @@ export function TrackList() {
 	const { state, controller } = usePlayer();
 	const { uploads } = useUploads();
 	const { imports } = useImports();
+	const cachedIds = useTrackCache();
 	// Both dialogs are rendered once for the whole list; the context menu sets
 	// which track they target.
 	const [editTrack, setEditTrack] = useState<Track | null>(null);
@@ -340,19 +363,24 @@ export function TrackList() {
 							<PendingUploadRow upload={upload} />
 						</li>
 					))}
-					{state.tracks.map((track, index) => (
-						<li key={track.id}>
-							<TrackRow
-								track={track}
-								index={index}
-								isCurrent={index === state.currentIndex}
-								showBars={index === state.currentIndex && state.isPlaying}
-								onPlay={playTrackAt}
-								onEdit={setEditTrack}
-								onDelete={setDeleteTrack}
-							/>
-						</li>
-					))}
+					{state.tracks.map((track, index) => {
+						// The cache reports server ids; map the queue id back to one.
+						const serverId = libraryService.getRemote(track.id)?.id;
+						return (
+							<li key={track.id}>
+								<TrackRow
+									track={track}
+									index={index}
+									isCurrent={index === state.currentIndex}
+									showBars={index === state.currentIndex && state.isPlaying}
+									isCached={serverId !== undefined && cachedIds.has(serverId)}
+									onPlay={playTrackAt}
+									onEdit={setEditTrack}
+									onDelete={setDeleteTrack}
+								/>
+							</li>
+						);
+					})}
 				</ul>
 			</ScrollArea>
 
