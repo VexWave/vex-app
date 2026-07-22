@@ -9,17 +9,35 @@ import {
 	Volume2,
 	VolumeX,
 } from "lucide-react";
+import { CoverBackdrop } from "@/components/CoverBackdrop";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { usePlayer } from "@/hooks/usePlayer";
 import { cn, formatTime } from "@/lib/utils";
+
+/**
+ * Hover treatment for the bar's ghost buttons. The stock ghost variant fills
+ * with an opaque `bg-accent`, which lands as a flat grey patch on top of the
+ * cover backdrop. A translucent tint of the foreground colour lifts the button
+ * out of whatever is behind it instead, and stays theme-correct: near-white on
+ * the dark theme, near-black on the light one.
+ */
+const BAR_GHOST =
+	"hover:bg-foreground/10 hover:text-foreground active:bg-foreground/15";
 
 export function PlayerBar() {
 	const { state, controller } = usePlayer();
 	const hasTrack = state.currentTrack !== null;
 
 	return (
-		<footer className="grid grid-cols-[1fr_2fr_1fr] items-center gap-4 border-t bg-card px-4 py-3">
+		// `relative isolate` scopes the backdrop's negative z-index to this bar.
+		<footer className="relative isolate grid grid-cols-[1fr_2fr_1fr] items-center gap-4 border-t bg-card px-4 py-3">
+			<CoverBackdrop
+				coverUrl={state.currentTrack?.coverUrl}
+				controller={controller}
+				isPlaying={state.isPlaying}
+			/>
+
 			{/* Current track mini info */}
 			<div className="flex min-w-0 items-center gap-3">
 				<div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
@@ -52,6 +70,7 @@ export function PlayerBar() {
 						aria-label="Previous track"
 						disabled={!hasTrack}
 						onClick={() => controller.previous()}
+						className={BAR_GHOST}
 					>
 						<SkipBack className="h-5 w-5" />
 					</Button>
@@ -74,6 +93,7 @@ export function PlayerBar() {
 						aria-label="Next track"
 						disabled={!hasTrack}
 						onClick={() => controller.next()}
+						className={BAR_GHOST}
 					>
 						<SkipForward className="h-5 w-5" />
 					</Button>
@@ -83,6 +103,7 @@ export function PlayerBar() {
 						aria-label={`Repeat: ${state.repeatMode}`}
 						onClick={() => controller.cycleRepeatMode()}
 						className={cn(
+							BAR_GHOST,
 							state.repeatMode === "off"
 								? "text-muted-foreground"
 								: "text-primary",
@@ -120,6 +141,7 @@ export function PlayerBar() {
 					size="icon"
 					aria-label={state.muted ? "Unmute" : "Mute"}
 					onClick={() => controller.toggleMute()}
+					className={BAR_GHOST}
 				>
 					{state.muted || state.volume === 0 ? (
 						<VolumeX className="h-5 w-5" />

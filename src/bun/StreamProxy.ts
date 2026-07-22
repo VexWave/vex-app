@@ -132,29 +132,57 @@ export class StreamProxy {
 		return this.cache.ids();
 	}
 
+	/**
+	 * Every response carries `access-control-allow-origin: *`, because the
+	 * webview origin (localhost:5173 in dev, views:// in prod) never matches
+	 * this loopback origin. Two of the three consumers need it:
+	 *
+	 * - import files, read with a programmatic fetch() — CORS-checked, so
+	 *   without the header even the error responses are hidden from the caller;
+	 * - track audio, because the <audio> element is marked crossOrigin so Web
+	 *   Audio will expose its samples to the backdrop glow. That makes the
+	 *   media load CORS-checked too, including every Range follow-up — a
+	 *   missing header there fails playback outright, not just the glow.
+	 *
+	 * <img> loads don't need it, but are cheaper to cover than to special-case.
+	 * The path secret already gates access, so `*` gives up nothing.
+	 */
 	private async handle(req: Request): Promise<Response> {
+		// Chromium's media loader only sends CORS-safelisted headers, so no
+		// preflight is expected — answered anyway so a stricter client can't
+		// silently lose playback.
+		if (req.method === "OPTIONS") {
+			return new Response(null, {
+				status: 204,
+				headers: {
+					"access-control-allow-origin": "*",
+					"access-control-allow-methods": "GET, OPTIONS",
+					"access-control-allow-headers": "range",
+					"access-control-max-age": "86400",
+				},
+			});
+		}
+		const response = await this.route(req);
+		response.headers.set("access-control-allow-origin", "*");
+		return response;
+	}
+
+	private async route(req: Request): Promise<Response> {
 		const { pathname } = new URL(req.url);
 
 		// Local import files short-circuit before the session check — they never
 		// touch the backend, so a live session is irrelevant.
 		const importMatch = pathname.match(/^\/([^/]+)\/import\/([^/]+)$/);
 		if (importMatch && importMatch[1] === this.secret) {
-			// Unlike the audio/img consumers (no-cors element loads), imports are
-			// read with a programmatic fetch(), which IS CORS-checked — and the
-			// webview origin (localhost:5173 in dev, views:// in prod) never
-			// matches this loopback origin. Without the header every response,
-			// success or error, is blocked before the caller can see it. The
-			// path secret already gates access, so "*" gives up nothing.
-			const cors = { "access-control-allow-origin": "*" };
 			if (req.method !== "GET") {
-				return new Response("method not allowed", { status: 405, headers: cors });
+				return new Response("method not allowed", { status: 405 });
 			}
 			const filePath = this.resolveImportFile?.(importMatch[2]) ?? null;
 			if (!filePath) {
-				return new Response("not found", { status: 404, headers: cors });
+				return new Response("not found", { status: 404 });
 			}
 			return new Response(Bun.file(filePath), {
-				headers: { ...cors, "content-type": "audio/mpeg" },
+				headers: { "content-type": "audio/mpeg" },
 			});
 		}
 		// The audio regex is `$`-anchored on the bare id, so a `/image` suffix

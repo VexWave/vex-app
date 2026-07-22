@@ -63,6 +63,15 @@ export class PlayerController {
 
 	getSnapshot = (): PlayerState => this.snapshot;
 
+	/**
+	 * Live frequency analyser for the backdrop glow, or null until playback has
+	 * started. Deliberately not part of the state snapshot — it's a mutable
+	 * audio node read per animation frame, not something React should diff.
+	 */
+	get analyser(): AnalyserNode | null {
+		return this.player.analyser;
+	}
+
 	// --- queue management ---
 
 	addTracks(tracks: Track[]): void {
