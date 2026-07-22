@@ -1,5 +1,6 @@
-import { ListMusic, Users } from "lucide-react";
+import { ListMusic, LogOut, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useSession } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 
 /** The views the main content area can show; the sidebar switches them. */
@@ -17,8 +18,9 @@ export function Sidebar({
 	view: MainView;
 	onViewChange: (view: MainView) => void;
 }) {
+	const { service } = useSession();
 	return (
-		<div className="h-full rounded-xl border bg-card">
+		<div className="flex h-full flex-col rounded-xl border bg-card">
 			<nav className="flex flex-col gap-1 p-2" aria-label="Main">
 				{NAV_ITEMS.map((item) => {
 					const active = item.view === view;
@@ -39,6 +41,16 @@ export function Sidebar({
 					);
 				})}
 			</nav>
+			{/* Pinned to the bottom; logout just drops the local token and returns
+			    to the login screen (the server session isn't revoked). */}
+			<Button
+				variant="ghost"
+				className="mx-2 mb-2 mt-auto justify-start text-muted-foreground"
+				onClick={() => void service.logout()}
+			>
+				<LogOut className="h-4 w-4" />
+				Log out
+			</Button>
 		</div>
 	);
 }

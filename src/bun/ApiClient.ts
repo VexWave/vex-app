@@ -9,6 +9,8 @@ import type {
 	ListArtistsResult,
 	ListTracksResult,
 	LoginParams,
+	LoginResult,
+	RestoreSessionParams,
 	RpcResult,
 	UploadTrackParams,
 } from "../shared/rpcSchema";
@@ -23,9 +25,10 @@ function createClient(baseUrl: string, token?: string) {
 }
 
 /**
- * All server I/O lives here in the bun process: no webview CORS issues,
- * the session token never leaves bun memory, and Bun.gzipSync is available
- * for track compression.
+ * All server I/O lives here in the bun process: no webview CORS issues, the
+ * session token is used only from here, and Bun.gzipSync is available for track
+ * compression. The token is handed to the webview once (on login) purely so it
+ * can be persisted for restart; see `login`/`restoreSession`.
  */
 export class ApiClient {
 	// Single source of truth for auth state; the client is derived from
@@ -48,7 +51,19 @@ export class ApiClient {
 		this.session = null;
 	}
 
-	async login(params: LoginParams): Promise<RpcResult> {
+	/**
+	 * Re-establishes a session from a token the webview persisted, without a
+	 * login round-trip. The token isn't checked here — the next authenticated
+	 * call validates it (a 401 there falls back to the login screen).
+	 */
+	restoreSession(params: RestoreSessionParams): RpcResult {
+		const { host, port, token } = params;
+		const baseUrl = `http://${host}:${port}`;
+		this.session = { baseUrl, token, client: createClient(baseUrl, token) };
+		return { ok: true };
+	}
+
+	async login(params: LoginParams): Promise<LoginResult> {
 		const { host, port, username, password } = params;
 		const baseUrl = `http://${host}:${port}`;
 		this.expireSession();
@@ -59,7 +74,7 @@ export class ApiClient {
 			if (res.status === 200) {
 				const token = res.body.token;
 				this.session = { baseUrl, token, client: createClient(baseUrl, token) };
-				return { ok: true };
+				return { ok: true, token };
 			}
 			return {
 				ok: false,

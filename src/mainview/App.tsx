@@ -40,6 +40,16 @@ function App() {
 	// exist before anything else, so a fresh machine sets up first.
 	if (binaries.phase !== "ready") return <BinarySetupScreen />;
 
+	// A persisted token is still being replayed — show a splash rather than
+	// flashing the login form before the restore resolves.
+	if (session.restoring) {
+		return (
+			<div className="flex h-screen items-center justify-center bg-background text-foreground">
+				<Logo className="h-14 w-14 animate-pulse" />
+			</div>
+		);
+	}
+
 	// Blocking login: the player UI is only reachable with a live session.
 	// The player singleton survives this unmount, so a mid-session 401
 	// doesn't stop audio or lose the queue.

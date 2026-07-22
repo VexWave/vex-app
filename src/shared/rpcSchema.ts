@@ -11,6 +11,26 @@ export interface LoginParams {
 }
 
 /**
+ * Login hands the session token back to the webview so it can be persisted in
+ * localStorage and replayed on the next startup (see `restoreSession`). This is
+ * the one place the token crosses into the webview; every other server call
+ * still runs bun-side with the token held in ApiClient.
+ */
+export type LoginResult = { ok: true; token: string } | RpcFailure;
+
+/**
+ * Re-establishes the bun-side session from a token the webview persisted, with
+ * no re-authentication round-trip. The token isn't verified here — the first
+ * authenticated call (library refresh) validates it and a 401 falls back to the
+ * login screen.
+ */
+export interface RestoreSessionParams {
+	host: string;
+	port: number;
+	token: string;
+}
+
+/**
  * Failed handler results cross the RPC boundary as plain values instead of
  * thrown errors so the HTTP status (401 detection) survives intact.
  */
@@ -230,7 +250,15 @@ export type UrlImportProgressMessage =
 export type PlayerRPC = {
 	bun: RPCSchema<{
 		requests: {
-			login: { params: LoginParams; response: RpcResult };
+			login: { params: LoginParams; response: LoginResult };
+			/**
+			 * Restores a bun-side session from a persisted token (no re-auth).
+			 * Always succeeds unless the RPC transport fails; token validity is
+			 * checked lazily by the first authenticated call.
+			 */
+			restoreSession: { params: RestoreSessionParams; response: RpcResult };
+			/** Drops the bun-side session (token + client); no server call. */
+			logout: { params: undefined; response: RpcResult };
 			uploadTrack: { params: UploadTrackParams; response: RpcResult };
 			deleteTrack: { params: DeleteTrackParams; response: RpcResult };
 			editTrack: { params: EditTrackParams; response: RpcResult };

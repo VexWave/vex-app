@@ -68,6 +68,15 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 	handlers: {
 		requests: {
 			login: (params) => api.login(params),
+			restoreSession: (params) => api.restoreSession(params),
+			// Local sign-out: forget the session bun-side. The server token isn't
+			// revoked (the webview just drops its persisted copy); the cache is
+			// left intact so re-logging in with the same token keeps its downloads
+			// (StreamProxy wipes it only on an auth-key change).
+			logout: () => {
+				api.expireSession();
+				return { ok: true as const };
+			},
 			uploadTrack: (params) => api.uploadTrack(params),
 			listTracks: () =>
 				api.listTracks(
