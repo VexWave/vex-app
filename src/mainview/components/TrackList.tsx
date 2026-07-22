@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
 	AlertCircle,
 	CircleArrowDown,
@@ -8,6 +8,7 @@ import {
 	Music,
 	Pencil,
 	Play,
+	Search,
 	Trash2,
 	X,
 } from "lucide-react";
@@ -31,7 +32,9 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { useImports } from "@/hooks/useImports";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useTrackCache } from "@/hooks/useTrackCache";
@@ -49,8 +52,10 @@ import type { Track } from "@/player/types";
 function PendingUploadRow({ upload }: { upload: UploadItem }) {
 	const failed = upload.status === "error";
 	return (
-		<div className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left opacity-80">
-			<div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-inset ring-border/60">
+		<div className="flex w-full items-center gap-3 rounded-lg py-2 pl-3 pr-2.5 text-left opacity-80">
+			{/* Spacer matching the track rows' index column, so covers line up. */}
+			<span className="w-5 shrink-0" aria-hidden="true" />
+			<div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted shadow-sm ring-1 ring-inset ring-border/60">
 				<Music className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
 			</div>
 			<div className="min-w-0 flex-1">
@@ -115,8 +120,10 @@ function PendingImportRow({ job }: { job: ImportJob }) {
 			? Math.min(100, (job.receivedBytes / job.totalBytes) * 100)
 			: null;
 	return (
-		<div className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left opacity-80">
-			<div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-inset ring-border/60">
+		<div className="flex w-full items-center gap-3 rounded-lg py-2 pl-3 pr-2.5 text-left opacity-80">
+			{/* Spacer matching the track rows' index column, so covers line up. */}
+			<span className="w-5 shrink-0" aria-hidden="true" />
+			<div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted shadow-sm ring-1 ring-inset ring-border/60">
 				<Link2 className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
 			</div>
 			<div className="min-w-0 flex-1">
@@ -258,13 +265,25 @@ const TrackRow = memo(function TrackRow({
 						}
 					}}
 					className={cn(
-						"group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors",
+						"group relative flex w-full cursor-pointer items-center gap-3 rounded-lg py-2 pl-3 pr-2.5 text-left transition-colors",
 						isCurrent ? "bg-accent" : "hover:bg-accent/60",
 					)}
 				>
+					{/* Same accent rail the sidebar uses for its active item. */}
+					<span
+						aria-hidden="true"
+						className={cn(
+							"absolute left-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-r-full bg-primary transition-opacity",
+							isCurrent ? "opacity-100" : "opacity-0",
+						)}
+					/>
+					{/* Queue position, replaced by the equalizer on the playing row. */}
+					<span className="flex w-5 shrink-0 justify-center text-xs tabular-nums text-muted-foreground">
+						{showBars ? <NowPlayingBars /> : index + 1}
+					</span>
 					<div
 						className={cn(
-							"relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-inset ring-border/60 transition-shadow",
+							"relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted shadow-sm ring-1 ring-inset ring-border/60 transition-shadow",
 							isCurrent && "ring-primary/40",
 						)}
 					>
@@ -292,9 +311,9 @@ const TrackRow = memo(function TrackRow({
 						</p>
 						<p className="truncate text-xs text-muted-foreground">
 							{track.artist ?? "Unknown artist"}
+							{track.album ? ` · ${track.album}` : ""}
 						</p>
 					</div>
-					{showBars && <NowPlayingBars />}
 					{isCached && <CachedBadge />}
 					<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
 						{formatTime(track.durationSec)}
@@ -331,6 +350,13 @@ const TrackRow = memo(function TrackRow({
 	);
 });
 
+/** Case-insensitive "does any of these fields contain the query" test. */
+function matches(query: string, ...fields: (string | undefined)[]): boolean {
+	if (!query) return true;
+	const needle = query.toLowerCase();
+	return fields.some((field) => field?.toLowerCase().includes(needle));
+}
+
 export function TrackList() {
 	const { state, controller } = usePlayer();
 	const { uploads } = useUploads();
@@ -340,61 +366,127 @@ export function TrackList() {
 	// which track they target.
 	const [editTrack, setEditTrack] = useState<Track | null>(null);
 	const [deleteTrack, setDeleteTrack] = useState<Track | null>(null);
+	// Purely a view filter over the queue — it never reorders or trims the
+	// queue itself, so playback and the numbering keep using the queue index.
+	const [query, setQuery] = useState("");
 	// Stable identity so it never busts TrackRow's memo.
 	const playTrackAt = useCallback(
 		(index: number) => controller.playTrackAt(index),
 		[controller],
 	);
 
-	if (
-		state.tracks.length === 0 &&
-		uploads.length === 0 &&
-		imports.length === 0
-	) {
-		return (
-			<div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-				<Music className="h-12 w-12" />
-				<p className="text-sm">
-					Your queue is empty — add songs or drop audio files anywhere.
-				</p>
-			</div>
-		);
-	}
+	const totalSec = useMemo(
+		() => state.tracks.reduce((sum, track) => sum + track.durationSec, 0),
+		[state.tracks],
+	);
+	// Pair each track with its queue index *before* filtering: the row plays
+	// `index`, so a filtered-list position would start the wrong track.
+	const visible = useMemo(
+		() =>
+			state.tracks
+				.map((track, index) => ({ track, index }))
+				.filter(({ track }) =>
+					matches(query, track.title, track.artist, track.album),
+				),
+		[state.tracks, query],
+	);
+	const visibleImports = imports.filter((job) =>
+		matches(query, job.title ?? undefined, job.url),
+	);
+	const visibleUploads = uploads.filter((upload) =>
+		matches(query, upload.title),
+	);
+
+	const isEmpty =
+		state.tracks.length === 0 && uploads.length === 0 && imports.length === 0;
+	const noMatches =
+		!isEmpty &&
+		visible.length === 0 &&
+		visibleImports.length === 0 &&
+		visibleUploads.length === 0;
 
 	return (
-		<>
-			<ScrollArea className="h-full">
-				<ul className="flex flex-col gap-1 p-2">
-					{imports.map((job) => (
-						<li key={job.id}>
-							<PendingImportRow job={job} />
-						</li>
-					))}
-					{uploads.map((upload) => (
-						<li key={upload.id}>
-							<PendingUploadRow upload={upload} />
-						</li>
-					))}
-					{state.tracks.map((track, index) => {
-						// The cache reports server ids; map the queue id back to one.
-						const serverId = libraryService.getRemote(track.id)?.id;
-						return (
-							<li key={track.id}>
-								<TrackRow
-									track={track}
-									index={index}
-									isCurrent={index === state.currentIndex}
-									showBars={index === state.currentIndex && state.isPlaying}
-									isCached={serverId !== undefined && cachedIds.has(serverId)}
-									onPlay={playTrackAt}
-									onEdit={setEditTrack}
-									onDelete={setDeleteTrack}
-								/>
+		<div className="flex h-full flex-col">
+			<div className="flex items-center gap-3 px-4 py-2.5">
+				<h2 className="shrink-0 text-sm font-semibold">Library</h2>
+				{state.tracks.length > 0 && (
+					<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+						{state.tracks.length}{" "}
+						{state.tracks.length === 1 ? "track" : "tracks"} ·{" "}
+						{formatTime(totalSec)}
+					</span>
+				)}
+				<div className="relative ml-auto w-40 min-w-0">
+					<Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+					<Input
+						value={query}
+						onChange={(e) => setQuery(e.target.value)}
+						placeholder="Search"
+						aria-label="Search tracks"
+						className="h-8 pl-8 pr-7 text-xs"
+					/>
+					{query && (
+						<button
+							type="button"
+							aria-label="Clear search"
+							className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+							onClick={() => setQuery("")}
+						>
+							<X className="h-3.5 w-3.5" />
+						</button>
+					)}
+				</div>
+			</div>
+			<Separator />
+
+			{isEmpty ? (
+				<div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+					<div className="flex h-20 w-20 items-center justify-center rounded-full border border-dashed">
+						<Music className="h-9 w-9" />
+					</div>
+					<p className="text-sm">
+						Your queue is empty — add songs or drop audio files anywhere.
+					</p>
+				</div>
+			) : noMatches ? (
+				<div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
+					<Search className="h-8 w-8" />
+					<p className="text-sm">No tracks match “{query}”.</p>
+				</div>
+			) : (
+				<ScrollArea className="min-h-0 flex-1">
+					<ul className="flex flex-col gap-1 p-2">
+						{visibleImports.map((job) => (
+							<li key={job.id}>
+								<PendingImportRow job={job} />
 							</li>
-						);
-					})}
-				</ul>
-			</ScrollArea>
+						))}
+						{visibleUploads.map((upload) => (
+							<li key={upload.id}>
+								<PendingUploadRow upload={upload} />
+							</li>
+						))}
+						{visible.map(({ track, index }) => {
+							// The cache reports server ids; map the queue id back to one.
+							const serverId = libraryService.getRemote(track.id)?.id;
+							return (
+								<li key={track.id}>
+									<TrackRow
+										track={track}
+										index={index}
+										isCurrent={index === state.currentIndex}
+										showBars={index === state.currentIndex && state.isPlaying}
+										isCached={serverId !== undefined && cachedIds.has(serverId)}
+										onPlay={playTrackAt}
+										onEdit={setEditTrack}
+										onDelete={setDeleteTrack}
+									/>
+								</li>
+							);
+						})}
+					</ul>
+				</ScrollArea>
+			)}
 
 			<EditTrackDialog
 				track={editTrack}
@@ -433,6 +525,6 @@ export function TrackList() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
-		</>
+		</div>
 	);
 }

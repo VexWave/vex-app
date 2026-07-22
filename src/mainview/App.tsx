@@ -87,7 +87,7 @@ function App() {
 				<Sidebar view={view} onViewChange={setView} />
 				{/* min-w-0: grid items default to min-width:auto, so one nowrap
 				    track title would widen the 1fr column past the window. */}
-				<div className="min-h-0 min-w-0">
+				<div className="min-h-0 min-w-0 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
 					{view === "library" ? <TrackList /> : <ArtistsView />}
 				</div>
 			</main>
