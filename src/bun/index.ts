@@ -119,16 +119,33 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 	},
 });
 
+const initialFrame = {
+	width: 1200,
+	height: 800,
+	x: 200,
+	y: 200,
+};
+
 export const mainWindow = new BrowserWindow({
 	title: "VexWave",
 	url,
-	frame: {
-		width: 900,
-		height: 700,
-		x: 200,
-		y: 200,
-	},
+	frame: initialFrame,
 	rpc,
 });
+
+// Windows + bundled CEF paints its first frame before CEF has settled on the
+// monitor's device scale factor, so on HiDPI displays (scaling != 100%) the
+// initial layout is "zoomed in" with the window edges clipped until the first
+// manual resize forces CEF to recompute its scale against the real client rect.
+// Nudge the window size by 1px and back once after startup to trigger that
+// recompute before the user sees it. See the DPI gotcha in CLAUDE.md and
+// electrobun issue #324 (launcher doesn't declare DPI awareness).
+if (process.platform === "win32") {
+	const { width, height } = initialFrame;
+	setTimeout(() => {
+		mainWindow.setSize(width + 1, height);
+		setTimeout(() => mainWindow.setSize(width, height), 50);
+	}, 300);
+}
 
 console.log("VexWave started!");
