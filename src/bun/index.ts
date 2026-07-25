@@ -143,15 +143,29 @@ applyWindowChrome(mainWindow, WINDOW_TITLE);
 // monitor's device scale factor, so on HiDPI displays (scaling != 100%) the
 // initial layout is "zoomed in" with the window edges clipped until the first
 // manual resize forces CEF to recompute its scale against the real client rect.
-// Nudge the window size by 1px and back once after startup to trigger that
-// recompute before the user sees it. See the DPI gotcha in CLAUDE.md and
-// electrobun issue #324 (launcher doesn't declare DPI awareness).
+// Nudge the window size by 1px and back to trigger that recompute before the
+// user sees it. Timed off the webview's dom-ready (the page's load event, i.e.
+// CEF is actually rendering) rather than a fixed delay — on slow starts a
+// timer fires before CEF is up and the nudge does nothing. See the DPI gotcha
+// in CLAUDE.md and electrobun issue #324 (launcher doesn't declare DPI
+// awareness).
 if (process.platform === "win32") {
-	const { width, height } = initialFrame;
-	setTimeout(() => {
+	const nudge = () => {
+		const { width, height } = mainWindow.getSize();
 		mainWindow.setSize(width + 1, height);
 		setTimeout(() => mainWindow.setSize(width, height), 50);
-	}, 300);
+	};
+	let domReady = false;
+	mainWindow.webview.on("dom-ready", () => {
+		if (domReady) return; // re-emitted on full reloads (dev HMR)
+		domReady = true;
+		setTimeout(nudge, 50);
+	});
+	// Safety net if dom-ready never arrives (e.g. the page failed to load and
+	// gets fixed later); skipped once the event has done the real nudge.
+	setTimeout(() => {
+		if (!domReady) nudge();
+	}, 2000);
 }
 
 console.log("VexWave started!");
