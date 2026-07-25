@@ -5,8 +5,17 @@ import type { EditTrackParams, RemoteTrack } from "../../shared/rpcSchema";
 import { bun } from "./rpc";
 import { sessionService } from "./SessionService";
 
+/**
+ * Queue context id for "the queue mirrors the whole library" (see
+ * PlayerController.queueContextId). Playing a playlist replaces it with that
+ * playlist's own context id.
+ */
+export const LIBRARY_QUEUE_CONTEXT = "library";
+
 /** Immutable snapshot of the server-library state, consumed by React. */
 export interface LibraryState {
+	/** Server library, newest first — what the Library view renders. */
+	tracks: Track[];
 	loading: boolean;
 	error: string | null;
 }
@@ -18,23 +27,27 @@ export type MutationResult = { ok: true } | { ok: false; error: string };
 export type EditTrackChanges = Omit<EditTrackParams, "id">;
 
 /**
- * Owns the server library: fetches it when a session starts and queues the
- * tracks (they stream progressively through the bun proxy), and clears the
- * queue when the session ends — the stream URLs are only valid against the
- * session that produced them, so letting them survive a re-login would play
- * another server's audio under stale metadata.
+ * Owns the server library: fetches it when a session starts and clears it
+ * (and the play queue) when the session ends — the stream URLs are only valid
+ * against the session that produced them, so letting them survive a re-login
+ * would play another server's audio under stale metadata.
+ *
+ * The library list itself lives in this snapshot; the play queue only mirrors
+ * it while the library is what the user played from (queue context). When a
+ * playlist owns the queue, refreshes still patch queued copies' metadata and
+ * drop server-deleted tracks, but membership stays the playlist's.
  */
 export class LibraryService {
 	private subscribers = new Set<() => void>();
-	private snapshot: LibraryState = { loading: false, error: null };
+	private snapshot: LibraryState = { tracks: [], loading: false, error: null };
 	private fetchSeq = 0;
-	// Server metadata for each queued remote track, keyed by the queue track
-	// id (`server-<id>`). The context menu reads it to map a queued Track back
-	// to its numeric server id and currently-linked artist names.
+	// Server metadata for each library track, keyed by the track id
+	// (`server-<id>`). The context menu reads it to map a Track back to its
+	// numeric server id and currently-linked artist names.
 	private remoteById = new Map<string, RemoteTrack>();
 	// The StreamProxy cover URL for a track never changes and forwards no cache
-	// headers, so after a cover is replaced we bust it (keyed by queue track id)
-	// to force Chromium to re-fetch. See CacheBuster.
+	// headers, so after a cover is replaced we bust it (keyed by track id) to
+	// force Chromium to re-fetch. See CacheBuster.
 	private coverCache = new CacheBuster();
 
 	constructor() {
@@ -51,8 +64,8 @@ export class LibraryService {
 				this.coverCache.clear();
 				// Every queued track streams from this session's server, so the
 				// whole queue is invalidated when the session ends.
-				playerController.removeTracks(() => true);
-				this.update({ loading: false, error: null });
+				playerController.clearQueue();
+				this.update({ tracks: [], loading: false, error: null });
 			}
 		});
 	}
@@ -66,17 +79,16 @@ export class LibraryService {
 
 	getSnapshot = (): LibraryState => this.snapshot;
 
-	/** Server metadata for a queued remote track, or undefined for locals. */
+	/** Server metadata for a library track, or undefined for unknown ids. */
 	getRemote(trackId: string): RemoteTrack | undefined {
 		return this.remoteById.get(trackId);
 	}
 
 	/**
-	 * Re-fetch the server library and queue tracks that aren't queued yet.
-	 * Resolves `true` once a fresh list has been applied (or a newer refresh
-	 * has superseded this one and will apply it), `false` if the fetch failed
-	 * — callers that just uploaded a track use this to know it actually landed
-	 * in the queue before dropping their pending placeholder.
+	 * Re-fetch the server library. Resolves `true` once a fresh list has been
+	 * applied (or a newer refresh has superseded this one and will apply it),
+	 * `false` if the fetch failed — callers that just uploaded a track use this
+	 * to know it actually landed before dropping their pending placeholder.
 	 */
 	async refresh(): Promise<boolean> {
 		const seq = ++this.fetchSeq;
@@ -102,9 +114,9 @@ export class LibraryService {
 			this.update({ loading: false, error: result.error });
 			return false;
 		}
-		// Apply the cover cache-buster once so getRemote (dialog preview) and the
-		// queue rows all see the same busted URL. Newest first (descending id) so
-		// the empty-queue preload picks the newest track, matching the sorted list.
+		// Apply the cover cache-buster once so getRemote (dialog preview) and
+		// the list rows all see the same busted URL. Server ids increase with
+		// upload order, so descending id puts the newest uploads on top.
 		const remotes = result.tracks
 			.map((remote) => ({
 				...remote,
@@ -114,30 +126,40 @@ export class LibraryService {
 		this.remoteById = new Map(
 			remotes.map((remote) => [trackIdFor(remote), remote]),
 		);
-		// Update already-queued tracks (e.g. artists changed) in place — the
-		// queue dedupes by id so addTracks alone wouldn't refresh them...
-		for (const remote of remotes) {
-			playerController.updateTrack(trackIdFor(remote), {
-				title: remote.title,
-				artist: remote.artist,
-				coverUrl: remote.coverUrl,
-				durationSec: remote.durationMs / 1000,
-			});
-		}
-		// ...then append the ones that are new on the server.
-		playerController.addTracks(remotes.map(toTrack));
-		// Server ids increase with upload order, so sorting the queue by id
-		// descending puts the newest uploads at the top — including one that was
-		// just uploaded and would otherwise land at the end of the queue.
-		playerController.sortTracks((a, b) => serverIdOf(b) - serverIdOf(a));
-		this.update({ loading: false, error: null });
+		const tracks = remotes.map(toTrack);
+		this.update({ tracks, loading: false, error: null });
+		this.syncQueue(tracks);
 		return true;
 	}
 
 	/**
-	 * Delete a server track, then drop it from the queue. Failures land in the
-	 * snapshot's `error` (the confirm dialog has already closed, so the App
-	 * banner is where the user still is).
+	 * Push a fresh library into the play queue. When the library owns the
+	 * queue (or nothing is queued yet — fresh login), the queue mirrors it
+	 * outright. When a playlist owns the queue, only queued copies' metadata
+	 * is patched and server-deleted tracks are dropped; membership itself is
+	 * PlaylistService's business.
+	 */
+	private syncQueue(tracks: Track[]): void {
+		const context = playerController.queueContextId;
+		if (context === null || context === LIBRARY_QUEUE_CONTEXT) {
+			playerController.syncCollection(LIBRARY_QUEUE_CONTEXT, tracks);
+			return;
+		}
+		for (const track of tracks) {
+			playerController.updateTrack(track.id, {
+				title: track.title,
+				artist: track.artist,
+				coverUrl: track.coverUrl,
+				durationSec: track.durationSec,
+			});
+		}
+		playerController.removeTracks((track) => !this.remoteById.has(track.id));
+	}
+
+	/**
+	 * Delete a server track, then drop it from the library and the queue.
+	 * Failures land in the snapshot's `error` (the confirm dialog has already
+	 * closed, so the App banner is where the user still is).
 	 */
 	async removeTrack(trackId: string): Promise<void> {
 		const remote = this.remoteById.get(trackId);
@@ -159,12 +181,18 @@ export class LibraryService {
 			return;
 		}
 		this.remoteById.delete(trackId);
+		this.update({
+			tracks: this.snapshot.tracks.filter((track) => track.id !== trackId),
+		});
+		// The server also drops the track from every playlist; the playlist
+		// join skips ids missing from the library, so stale trackIds are
+		// harmless until the next playlists refresh.
 		playerController.removeTracks((track) => track.id === trackId);
 	}
 
 	/**
 	 * Edit a server track (title, cover, and/or artist links), then refetch so
-	 * the queued track updates. Returns the outcome instead of writing to the
+	 * the list and queue update. Returns the outcome instead of writing to the
 	 * snapshot so the edit dialog can show it inline.
 	 */
 	async editTrack(
@@ -191,7 +219,7 @@ export class LibraryService {
 			return { ok: false, error: result.error };
 		}
 		// The cover URL is stable, so bust it to force a re-fetch before the
-		// refresh maps it onto the queue and dialog preview.
+		// refresh maps it onto the list and dialog preview.
 		if (changes.coverBase64 !== undefined) this.coverCache.bump(trackId);
 		void this.refresh();
 		return { ok: true };
@@ -203,15 +231,14 @@ export class LibraryService {
 	}
 }
 
-/** Stable queue id for a server track, so refreshes dedupe against the queue. */
+/** Stable track id for a server track (`server-<id>`), shared with the queue. */
 function trackIdFor(remote: RemoteTrack): string {
 	return `server-${remote.id}`;
 }
 
-/** Recover the numeric server id from a queue track id (`server-<id>`). */
-function serverIdOf(track: Track): number {
-	const id = Number(track.id.slice("server-".length));
-	return Number.isFinite(id) ? id : 0;
+/** The queue/list id a server track id maps to (the trackIdFor counterpart). */
+export function trackIdForServerId(serverId: number): string {
+	return `server-${serverId}`;
 }
 
 function toTrack(remote: RemoteTrack): Track {

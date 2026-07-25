@@ -138,6 +138,61 @@ export type ListArtistsResult =
 	| { ok: true; artists: RemoteArtist[] }
 	| RpcFailure;
 
+export interface CreatePlaylistParams {
+	name: string;
+	desc?: string;
+	/** Initial ordered playback list; duplicates allowed. Omit for empty. */
+	trackIds?: number[];
+	/** Raw cover-image bytes, base64-encoded. Omit for no cover. */
+	imageBase64?: string;
+}
+
+export interface EditPlaylistParams {
+	/** Server-side playlist id. */
+	id: number;
+	name?: string;
+	/** New description; `null` clears it; omit to leave it unchanged. */
+	desc?: string | null;
+	/**
+	 * Full replacement of the ordered track list (empty array clears it);
+	 * omit to leave it unchanged. Duplicates allowed.
+	 */
+	trackIds?: number[];
+	/** New cover bytes, base64; `null` removes the cover; omit = unchanged. */
+	imageBase64?: string | null;
+}
+
+export interface DeletePlaylistParams {
+	/** Server-side playlist id. */
+	id: number;
+}
+
+export interface RemotePlaylist {
+	/** Server-side playlist id. */
+	id: number;
+	name: string;
+	/** Absent when the playlist has no description. */
+	desc?: string;
+	/**
+	 * Ordered playback list of server track ids; may contain the same id more
+	 * than once. The server drops deleted tracks from playlists, so every id
+	 * here should exist in the track listing (a stale one is skipped by the
+	 * client-side join).
+	 */
+	trackIds: number[];
+	/**
+	 * Loopback URL of the bun-side stream proxy for this playlist's cover, or
+	 * undefined when the playlist has none. Same pattern as
+	 * `RemoteArtist.imageUrl`: the webview loads it directly and never reaches
+	 * the backend.
+	 */
+	imageUrl?: string;
+}
+
+export type ListPlaylistsResult =
+	| { ok: true; playlists: RemotePlaylist[] }
+	| RpcFailure;
+
 /**
  * Server ids of tracks whose complete audio sits in the bun-side memory cache
  * (StreamProxy/TrackCache) — the UI marks these as instant to play. Always the
@@ -282,6 +337,10 @@ export type PlayerRPC = {
 			createArtist: { params: CreateArtistParams; response: RpcResult };
 			editArtist: { params: EditArtistParams; response: RpcResult };
 			deleteArtist: { params: DeleteArtistParams; response: RpcResult };
+			listPlaylists: { params: undefined; response: ListPlaylistsResult };
+			createPlaylist: { params: CreatePlaylistParams; response: RpcResult };
+			editPlaylist: { params: EditPlaylistParams; response: RpcResult };
+			deletePlaylist: { params: DeletePlaylistParams; response: RpcResult };
 			getBinaryStatus: { params: undefined; response: BinaryStatusResult };
 			/**
 			 * Kicks off an install of all missing binaries and returns

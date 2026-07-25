@@ -2,11 +2,15 @@ import { initClient } from "@ts-rest/core";
 import { ApiContract } from "../../contract/contract";
 import type {
 	CreateArtistParams,
+	CreatePlaylistParams,
 	DeleteArtistParams,
+	DeletePlaylistParams,
 	DeleteTrackParams,
 	EditArtistParams,
+	EditPlaylistParams,
 	EditTrackParams,
 	ListArtistsResult,
+	ListPlaylistsResult,
 	ListTracksResult,
 	LoginParams,
 	LoginResult,
@@ -338,6 +342,131 @@ export class ApiClient {
 			};
 		} catch {
 			return { ok: false, error: "Deleting the artist failed — server unreachable" };
+		}
+	}
+
+	/**
+	 * Server playlist listing. `urlForPlaylistImage` maps a playlist id to its
+	 * stream-proxy cover URL; like `listArtists`, `imageUrl` stays undefined
+	 * unless the server sent one — the webview never reaches the backend.
+	 */
+	async listPlaylists(
+		urlForPlaylistImage: (playlistId: number) => string,
+	): Promise<ListPlaylistsResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.getPlaylists();
+			if (res.status === 200) {
+				return {
+					ok: true,
+					playlists: res.body.map(({ id, name, desc, trackIds, imageUrl }) => ({
+						id,
+						name,
+						desc,
+						trackIds,
+						imageUrl: imageUrl ? urlForPlaylistImage(id) : undefined,
+					})),
+				};
+			}
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Loading the playlists failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return {
+				ok: false,
+				error: "Loading the playlists failed — server unreachable",
+			};
+		}
+	}
+
+	async createPlaylist(params: CreatePlaylistParams): Promise<RpcResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.postPlaylist({
+				body: {
+					name: params.name,
+					desc: params.desc,
+					trackIds: params.trackIds,
+					image: params.imageBase64,
+				},
+			});
+			if (res.status === 200) return { ok: true };
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Creating the playlist failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return { ok: false, error: "Creating the playlist failed — server unreachable" };
+		}
+	}
+
+	async editPlaylist(params: EditPlaylistParams): Promise<RpcResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.editPlaylist({
+				body: {
+					id: params.id,
+					name: params.name,
+					// undefined drops off the wire (unchanged); null survives (clear).
+					desc: params.desc,
+					trackIds: params.trackIds,
+					image: params.imageBase64,
+				},
+			});
+			if (res.status === 200) return { ok: true };
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Editing the playlist failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return { ok: false, error: "Editing the playlist failed — server unreachable" };
+		}
+	}
+
+	async deletePlaylist(params: DeletePlaylistParams): Promise<RpcResult> {
+		const client = this.session?.client;
+		if (!client) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		try {
+			const res = await client.deletePlaylist({ body: { id: params.id } });
+			if (res.status === 200) return { ok: true };
+			if (res.status === 401) this.expireSession();
+			return {
+				ok: false,
+				status: res.status,
+				error: errorText(
+					res.body,
+					`Deleting the playlist failed (HTTP ${res.status})`,
+				),
+			};
+		} catch {
+			return { ok: false, error: "Deleting the playlist failed — server unreachable" };
 		}
 	}
 }

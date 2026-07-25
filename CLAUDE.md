@@ -36,8 +36,8 @@ Two contexts, per Electrobun's model.
 
 ### `src/mainview/` — React 18 webview UI
 
-- `player/` — framework-agnostic OOP core: `AudioPlayer` (one HTMLAudioElement, typed events) + `PlaybackQueue` (pure data) owned by `PlayerController`, the facade the UI talks to. **Keep queue/transport logic in these classes, not in components.**
-- `api/` — `Session`/`Library`/`Artist`/`Upload`/`Import`/`Binary`/`TrackCache` services. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. Add new state here, not in component-local state.
+- `player/` — framework-agnostic OOP core: `AudioPlayer` (one HTMLAudioElement, typed events) + `PlaybackQueue` (pure data) owned by `PlayerController`, the facade the UI talks to. **Keep queue/transport logic in these classes, not in components.** The queue always mirrors one *collection* — the whole library or a single playlist — tagged by `PlayerController.queueContextId`; playing from a view replaces the queue with that view's collection (`playCollection`), and services push refreshed content into the queue only while they own the context (`syncCollection`). The Library and playlist views render from their services' state, not from the queue.
+- `api/` — `Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Binary`/`TrackCache` services. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. Add new state here, not in component-local state.
 - `lib/storage.ts` — **all** localStorage access goes through this typed registry; declare each persisted key there once rather than touching `localStorage` directly.
 
 ### RPC boundary

@@ -1,14 +1,16 @@
-import { ListMusic, LogOut, Users } from "lucide-react";
+import { ListMusic, LibraryBig, LogOut, Users } from "lucide-react";
 import { useArtists } from "@/hooks/useArtists";
-import { usePlayer } from "@/hooks/usePlayer";
+import { useLibrary } from "@/hooks/useLibrary";
+import { usePlaylists } from "@/hooks/usePlaylists";
 import { useSession } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 
 /** The views the main content area can show; the sidebar switches them. */
-export type MainView = "library" | "artists";
+export type MainView = "library" | "playlists" | "artists";
 
 const NAV_ITEMS = [
-	{ view: "library", label: "Library", icon: ListMusic },
+	{ view: "library", label: "Library", icon: LibraryBig },
+	{ view: "playlists", label: "Playlists", icon: ListMusic },
 	{ view: "artists", label: "Artists", icon: Users },
 ] as const;
 
@@ -20,13 +22,15 @@ export function Sidebar({
 	onViewChange: (view: MainView) => void;
 }) {
 	const { service } = useSession();
-	const { state } = usePlayer();
+	const { library } = useLibrary();
+	const { playlists } = usePlaylists();
 	const { artists } = useArtists();
 
-	// Badge counts come straight from the two stores the views render, so the
+	// Badge counts come straight from the stores the views render, so the
 	// sidebar can never disagree with the list next to it.
 	const counts: Record<MainView, number> = {
-		library: state.tracks.length,
+		library: library.tracks.length,
+		playlists: playlists.playlists.length,
 		artists: artists.artists.length,
 	};
 

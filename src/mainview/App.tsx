@@ -7,6 +7,7 @@ import { BinarySetupScreen } from "@/components/BinarySetupScreen";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
+import { PlaylistsView } from "@/components/PlaylistsView";
 import { Sidebar, type MainView } from "@/components/Sidebar";
 import { TrackList } from "@/components/TrackList";
 import { UploadReviewDialog } from "@/components/UploadReviewDialog";
@@ -76,7 +77,13 @@ function App() {
 				{/* min-w-0: grid items default to min-width:auto, so one nowrap
 				    track title would widen the 1fr column past the window. */}
 				<div className="min-h-0 min-w-0 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
-					{view === "library" ? <TrackList /> : <ArtistsView />}
+					{view === "library" ? (
+						<TrackList />
+					) : view === "playlists" ? (
+						<PlaylistsView />
+					) : (
+						<ArtistsView />
+					)}
 				</div>
 			</main>
 

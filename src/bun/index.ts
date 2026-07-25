@@ -95,6 +95,13 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			createArtist: (params) => api.createArtist(params),
 			editArtist: (params) => api.editArtist(params),
 			deleteArtist: (params) => api.deleteArtist(params),
+			listPlaylists: () =>
+				api.listPlaylists((playlistId) =>
+					streamProxy.urlForPlaylistImage(playlistId),
+				),
+			createPlaylist: (params) => api.createPlaylist(params),
+			editPlaylist: (params) => api.editPlaylist(params),
+			deletePlaylist: (params) => api.deletePlaylist(params),
 			getBinaryStatus: () => binaryManager.getStatus(),
 			installMissingBinaries: () => binaryManager.startInstall(),
 			// A running yt-dlp.exe can't be overwritten on Windows, so the

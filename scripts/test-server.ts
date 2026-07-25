@@ -4,11 +4,14 @@
 import {
 	ApiContract,
 	CreateArtistRequest,
+	CreatePlaylistRequest,
 	CreateTrackRequest,
 	DeleteByIdRequest,
 	EditArtistRequest,
+	EditPlaylistRequest,
 	EditTrackRequest,
 	artistImagePath,
+	playlistImagePath,
 	trackImagePath,
 } from "../contract/contract";
 
@@ -39,6 +42,24 @@ interface StoredArtist {
 
 let nextArtistId = 1;
 const artists = new Map<number, StoredArtist>();
+
+interface StoredPlaylist {
+	id: number;
+	name: string;
+	desc?: string;
+	/** Ordered playback list; duplicates allowed per the contract. */
+	trackIds: number[];
+	/** Raw image bytes, stored as-is; served from `/playlist/:id/image`. */
+	image?: Uint8Array;
+}
+
+let nextPlaylistId = 1;
+const playlists = new Map<number, StoredPlaylist>();
+
+/** Contract rule: unknown track ids in a playlist body are a 400. */
+function unknownTrackIds(trackIds: number[]): number[] {
+	return trackIds.filter((id) => !tracks.has(id));
+}
 
 function authorized(req: Request): boolean {
 	const auth = req.headers.get("authorization");
@@ -219,6 +240,132 @@ Bun.serve({
 								: ""),
 				);
 				return new Response("ok");
+			},
+		},
+		"/deleteTrack": {
+			POST: async (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				const parsed = DeleteByIdRequest.safeParse(await req.json());
+				if (!parsed.success || !tracks.delete(parsed.data.id)) {
+					return new Response("not found", { status: 404 });
+				}
+				// Contract rule: playlists never contain dangling ids — scrub the
+				// deleted track from every playlist, silently.
+				for (const playlist of playlists.values()) {
+					playlist.trackIds = playlist.trackIds.filter(
+						(id) => id !== parsed.data.id,
+					);
+				}
+				console.log(`deleteTrack ok: #${parsed.data.id}`);
+				return new Response("ok");
+			},
+		},
+		"/postPlaylist": {
+			POST: async (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				const parsed = CreatePlaylistRequest.safeParse(await req.json());
+				if (!parsed.success) {
+					return new Response(parsed.error.message, { status: 400 });
+				}
+				const { name, desc, trackIds, image } = parsed.data;
+				const unknown = unknownTrackIds(trackIds ?? []);
+				if (unknown.length > 0) {
+					return new Response(`unknown track ids: ${unknown.join(", ")}`, {
+						status: 400,
+					});
+				}
+				const id = nextPlaylistId++;
+				playlists.set(id, {
+					id,
+					name,
+					desc,
+					trackIds: trackIds ?? [],
+					image: image ? new Uint8Array(image) : undefined,
+				});
+				console.log(
+					`postPlaylist ok: #${id} "${name}" tracks=[${(trackIds ?? []).join(", ")}]` +
+						(image ? ` image=${image.byteLength}B` : ""),
+				);
+				return new Response("ok");
+			},
+		},
+		"/editPlaylist": {
+			POST: async (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				const parsed = EditPlaylistRequest.safeParse(await req.json());
+				if (!parsed.success) {
+					return new Response(parsed.error.message, { status: 400 });
+				}
+				const { id, name, desc, trackIds, image } = parsed.data;
+				const playlist = playlists.get(id);
+				if (!playlist) return new Response("not found", { status: 404 });
+				if (trackIds !== undefined) {
+					const unknown = unknownTrackIds(trackIds);
+					if (unknown.length > 0) {
+						return new Response(`unknown track ids: ${unknown.join(", ")}`, {
+							status: 400,
+						});
+					}
+					playlist.trackIds = trackIds;
+				}
+				if (name !== undefined) playlist.name = name;
+				if (desc === null) playlist.desc = undefined;
+				else if (desc !== undefined) playlist.desc = desc;
+				if (image === null) playlist.image = undefined;
+				else if (image !== undefined) playlist.image = new Uint8Array(image);
+				console.log(
+					`editPlaylist ok: #${id} "${playlist.name}" ` +
+						`tracks=[${playlist.trackIds.join(", ")}]`,
+				);
+				return new Response("ok");
+			},
+		},
+		"/deletePlaylist": {
+			POST: async (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				const parsed = DeleteByIdRequest.safeParse(await req.json());
+				if (!parsed.success || !playlists.delete(parsed.data.id)) {
+					return new Response("not found", { status: 404 });
+				}
+				console.log(`deletePlaylist ok: #${parsed.data.id}`);
+				return new Response("ok");
+			},
+		},
+		"/playlists": {
+			GET: (req) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				// Never inline image bytes: expose the image route's path instead,
+				// and only for playlists that actually have a cover.
+				return Response.json(
+					[...playlists.values()].map(({ id, name, desc, trackIds, image }) => ({
+						id,
+						name,
+						desc,
+						trackIds,
+						imageUrl: image ? playlistImagePath(id) : undefined,
+					})),
+				);
+			},
+		},
+		// ApiContract.getPlaylistImage ("/playlist/:id/image"): raw stored
+		// cover-image bytes, public (no auth) per the contract.
+		[ApiContract.getPlaylistImage.path]: {
+			GET: (req: Bun.BunRequest<typeof ApiContract.getPlaylistImage.path>) => {
+				const playlist = playlists.get(Number(req.params.id));
+				if (!playlist?.image) return new Response("not found", { status: 404 });
+				return new Response(playlist.image, {
+					headers: { "content-type": "application/octet-stream" },
+				});
 			},
 		},
 		"/deleteArtist": {

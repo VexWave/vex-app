@@ -13,6 +13,7 @@ const REPEAT_CYCLE: RepeatMode[] = ["off", "all", "one"];
 export class PlayerController {
 	private player = new AudioPlayer();
 	private queue = new PlaybackQueue();
+	private queueContext: string | null = null;
 	private subscribers = new Set<() => void>();
 	private error: string | null = null;
 	private snapshot: PlayerState;
@@ -74,47 +75,74 @@ export class PlayerController {
 
 	// --- queue management ---
 
-	addTracks(tracks: Track[]): void {
-		if (tracks.length === 0) return;
-		const wasEmpty = this.queue.tracks.length === 0;
-		this.queue.add(tracks);
-		// Preload the first track into the player so the UI shows it,
-		// but leave starting playback to the user.
-		if (wasEmpty) {
-			this.player.load(this.queue.jumpTo(0));
-		}
-		this.refresh();
+	/**
+	 * The collection the queue currently mirrors ("library", "playlist-3", …),
+	 * or null while nothing has been queued yet. Services use it to decide
+	 * whether their refreshes should be synced into the queue.
+	 */
+	get queueContextId(): string | null {
+		return this.queueContext;
 	}
 
-	removeTrack(position: number): void {
-		const isCurrent = position === this.queue.currentIndex;
-		const wasPlaying = this.player.isPlaying;
-		const removed = this.queue.removeAt(position);
-		if (!removed) return;
-		if (isCurrent) {
-			const replacement = this.queue.current;
-			this.player.load(replacement);
-			if (replacement && wasPlaying) void this.player.play();
+	/**
+	 * Replace the queue with a collection and start playing the track at
+	 * `index`. This is what "playing from the library" and "playing a
+	 * playlist" both do — the queue becomes that collection, in its order.
+	 */
+	playCollection(contextId: string, tracks: Track[], index: number): void {
+		this.queueContext = contextId;
+		this.queue.replace(tracks, index);
+		const track = this.queue.current;
+		this.player.load(track);
+		if (track) {
+			this.error = null;
+			void this.player.play();
 		}
 		this.refresh();
 	}
 
 	/**
+	 * Mirror a collection's latest content into the queue without touching
+	 * playback. Applies only when the queue already belongs to `contextId` —
+	 * or to nothing yet (fresh login), which adopts the collection and
+	 * preloads its first track paused. The playing track keeps playing even
+	 * when it fell out of the collection; the index just drops to -1 so
+	 * auto-advance restarts from the top.
+	 */
+	syncCollection(contextId: string, tracks: Track[]): void {
+		if (this.queueContext !== null && this.queueContext !== contextId) return;
+		this.queueContext = contextId;
+		const current = this.player.currentTrack;
+		this.queue.replace(
+			tracks,
+			current ? tracks.findIndex((track) => track.id === current.id) : -1,
+		);
+		if (!current && tracks.length > 0) {
+			// Nothing loaded yet — preload the first track so the UI shows it,
+			// but leave starting playback to the user.
+			this.player.load(this.queue.jumpTo(0));
+		}
+		this.refresh();
+	}
+
+	/** Empty the queue and unload the player (logout — streams die with the session). */
+	clearQueue(): void {
+		this.queueContext = null;
+		this.queue.replace([], -1);
+		this.player.load(null);
+		this.refresh();
+	}
+
+	/**
 	 * Patch a queued track's metadata (e.g. after its artists were edited on
-	 * the server). No-op when the id isn't in the queue.
+	 * the server). Patches every queued copy; no-op when the id isn't queued.
 	 */
 	updateTrack(id: string, patch: Partial<Track>): void {
 		this.queue.updateTrack(id, patch);
 		this.refresh();
 	}
 
-	/** Reorder the queue in place; the current track stays loaded and playing. */
-	sortTracks(compare: (a: Track, b: Track) => number): void {
-		this.queue.sort(compare);
-		this.refresh();
-	}
-
-	/** Remove every track matching the predicate (e.g. all remote tracks). */
+	/** Remove every track matching the predicate (e.g. one deleted server-side). */
 	removeTracks(predicate: (track: Track) => boolean): void {
 		const current = this.queue.current;
 		const removed = this.queue.removeMatching(predicate);
@@ -129,15 +157,6 @@ export class PlayerController {
 	}
 
 	// --- transport ---
-
-	playTrackAt(position: number): void {
-		const track = this.queue.jumpTo(position);
-		if (!track) return;
-		this.error = null;
-		this.player.load(track);
-		void this.player.play();
-		this.refresh();
-	}
 
 	togglePlay(): void {
 		void this.player.toggle();

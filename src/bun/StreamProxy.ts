@@ -1,5 +1,6 @@
 import {
 	artistImagePath,
+	playlistImagePath,
 	trackAudioPath,
 	trackImagePath,
 } from "../../contract/contract";
@@ -110,6 +111,12 @@ export class StreamProxy {
 		return `http://127.0.0.1:${port}/${this.secret}/track/${trackId}/image`;
 	}
 
+	/** Stable cover-image URL for a server playlist. */
+	urlForPlaylistImage(playlistId: number): string {
+		const { port } = this.ensureServer();
+		return `http://127.0.0.1:${port}/${this.secret}/playlist/${playlistId}/image`;
+	}
+
 	/** URL of a finished URL-import's local mp3 (valid until discarded). */
 	urlForImportFile(importId: string): string {
 		const { port } = this.ensureServer();
@@ -192,7 +199,11 @@ export class StreamProxy {
 			/^\/([^/]+)\/artist\/(\d+)\/image$/,
 		);
 		const trackImageMatch = pathname.match(/^\/([^/]+)\/track\/(\d+)\/image$/);
-		const match = trackMatch ?? artistImageMatch ?? trackImageMatch;
+		const playlistImageMatch = pathname.match(
+			/^\/([^/]+)\/playlist\/(\d+)\/image$/,
+		);
+		const match =
+			trackMatch ?? artistImageMatch ?? trackImageMatch ?? playlistImageMatch;
 		if (!match || match[1] !== this.secret) {
 			return new Response("not found", { status: 404 });
 		}
@@ -219,7 +230,9 @@ export class StreamProxy {
 			? trackAudioPath(Number(match[2]))
 			: trackImageMatch
 				? trackImagePath(Number(match[2]))
-				: artistImagePath(Number(match[2]));
+				: playlistImageMatch
+					? playlistImagePath(Number(match[2]))
+					: artistImagePath(Number(match[2]));
 
 		const headers: Record<string, string> = { authorization: auth.token };
 		if (range) headers.range = range;

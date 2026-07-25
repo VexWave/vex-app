@@ -30,31 +30,15 @@ export class PlaybackQueue {
 		this.repeat = mode;
 	}
 
-	/** Append tracks; ids already in the queue are skipped (queue invariant). */
-	add(tracks: Track[]): void {
-		const ids = new Set(this.items.map((track) => track.id));
-		const fresh: Track[] = [];
-		for (const track of tracks) {
-			if (ids.has(track.id)) continue;
-			ids.add(track.id);
-			fresh.push(track);
-		}
-		if (fresh.length === 0) return;
-		this.items = [...this.items, ...fresh];
-	}
-
-	/** Remove a track at a position; returns it, or null when out of range. */
-	removeAt(position: number): Track | null {
-		const removed = this.items[position];
-		if (!removed) return null;
-		this.items = this.items.filter((_, i) => i !== position);
-		if (position < this.index) {
-			this.index -= 1;
-		} else if (position === this.index) {
-			// Current track was removed; clamp to the item now at this position.
-			this.index = Math.min(this.index, this.items.length - 1);
-		}
-		return removed;
+	/**
+	 * Replace the whole queue with `tracks`, current index included. Unlike
+	 * `add` there is no id dedupe — a playlist may legitimately contain the
+	 * same track twice. An out-of-range index clamps to -1 (nothing current).
+	 */
+	replace(tracks: Track[], index: number): void {
+		this.items = [...tracks];
+		this.index =
+			index >= 0 && index < this.items.length ? index : -1;
 	}
 
 	/**
@@ -93,16 +77,6 @@ export class PlaybackQueue {
 
 	updateTrack(id: string, patch: Partial<Track>): void {
 		this.items = this.items.map((t) => (t.id === id ? { ...t, ...patch } : t));
-	}
-
-	/**
-	 * Reorder the queue by a comparator. The current track keeps playing: its
-	 * index is recomputed by identity, so only the surrounding order changes.
-	 */
-	sort(compare: (a: Track, b: Track) => number): void {
-		const current = this.current;
-		this.items = [...this.items].sort(compare);
-		if (current) this.index = this.items.indexOf(current);
 	}
 
 	/**

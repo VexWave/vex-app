@@ -60,6 +60,37 @@ export const EditArtistRequest = z.object({
     .optional(),
 });
 
+export const CreatePlaylistRequest = z.object({
+  name: z.string().min(1),
+  desc: z.string().optional(),
+  // Initial ordered playback list. Order is playback order; the same track id
+  // may appear more than once (duplicates are allowed). Unknown ids are a 400.
+  trackIds: z.array(z.int32()).optional(),
+  // Raw cover-image bytes, sent base64-encoded and stored as-is (bytea).
+  image: z
+    .base64()
+    .transform((b) => Buffer.from(b, "base64"))
+    .optional(),
+});
+
+export const EditPlaylistRequest = z.object({
+  id: z.int32(),
+  name: z.string().min(1).optional(),
+  // New description; `null` clears it; omit to leave it unchanged.
+  desc: z.string().nullable().optional(),
+  // Full replacement of the ordered track list (an empty array clears it);
+  // omit to leave it unchanged. Same semantics as the create route: order is
+  // playback order, duplicates are allowed, unknown ids are a 400.
+  trackIds: z.array(z.int32()).optional(),
+  // New cover-image bytes, base64-encoded; `null` removes the cover;
+  // omit to leave it unchanged.
+  image: z
+    .base64()
+    .transform((b) => Buffer.from(b, "base64"))
+    .nullable()
+    .optional(),
+});
+
 export const DeleteByIdRequest = z.object({ id: z.int32() });
 
 // ===========================================================================
@@ -88,10 +119,16 @@ export const ArtistResponse = z.object({
 });
 
 export const PlaylistResponse = z.object({
+  id: z.int32(),
   name: z.string(),
-  desc: z.string(),
-  playlistId: z.int32(),
-  imageUrl: z.string(),
+  desc: z.string().optional(),
+  // Ordered playback list; may contain the same track id more than once.
+  // Ids of tracks that were deleted from the library are silently dropped
+  // from every playlist server-side and never appear here.
+  trackIds: z.array(z.int32()),
+  // URL of the `getPlaylistImage` route when the playlist has a cover, else
+  // absent. The raw image bytes are fetched separately from that route.
+  imageUrl: z.string().optional(),
 });
 
 export const ApiContract = c.router(
@@ -263,6 +300,76 @@ export const ApiContract = c.router(
       summary:
         "Edit a track's title, cover image, and/or replace its artist links",
     },
+    postPlaylist: {
+      method: "POST",
+      path: "/postPlaylist",
+      body: CreatePlaylistRequest,
+      responses: {
+        200: z.string(),
+        400: z.string(),
+        401: z.string(),
+        500: z.string(),
+      },
+      summary: "Create a playlist, optionally with an initial track list",
+    },
+    editPlaylist: {
+      method: "POST",
+      path: "/editPlaylist",
+      body: EditPlaylistRequest,
+      responses: {
+        200: z.string(),
+        400: z.string(),
+        401: z.string(),
+        404: z.string(),
+      },
+      summary:
+        "Edit a playlist's name, description, cover, and/or replace its " +
+        "ordered track list (send null to clear desc/cover)",
+    },
+    deletePlaylist: {
+      method: "POST",
+      path: "/deletePlaylist",
+      body: DeleteByIdRequest,
+      responses: {
+        200: z.string(),
+        401: z.string(),
+        404: z.string(),
+      },
+      summary:
+        "Delete a playlist owned by the requesting user (tracks are kept)",
+    },
+    getPlaylists: {
+      method: "GET",
+      path: "/playlists",
+      responses: {
+        200: z.array(PlaylistResponse),
+        401: z.string(),
+        500: z.string(),
+      },
+      summary: "List all playlists with their ordered track ids",
+      description:
+        "Each playlist carries its complete ordered `trackIds` — clients " +
+        "join them against the track listing, so there is no per-playlist " +
+        "detail route. Servers MUST silently remove a track from every " +
+        "playlist when it is deleted from the library (playlists never " +
+        "contain dangling ids).",
+    },
+    getPlaylistImage: {
+      method: "GET",
+      path: "/playlist/:id/image",
+      pathParams: z.object({ id: z.coerce.number() }),
+      responses: {
+        // Raw stored image bytes. The declared contentType is a fallback;
+        // servers should send the real image MIME when they know it.
+        200: c.otherResponse({
+          contentType: "application/octet-stream",
+          body: c.type<Uint8Array>(),
+        }),
+        404: z.string(),
+      },
+      summary:
+        "Get a playlist's raw cover-image bytes (public, no auth required)",
+    },
   },
   {
     baseHeaders: {
@@ -299,4 +406,14 @@ export const trackImagePath = (trackId: number) =>
   insertParamsIntoPath({
     path: ApiContract.getTrackImage.path,
     params: { id: String(trackId) },
+  });
+
+/**
+ * Concrete request path for `getPlaylistImage`. Returned as `imageUrl` on
+ * playlist listings so clients know where to fetch the raw cover-image bytes.
+ */
+export const playlistImagePath = (playlistId: number) =>
+  insertParamsIntoPath({
+    path: ApiContract.getPlaylistImage.path,
+    params: { id: String(playlistId) },
   });
