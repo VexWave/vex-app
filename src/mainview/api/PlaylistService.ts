@@ -74,7 +74,7 @@ export class PlaylistService {
 	 * A playlist's ordered playable tracks, joined against the library.
 	 * Ids the library doesn't know (e.g. a track deleted moments ago, before
 	 * the next playlists refetch) are skipped — the server guarantees they're
-	 * gone from the playlist too. The same track id may map to multiple rows.
+	 * gone from the playlist too.
 	 */
 	tracksOf(playlist: RemotePlaylist): Track[] {
 		const byId = new Map(
@@ -126,9 +126,12 @@ export class PlaylistService {
 			return;
 		}
 		// Bust replaced covers: their imageUrl is stable, so map the fresh list
-		// through the cache-buster before it reaches the UI.
+		// through the cache-buster before it reaches the UI. trackIds are
+		// deduped defensively — playlists predating the no-duplicates rule may
+		// still carry copies; the next membership edit persists the deduped list.
 		const playlists = result.playlists.map((playlist) => ({
 			...playlist,
+			trackIds: [...new Set(playlist.trackIds)],
 			imageUrl: this.imageCache.apply(String(playlist.id), playlist.imageUrl),
 		}));
 		this.update({ playlists, loading: false, error: null });
@@ -179,7 +182,7 @@ export class PlaylistService {
 	}
 
 	/**
-	 * Edit a playlist on the server (name/desc/cover/track list), then
+	 * Edit a playlist on the server (name/cover/track list), then
 	 * refetch. Like `create`, returns the outcome so dialogs can show a
 	 * failure inline and stay open.
 	 */
@@ -237,34 +240,50 @@ export class PlaylistService {
 		return run;
 	}
 
-	/** Append tracks to the end of a playlist (duplicates are fine). */
+	/**
+	 * Append tracks to the end of a playlist. A track can be in a playlist at
+	 * most once (the server rejects duplicates), so ids already present are
+	 * skipped; when nothing is left to add the edit is a no-op.
+	 */
 	addTracks(
 		playlistId: number,
 		serverTrackIds: number[],
 	): Promise<MutationResult> {
-		return this.chainMembershipEdit(playlistId, (current) => [
-			...current,
-			...serverTrackIds,
-		]);
+		return this.chainMembershipEdit(playlistId, (current) => {
+			const additions = [...new Set(serverTrackIds)].filter(
+				(id) => !current.includes(id),
+			);
+			if (additions.length === 0) return null;
+			return [...current, ...additions];
+		});
 	}
 
-	/** Remove the entry at `position` of the playlist's ordered track list. */
-	removeTrackAt(
+	/** Remove tracks from a playlist (ids it doesn't contain are ignored). */
+	removeTracks(
 		playlistId: number,
-		position: number,
+		serverTrackIds: number[],
 	): Promise<MutationResult> {
-		return this.chainMembershipEdit(playlistId, (current) =>
-			current.filter((_, index) => index !== position),
-		);
+		return this.chainMembershipEdit(playlistId, (current) => {
+			const trackIds = current.filter((id) => !serverTrackIds.includes(id));
+			return trackIds.length === current.length ? null : trackIds;
+		});
 	}
 
-	/** Swap the entry at `position` with its neighbour above/below. */
+	/**
+	 * Swap a track with its neighbour above/below. Addressed by server id, not
+	 * list position: membership edits are chained, so a queued op runs against
+	 * the list its predecessor produced — a position captured at render time
+	 * could name the wrong entry by then, while the id (unique per playlist)
+	 * still finds the right one.
+	 */
 	moveTrack(
 		playlistId: number,
-		position: number,
+		serverTrackId: number,
 		direction: -1 | 1,
 	): Promise<MutationResult> {
 		return this.chainMembershipEdit(playlistId, (current) => {
+			const position = current.indexOf(serverTrackId);
+			if (position === -1) return null;
 			const target = position + direction;
 			if (target < 0 || target >= current.length) return null;
 			const trackIds = [...current];

@@ -1,7 +1,6 @@
 import { memo, useCallback, useMemo, useState } from "react";
 import {
 	AlertCircle,
-	CircleArrowDown,
 	EllipsisVertical,
 	Link2,
 	ListMusic,
@@ -23,6 +22,7 @@ import { PlaylistDialog } from "@/components/PlaylistDialog";
 import { Button } from "@/components/ui/button";
 import {
 	ContextMenu,
+	ContextMenuCheckboxItem,
 	ContextMenuContent,
 	ContextMenuItem,
 	ContextMenuSeparator,
@@ -46,7 +46,6 @@ import { useImports } from "@/hooks/useImports";
 import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
-import { useTrackCache } from "@/hooks/useTrackCache";
 import { useUploads } from "@/hooks/useUploads";
 import { cn, formatMb, formatTime } from "@/lib/utils";
 import type { ImportJob } from "@/api/ImportService";
@@ -203,23 +202,6 @@ export function NowPlayingBars() {
 }
 
 /**
- * Marks a track whose full audio sits in the bun memory cache — replaying or
- * seeking through it is instant, no server round-trip.
- */
-function CachedBadge() {
-	return (
-		<span
-			className="shrink-0 text-primary/70"
-			title="Downloaded — plays instantly"
-			aria-label="Downloaded — plays instantly"
-			role="img"
-		>
-			<CircleArrowDown className="h-3.5 w-3.5" />
-		</span>
-	);
-}
-
-/**
  * Open the row's context menu from a left-click on the kebab button: Radix's
  * ContextMenuTrigger listens for `contextmenu`, so we synthesize one anchored
  * at the button. Native right-click on the row keeps working unchanged.
@@ -240,33 +222,33 @@ export function openRowMenu(button: HTMLElement) {
  * timeupdate and on every import/upload progress tick, and without this each
  * of those rebuilt every row (incl. a Radix ContextMenu apiece). All props are
  * referentially stable across those ticks except the booleans, which only
- * change for rows entering/leaving the current-track or cached state (the
- * `playlists` array and `onPlay` only change on the rare library/playlist
- * refresh).
+ * change for rows entering/leaving the current-track state (the `playlists`
+ * array and `onPlay` only change on the rare library/playlist refresh).
  */
 const TrackRow = memo(function TrackRow({
 	track,
 	index,
+	serverId,
 	isCurrent,
 	showBars,
-	isCached,
 	playlists,
 	onPlay,
 	onEdit,
 	onDelete,
-	onAddToPlaylist,
+	onTogglePlaylist,
 	onNewPlaylist,
 }: {
 	track: Track;
 	index: number;
+	/** Server-side id, for playlist membership; undefined while unresolved. */
+	serverId: number | undefined;
 	isCurrent: boolean;
 	showBars: boolean;
-	isCached: boolean;
 	playlists: RemotePlaylist[];
 	onPlay: (index: number) => void;
 	onEdit: (track: Track) => void;
 	onDelete: (track: Track) => void;
-	onAddToPlaylist: (track: Track, playlistId: number) => void;
+	onTogglePlaylist: (track: Track, playlistId: number, isMember: boolean) => void;
 	onNewPlaylist: (track: Track) => void;
 }) {
 	return (
@@ -332,7 +314,6 @@ const TrackRow = memo(function TrackRow({
 							{track.album ? ` · ${track.album}` : ""}
 						</p>
 					</div>
-					{isCached && <CachedBadge />}
 					<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
 						{formatTime(track.durationSec)}
 					</span>
@@ -358,22 +339,34 @@ const TrackRow = memo(function TrackRow({
 				<ContextMenuSub>
 					<ContextMenuSubTrigger className="gap-2 [&>svg]:size-4 [&>svg]:shrink-0">
 						<ListMusic className="h-4 w-4" />
-						Add to playlist
+						Playlists
 					</ContextMenuSubTrigger>
-					<ContextMenuSubContent className="w-44">
+					<ContextMenuSubContent className="w-48">
 						<ContextMenuItem onSelect={() => onNewPlaylist(track)}>
 							<Plus className="h-4 w-4" />
 							New playlist…
 						</ContextMenuItem>
 						{playlists.length > 0 && <ContextMenuSeparator />}
-						{playlists.map((playlist) => (
-							<ContextMenuItem
-								key={playlist.id}
-								onSelect={() => onAddToPlaylist(track, playlist.id)}
-							>
-								<span className="truncate">{playlist.name}</span>
-							</ContextMenuItem>
-						))}
+						{playlists.map((playlist) => {
+							const isMember =
+								serverId !== undefined &&
+								playlist.trackIds.includes(serverId);
+							return (
+								<ContextMenuCheckboxItem
+									key={playlist.id}
+									checked={isMember}
+									disabled={serverId === undefined}
+									// Keep the menu open so several playlists can be
+									// (un)checked in one go.
+									onSelect={(e) => e.preventDefault()}
+									onCheckedChange={() =>
+										onTogglePlaylist(track, playlist.id, isMember)
+									}
+								>
+									<span className="truncate">{playlist.name}</span>
+								</ContextMenuCheckboxItem>
+							);
+						})}
 					</ContextMenuSubContent>
 				</ContextMenuSub>
 				<ContextMenuSeparator />
@@ -402,7 +395,6 @@ export function TrackList() {
 	const { playlists } = usePlaylists();
 	const { uploads } = useUploads();
 	const { imports } = useImports();
-	const cachedIds = useTrackCache();
 	// The dialogs are rendered once for the whole list; the context menu sets
 	// which track they target.
 	const [editTrack, setEditTrack] = useState<Track | null>(null);
@@ -419,11 +411,16 @@ export function TrackList() {
 			controller.playCollection(LIBRARY_QUEUE_CONTEXT, tracks, index),
 		[controller, tracks],
 	);
-	const addToPlaylist = useCallback((track: Track, playlistId: number) => {
-		const serverId = libraryService.getRemote(track.id)?.id;
-		if (serverId === undefined) return;
-		void playlistService.addTracks(playlistId, [serverId]);
-	}, []);
+	const togglePlaylist = useCallback(
+		(track: Track, playlistId: number, isMember: boolean) => {
+			const serverId = libraryService.getRemote(track.id)?.id;
+			if (serverId === undefined) return;
+			void (isMember
+				? playlistService.removeTracks(playlistId, [serverId])
+				: playlistService.addTracks(playlistId, [serverId]));
+		},
+		[],
+	);
 
 	const totalSec = useMemo(
 		() => tracks.reduce((sum, track) => sum + track.durationSec, 0),
@@ -516,7 +513,8 @@ export function TrackList() {
 							</li>
 						))}
 						{visible.map(({ track, index }) => {
-							// The cache reports server ids; map the track id back to one.
+							// Playlist membership is keyed by server id; map the track
+							// id back to one for the row's playlist checkboxes.
 							const serverId = libraryService.getRemote(track.id)?.id;
 							// The queue may hold a playlist, so "current" is by track
 							// id — the highlight follows the playing track wherever it
@@ -527,14 +525,14 @@ export function TrackList() {
 									<TrackRow
 										track={track}
 										index={index}
+										serverId={serverId}
 										isCurrent={isCurrent}
 										showBars={isCurrent && state.isPlaying}
-										isCached={serverId !== undefined && cachedIds.has(serverId)}
 										playlists={playlists.playlists}
 										onPlay={playTrackAt}
 										onEdit={setEditTrack}
 										onDelete={setDeleteTrack}
-										onAddToPlaylist={addToPlaylist}
+										onTogglePlaylist={togglePlaylist}
 										onNewPlaylist={setPlaylistSeed}
 									/>
 								</li>

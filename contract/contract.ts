@@ -60,12 +60,18 @@ export const EditArtistRequest = z.object({
     .optional(),
 });
 
+// Ordered playback list of a playlist. Order is playback order; a track may
+// appear at most once — duplicate ids are a 400, same as unknown ids.
+const PlaylistTrackIds = z
+  .array(z.int32())
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "trackIds must not contain duplicates",
+  });
+
 export const CreatePlaylistRequest = z.object({
   name: z.string().min(1),
-  desc: z.string().optional(),
-  // Initial ordered playback list. Order is playback order; the same track id
-  // may appear more than once (duplicates are allowed). Unknown ids are a 400.
-  trackIds: z.array(z.int32()).optional(),
+  // Initial ordered playback list (see PlaylistTrackIds).
+  trackIds: PlaylistTrackIds.optional(),
   // Raw cover-image bytes, sent base64-encoded and stored as-is (bytea).
   image: z
     .base64()
@@ -76,12 +82,10 @@ export const CreatePlaylistRequest = z.object({
 export const EditPlaylistRequest = z.object({
   id: z.int32(),
   name: z.string().min(1).optional(),
-  // New description; `null` clears it; omit to leave it unchanged.
-  desc: z.string().nullable().optional(),
   // Full replacement of the ordered track list (an empty array clears it);
-  // omit to leave it unchanged. Same semantics as the create route: order is
-  // playback order, duplicates are allowed, unknown ids are a 400.
-  trackIds: z.array(z.int32()).optional(),
+  // omit to leave it unchanged. Same semantics as the create route (see
+  // PlaylistTrackIds): duplicate and unknown ids are a 400.
+  trackIds: PlaylistTrackIds.optional(),
   // New cover-image bytes, base64-encoded; `null` removes the cover;
   // omit to leave it unchanged.
   image: z
@@ -121,10 +125,9 @@ export const ArtistResponse = z.object({
 export const PlaylistResponse = z.object({
   id: z.int32(),
   name: z.string(),
-  desc: z.string().optional(),
-  // Ordered playback list; may contain the same track id more than once.
-  // Ids of tracks that were deleted from the library are silently dropped
-  // from every playlist server-side and never appear here.
+  // Ordered playback list; each track id appears at most once. Ids of tracks
+  // that were deleted from the library are silently dropped from every
+  // playlist server-side and never appear here.
   trackIds: z.array(z.int32()),
   // URL of the `getPlaylistImage` route when the playlist has a cover, else
   // absent. The raw image bytes are fetched separately from that route.
@@ -323,8 +326,8 @@ export const ApiContract = c.router(
         404: z.string(),
       },
       summary:
-        "Edit a playlist's name, description, cover, and/or replace its " +
-        "ordered track list (send null to clear desc/cover)",
+        "Edit a playlist's name, cover, and/or replace its ordered track " +
+        "list (send null to remove the cover)",
     },
     deletePlaylist: {
       method: "POST",

@@ -362,10 +362,9 @@ export class ApiClient {
 			if (res.status === 200) {
 				return {
 					ok: true,
-					playlists: res.body.map(({ id, name, desc, trackIds, imageUrl }) => ({
+					playlists: res.body.map(({ id, name, trackIds, imageUrl }) => ({
 						id,
 						name,
-						desc,
 						trackIds,
 						imageUrl: imageUrl ? urlForPlaylistImage(id) : undefined,
 					})),
@@ -397,7 +396,6 @@ export class ApiClient {
 			const res = await client.postPlaylist({
 				body: {
 					name: params.name,
-					desc: params.desc,
 					trackIds: params.trackIds,
 					image: params.imageBase64,
 				},
@@ -427,9 +425,8 @@ export class ApiClient {
 				body: {
 					id: params.id,
 					name: params.name,
-					// undefined drops off the wire (unchanged); null survives (clear).
-					desc: params.desc,
 					trackIds: params.trackIds,
+					// undefined drops off the wire (unchanged); null survives (remove).
 					image: params.imageBase64,
 				},
 			});

@@ -27,9 +27,9 @@ type ImageEdit =
 
 /**
  * Create a new playlist or edit an existing one (`playlist === null` →
- * create). Name is required, description optional; the cover is uploaded as
- * raw image bytes. `seedTrackIds` pre-fills a created playlist's track list
- * (the library context menu's "New playlist…" passes the right-clicked track).
+ * create). Name is required; the cover is uploaded as raw image bytes.
+ * `seedTrackIds` pre-fills a created playlist's track list (the library
+ * context menu's "New playlist…" passes the right-clicked track).
  */
 export function PlaylistDialog({
 	playlist,
@@ -44,7 +44,6 @@ export function PlaylistDialog({
 }) {
 	const isEdit = playlist !== null;
 	const [name, setName] = useState("");
-	const [desc, setDesc] = useState("");
 	const [image, setImage] = useState<ImageEdit>({ kind: "unchanged" });
 	const [preview, setPreview] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
@@ -55,7 +54,6 @@ export function PlaylistDialog({
 	useEffect(() => {
 		if (!open) return;
 		setName(playlist?.name ?? "");
-		setDesc(playlist?.desc ?? "");
 		setImage({ kind: "unchanged" });
 		setSubmitting(false);
 		setError(null);
@@ -103,18 +101,14 @@ export function PlaylistDialog({
 			imageBase64 = null;
 		}
 
-		const trimmedDesc = desc.trim();
 		const result = isEdit
 			? await playlistService.edit({
 					id: playlist.id,
 					name: trimmedName,
-					// An emptied field clears the description server-side.
-					desc: trimmedDesc === "" ? null : trimmedDesc,
 					imageBase64,
 				})
 			: await playlistService.create({
 					name: trimmedName,
-					desc: trimmedDesc === "" ? undefined : trimmedDesc,
 					trackIds: seedTrackIds,
 					// create has no null state; only a picked file produces bytes.
 					imageBase64: imageBase64 ?? undefined,
@@ -134,7 +128,7 @@ export function PlaylistDialog({
 					<DialogTitle>{isEdit ? "Edit playlist" : "New playlist"}</DialogTitle>
 					<DialogDescription>
 						{isEdit
-							? "Update the playlist's name, description or cover."
+							? "Update the playlist's name or cover."
 							: seedTrackIds?.length
 								? "The playlist is created on the server, starting with the selected track."
 								: "The playlist is created on the server; add tracks from the library."}
@@ -214,21 +208,6 @@ export function PlaylistDialog({
 							autoFocus
 							value={name}
 							onChange={(e) => setName(e.target.value)}
-							disabled={submitting}
-						/>
-					</div>
-					<div className="flex flex-col gap-1.5">
-						<label
-							htmlFor="playlist-desc"
-							className="text-sm font-medium leading-none"
-						>
-							Description{" "}
-							<span className="text-muted-foreground">(optional)</span>
-						</label>
-						<Input
-							id="playlist-desc"
-							value={desc}
-							onChange={(e) => setDesc(e.target.value)}
 							disabled={submitting}
 						/>
 					</div>

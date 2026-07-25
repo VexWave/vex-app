@@ -46,8 +46,7 @@ const artists = new Map<number, StoredArtist>();
 interface StoredPlaylist {
 	id: number;
 	name: string;
-	desc?: string;
-	/** Ordered playback list; duplicates allowed per the contract. */
+	/** Ordered playback list; a track at most once per the contract. */
 	trackIds: number[];
 	/** Raw image bytes, stored as-is; served from `/playlist/:id/image`. */
 	image?: Uint8Array;
@@ -271,7 +270,7 @@ Bun.serve({
 				if (!parsed.success) {
 					return new Response(parsed.error.message, { status: 400 });
 				}
-				const { name, desc, trackIds, image } = parsed.data;
+				const { name, trackIds, image } = parsed.data;
 				const unknown = unknownTrackIds(trackIds ?? []);
 				if (unknown.length > 0) {
 					return new Response(`unknown track ids: ${unknown.join(", ")}`, {
@@ -282,7 +281,6 @@ Bun.serve({
 				playlists.set(id, {
 					id,
 					name,
-					desc,
 					trackIds: trackIds ?? [],
 					image: image ? new Uint8Array(image) : undefined,
 				});
@@ -302,7 +300,7 @@ Bun.serve({
 				if (!parsed.success) {
 					return new Response(parsed.error.message, { status: 400 });
 				}
-				const { id, name, desc, trackIds, image } = parsed.data;
+				const { id, name, trackIds, image } = parsed.data;
 				const playlist = playlists.get(id);
 				if (!playlist) return new Response("not found", { status: 404 });
 				if (trackIds !== undefined) {
@@ -315,8 +313,6 @@ Bun.serve({
 					playlist.trackIds = trackIds;
 				}
 				if (name !== undefined) playlist.name = name;
-				if (desc === null) playlist.desc = undefined;
-				else if (desc !== undefined) playlist.desc = desc;
 				if (image === null) playlist.image = undefined;
 				else if (image !== undefined) playlist.image = new Uint8Array(image);
 				console.log(
@@ -347,10 +343,9 @@ Bun.serve({
 				// Never inline image bytes: expose the image route's path instead,
 				// and only for playlists that actually have a cover.
 				return Response.json(
-					[...playlists.values()].map(({ id, name, desc, trackIds, image }) => ({
+					[...playlists.values()].map(({ id, name, trackIds, image }) => ({
 						id,
 						name,
-						desc,
 						trackIds,
 						imageUrl: image ? playlistImagePath(id) : undefined,
 					})),

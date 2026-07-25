@@ -140,8 +140,7 @@ export type ListArtistsResult =
 
 export interface CreatePlaylistParams {
 	name: string;
-	desc?: string;
-	/** Initial ordered playback list; duplicates allowed. Omit for empty. */
+	/** Initial ordered playback list; a track at most once. Omit for empty. */
 	trackIds?: number[];
 	/** Raw cover-image bytes, base64-encoded. Omit for no cover. */
 	imageBase64?: string;
@@ -151,11 +150,10 @@ export interface EditPlaylistParams {
 	/** Server-side playlist id. */
 	id: number;
 	name?: string;
-	/** New description; `null` clears it; omit to leave it unchanged. */
-	desc?: string | null;
 	/**
 	 * Full replacement of the ordered track list (empty array clears it);
-	 * omit to leave it unchanged. Duplicates allowed.
+	 * omit to leave it unchanged. A track may appear at most once — the
+	 * server rejects duplicates.
 	 */
 	trackIds?: number[];
 	/** New cover bytes, base64; `null` removes the cover; omit = unchanged. */
@@ -171,12 +169,10 @@ export interface RemotePlaylist {
 	/** Server-side playlist id. */
 	id: number;
 	name: string;
-	/** Absent when the playlist has no description. */
-	desc?: string;
 	/**
-	 * Ordered playback list of server track ids; may contain the same id more
-	 * than once. The server drops deleted tracks from playlists, so every id
-	 * here should exist in the track listing (a stale one is skipped by the
+	 * Ordered playback list of server track ids; each id appears at most
+	 * once. The server drops deleted tracks from playlists, so every id here
+	 * should exist in the track listing (a stale one is skipped by the
 	 * client-side join).
 	 */
 	trackIds: number[];

@@ -3,12 +3,14 @@ import {
 	AlertCircle,
 	ArrowDown,
 	ArrowUp,
+	Check,
 	ChevronLeft,
 	EllipsisVertical,
 	ListMusic,
 	ListPlus,
 	Loader2,
 	Music,
+	Pause,
 	Pencil,
 	Play,
 	Plus,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 import { libraryService, trackIdForServerId } from "@/api/LibraryService";
 import { playlistQueueContext, playlistService } from "@/api/PlaylistService";
+import { EditTrackDialog } from "@/components/EditTrackDialog";
 import { PlaylistDialog } from "@/components/PlaylistDialog";
 import { NowPlayingBars, openRowMenu } from "@/components/TrackList";
 import { Button } from "@/components/ui/button";
@@ -47,9 +50,11 @@ import type { RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
 /**
- * A playlist's cover: the uploaded image when it has one, else a 2×2 collage
- * of the first distinct track covers, else a placeholder glyph. The collage
- * needs no server round-trip — it reuses cover URLs the library already has.
+ * A playlist's cover: the uploaded image when it has one, else a collage of
+ * the first (up to four) distinct track covers — 1 fills the square, 2 sit
+ * side by side, 3 are two on top and one across the bottom, 4 take a corner
+ * each. The collage needs no server round-trip — it reuses cover URLs the
+ * library already has.
  */
 function PlaylistCover({
 	playlist,
@@ -87,14 +92,31 @@ function PlaylistCover({
 					alt=""
 					className="h-full w-full object-cover"
 				/>
-			) : covers.length >= 4 ? (
-				<div className="grid h-full w-full grid-cols-2 grid-rows-2">
-					{covers.map((url) => (
-						<img key={url} src={url} alt="" className="h-full w-full object-cover" />
+			) : covers.length === 1 ? (
+				<img src={covers[0]} alt="" className="h-full w-full object-cover" />
+			) : covers.length > 1 ? (
+				// 2 covers → side-by-side halves; 3 → two on top, one across the
+				// bottom; 4 → one per corner.
+				<div
+					className={cn(
+						// Explicit fr rows — the images size themselves h-full against
+						// the row track, which an implicit `auto` row can't provide.
+						"grid h-full w-full grid-cols-2",
+						covers.length >= 3 ? "grid-rows-2" : "grid-rows-1",
+					)}
+				>
+					{covers.map((url, index) => (
+						<img
+							key={url}
+							src={url}
+							alt=""
+							className={cn(
+								"h-full w-full object-cover",
+								covers.length === 3 && index === 2 && "col-span-2",
+							)}
+						/>
 					))}
 				</div>
-			) : covers.length > 0 ? (
-				<img src={covers[0]} alt="" className="h-full w-full object-cover" />
 			) : (
 				<ListMusic
 					className={cn(
@@ -107,10 +129,15 @@ function PlaylistCover({
 	);
 }
 
-/** One grid card. Click opens the playlist; hover reveals play/edit/delete. */
+/**
+ * One grid card. Click opens the playlist; hover reveals play/edit/delete.
+ * While the playlist is playing, the play button stays visible as a pause
+ * button (and `onPlay` toggles instead of restarting — see the grid).
+ */
 function PlaylistCard({
 	playlist,
 	tracks,
+	playing,
 	onOpen,
 	onPlay,
 	onEdit,
@@ -118,6 +145,7 @@ function PlaylistCard({
 }: {
 	playlist: RemotePlaylist;
 	tracks: Track[];
+	playing: boolean;
 	onOpen: () => void;
 	onPlay: () => void;
 	onEdit: () => void;
@@ -145,14 +173,23 @@ function PlaylistCard({
 				{tracks.length > 0 && (
 					<Button
 						size="icon"
-						className="absolute bottom-2 right-2 h-9 w-9 rounded-full opacity-0 shadow-md transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
-						aria-label={`Play ${playlist.name}`}
+						className={cn(
+							"absolute bottom-2 right-2 h-9 w-9 rounded-full shadow-md transition-opacity focus-visible:opacity-100 group-hover:opacity-100",
+							playing ? "opacity-100" : "opacity-0",
+						)}
+						aria-label={
+							playing ? `Pause ${playlist.name}` : `Play ${playlist.name}`
+						}
 						onClick={(e) => {
 							e.stopPropagation();
 							onPlay();
 						}}
 					>
-						<Play className="h-4 w-4 fill-current" />
+						{playing ? (
+							<Pause className="h-4 w-4 fill-current" />
+						) : (
+							<Play className="h-4 w-4 fill-current" />
+						)}
 					</Button>
 				)}
 			</div>
@@ -193,10 +230,10 @@ function PlaylistCard({
 }
 
 /**
- * Searchable library picker for adding tracks to the open playlist. Every
- * click appends immediately (duplicates are allowed by design), so the dialog
- * can stay open while several tracks are added; the per-row count shows how
- * often the track is in the playlist already.
+ * Searchable library picker for editing the open playlist's membership. A
+ * track can be in a playlist at most once, so each row is a toggle: clicking
+ * adds the track, clicking again removes it. Every click applies immediately,
+ * so the dialog can stay open while several tracks are added.
  */
 function AddTracksDialog({
 	playlist,
@@ -220,16 +257,18 @@ function AddTracksDialog({
 		);
 	}, [library.tracks, query]);
 
-	const countIn = (track: Track): number => {
+	const isIn = (track: Track): boolean => {
 		const serverId = libraryService.getRemote(track.id)?.id;
-		if (serverId === undefined || !playlist) return 0;
-		return playlist.trackIds.filter((id) => id === serverId).length;
+		if (serverId === undefined || !playlist) return false;
+		return playlist.trackIds.includes(serverId);
 	};
 
-	const add = (track: Track) => {
+	const toggle = (track: Track) => {
 		const serverId = libraryService.getRemote(track.id)?.id;
 		if (serverId === undefined || !playlist) return;
-		void playlistService.addTracks(playlist.id, [serverId]);
+		void (isIn(track)
+			? playlistService.removeTracks(playlist.id, [serverId])
+			: playlistService.addTracks(playlist.id, [serverId]));
 	};
 
 	return (
@@ -244,8 +283,8 @@ function AddTracksDialog({
 				<DialogHeader>
 					<DialogTitle>Add tracks</DialogTitle>
 					<DialogDescription>
-						Add library tracks to “{playlist?.name}”. Adding the same track
-						twice is allowed.
+						Add library tracks to “{playlist?.name}”; click an added track to
+						remove it again.
 					</DialogDescription>
 				</DialogHeader>
 				<div className="relative">
@@ -269,7 +308,7 @@ function AddTracksDialog({
 					) : (
 						<ul className="flex flex-col gap-1 pr-3">
 							{visible.map((track) => {
-								const count = countIn(track);
+								const included = isIn(track);
 								return (
 									<li key={track.id}>
 										<div className="flex w-full items-center gap-3 rounded-lg py-1.5 pl-2 pr-1">
@@ -292,19 +331,22 @@ function AddTracksDialog({
 													{track.artist ?? "Unknown artist"}
 												</p>
 											</div>
-											{count > 0 && (
-												<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-													{count === 1 ? "added" : `×${count}`}
-												</span>
-											)}
 											<Button
 												variant="ghost"
 												size="icon"
 												className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-												aria-label={`Add ${track.title}`}
-												onClick={() => add(track)}
+												aria-label={
+													included
+														? `Remove ${track.title}`
+														: `Add ${track.title}`
+												}
+												onClick={() => toggle(track)}
 											>
-												<Plus className="h-4 w-4" />
+												{included ? (
+													<Check className="h-4 w-4 text-primary" />
+												) : (
+													<Plus className="h-4 w-4" />
+												)}
 											</Button>
 										</div>
 									</li>
@@ -348,26 +390,28 @@ function PlaylistsErrorBanner({ error }: { error: string | null }) {
 const PlaylistTrackRow = memo(function PlaylistTrackRow({
 	track,
 	rowIndex,
-	position,
+	serverId,
 	isCurrent,
 	showBars,
 	canMoveUp,
 	canMoveDown,
 	onPlay,
+	onEdit,
 	onMove,
 	onRemove,
 }: {
 	track: Track;
 	rowIndex: number;
-	/** Index into the playlist's trackIds (dangling ids make it ≠ rowIndex). */
-	position: number;
+	/** Server-side track id — membership edits are addressed by it. */
+	serverId: number;
 	isCurrent: boolean;
 	showBars: boolean;
 	canMoveUp: boolean;
 	canMoveDown: boolean;
 	onPlay: (rowIndex: number) => void;
-	onMove: (position: number, direction: -1 | 1) => void;
-	onRemove: (position: number) => void;
+	onEdit: (track: Track) => void;
+	onMove: (serverId: number, direction: -1 | 1) => void;
+	onRemove: (serverId: number) => void;
 }) {
 	return (
 		<ContextMenu>
@@ -447,16 +491,21 @@ const PlaylistTrackRow = memo(function PlaylistTrackRow({
 				</div>
 			</ContextMenuTrigger>
 			<ContextMenuContent className="w-52">
+				<ContextMenuItem onSelect={() => onEdit(track)}>
+					<Pencil className="h-4 w-4" />
+					Edit…
+				</ContextMenuItem>
+				<ContextMenuSeparator />
 				<ContextMenuItem
 					disabled={!canMoveUp}
-					onSelect={() => onMove(position, -1)}
+					onSelect={() => onMove(serverId, -1)}
 				>
 					<ArrowUp className="h-4 w-4" />
 					Move up
 				</ContextMenuItem>
 				<ContextMenuItem
 					disabled={!canMoveDown}
-					onSelect={() => onMove(position, 1)}
+					onSelect={() => onMove(serverId, 1)}
 				>
 					<ArrowDown className="h-4 w-4" />
 					Move down
@@ -464,7 +513,7 @@ const PlaylistTrackRow = memo(function PlaylistTrackRow({
 				<ContextMenuSeparator />
 				<ContextMenuItem
 					className="text-destructive focus:text-destructive"
-					onSelect={() => onRemove(position)}
+					onSelect={() => onRemove(serverId)}
 				>
 					<X className="h-4 w-4" />
 					Remove from playlist
@@ -488,16 +537,18 @@ function PlaylistDetail({
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
 	const [addOpen, setAddOpen] = useState(false);
+	// Track targeted by a row's "Edit…" menu item (same dialog as the library).
+	const [editTrack, setEditTrack] = useState<Track | null>(null);
 
 	// Join the ordered trackIds against the library. `position` is the index
-	// into trackIds (what edits address); the row index is the position in the
-	// *joined* list (what playback addresses) — they diverge only while a
-	// dangling id awaits the next playlists refresh.
+	// into trackIds (only used for the move-bound checks); the row index is
+	// the position in the *joined* list (what playback addresses) — they
+	// diverge only while a dangling id awaits the next playlists refresh.
 	const rows = useMemo(() => {
 		const byId = new Map(library.tracks.map((track) => [track.id, track]));
 		return playlist.trackIds.flatMap((serverId, position) => {
 			const track = byId.get(trackIdForServerId(serverId));
-			return track ? [{ track, position }] : [];
+			return track ? [{ track, serverId, position }] : [];
 		});
 	}, [playlist, library.tracks]);
 
@@ -508,13 +559,13 @@ function PlaylistDetail({
 		[playlist],
 	);
 	const moveRow = useCallback(
-		(position: number, direction: -1 | 1) =>
-			void playlistService.moveTrack(playlist.id, position, direction),
+		(serverId: number, direction: -1 | 1) =>
+			void playlistService.moveTrack(playlist.id, serverId, direction),
 		[playlist.id],
 	);
 	const removeRow = useCallback(
-		(position: number) =>
-			void playlistService.removeTrackAt(playlist.id, position),
+		(serverId: number) =>
+			void playlistService.removeTracks(playlist.id, [serverId]),
 		[playlist.id],
 	);
 
@@ -522,9 +573,8 @@ function PlaylistDetail({
 		() => rows.reduce((sum, row) => sum + row.track.durationSec, 0),
 		[rows],
 	);
-	// This playlist owns the queue → highlight by queue position (duplicates
-	// make track ids ambiguous). Any other queue → highlight the playing track
-	// id wherever it appears.
+	// Whether this playlist is what the queue mirrors — then the Play button
+	// becomes a pause/resume toggle instead of restarting from the top.
 	const ownsQueue =
 		controller.queueContextId === playlistQueueContext(playlist.id);
 
@@ -549,7 +599,6 @@ function PlaylistDetail({
 				<div className="min-w-0 flex-1">
 					<h2 className="truncate text-sm font-semibold">{playlist.name}</h2>
 					<p className="truncate text-xs text-muted-foreground">
-						{playlist.desc ? `${playlist.desc} · ` : ""}
 						{rows.length} {rows.length === 1 ? "track" : "tracks"}
 						{rows.length > 0 ? ` · ${formatTime(totalSec)}` : ""}
 					</p>
@@ -576,10 +625,21 @@ function PlaylistDetail({
 					size="sm"
 					className="shrink-0"
 					disabled={rows.length === 0}
-					onClick={() => playlistService.play(playlist)}
+					onClick={() =>
+						ownsQueue ? controller.togglePlay() : playlistService.play(playlist)
+					}
 				>
-					<Play className="h-4 w-4 fill-current" />
-					Play
+					{ownsQueue && state.isPlaying ? (
+						<>
+							<Pause className="h-4 w-4 fill-current" />
+							Pause
+						</>
+					) : (
+						<>
+							<Play className="h-4 w-4 fill-current" />
+							Play
+						</>
+					)}
 				</Button>
 			</div>
 			<Separator />
@@ -596,21 +656,22 @@ function PlaylistDetail({
 			) : (
 				<ScrollArea className="min-h-0 flex-1">
 					<ul className="flex flex-col gap-1 p-2">
-						{rows.map(({ track, position }, rowIndex) => {
-							const isCurrent = ownsQueue
-								? rowIndex === state.currentIndex
-								: track.id === state.currentTrack?.id;
+						{rows.map(({ track, serverId, position }, rowIndex) => {
+							// A track is in a playlist at most once, so the id match is
+							// unambiguous no matter where playback was started from.
+							const isCurrent = track.id === state.currentTrack?.id;
 							return (
-								<li key={`${position}-${track.id}`}>
+								<li key={track.id}>
 									<PlaylistTrackRow
 										track={track}
 										rowIndex={rowIndex}
-										position={position}
+										serverId={serverId}
 										isCurrent={isCurrent}
 										showBars={isCurrent && state.isPlaying}
 										canMoveUp={position > 0}
 										canMoveDown={position < playlist.trackIds.length - 1}
 										onPlay={playRow}
+										onEdit={setEditTrack}
 										onMove={moveRow}
 										onRemove={removeRow}
 									/>
@@ -626,12 +687,22 @@ function PlaylistDetail({
 				open={addOpen}
 				onOpenChange={setAddOpen}
 			/>
+
+			<EditTrackDialog
+				track={editTrack}
+				open={editTrack !== null}
+				onOpenChange={(open) => {
+					if (!open) setEditTrack(null);
+				}}
+			/>
 		</div>
 	);
 }
 
 export function PlaylistsView() {
 	const { playlists: state } = usePlaylists();
+	// The grid's play buttons mirror playback: a playing playlist shows pause.
+	const { state: playerState, controller } = usePlayer();
 	// Subscribe to the library so the grid's collages and track counts
 	// re-render when it loads/changes (tracksOf reads its snapshot).
 	useLibrary();
@@ -698,13 +769,23 @@ export function PlaylistsView() {
 							<ul className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 p-4">
 								{state.playlists.map((playlist) => {
 									const tracks = playlistService.tracksOf(playlist);
+									// The queue already mirrors this playlist → the button
+									// pauses/resumes instead of restarting from the top.
+									const ownsQueue =
+										controller.queueContextId ===
+										playlistQueueContext(playlist.id);
 									return (
 										<li key={playlist.id}>
 											<PlaylistCard
 												playlist={playlist}
 												tracks={tracks}
+												playing={ownsQueue && playerState.isPlaying}
 												onOpen={() => setOpenId(playlist.id)}
-												onPlay={() => playlistService.play(playlist)}
+												onPlay={() =>
+													ownsQueue
+														? controller.togglePlay()
+														: playlistService.play(playlist)
+												}
 												onEdit={() => openEdit(playlist)}
 												onDelete={() => setPendingDelete(playlist)}
 											/>
