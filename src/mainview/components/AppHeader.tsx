@@ -2,7 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { artistService } from "@/api/ArtistService";
 import { libraryService } from "@/api/LibraryService";
 import { AddTracksButton } from "@/components/AddTracksButton";
-import { HeaderAction } from "@/components/HeaderAction";
+import { HeaderAction, HeaderActionGroup } from "@/components/HeaderAction";
 import { ImportUrlButton } from "@/components/ImportUrlButton";
 import { Logo } from "@/components/Logo";
 import { useLibrary } from "@/hooks/useLibrary";
@@ -37,9 +37,12 @@ export function AppHeader() {
 				</h1>
 			</div>
 
-			{/* justify-end so the growing labels eat into the empty space to the
-			    left instead of pushing the row past the window edge. */}
-			<div className="ml-auto flex min-w-0 items-center justify-end gap-1">
+			{/* The group is right-aligned so the growing labels eat into the empty
+			    space to the left instead of pushing the row past the window edge,
+			    and self-stretch gives it the header's full height: the pointer can
+			    drift off the 36px buttons on its way across the row without the
+			    row deciding it has been left. */}
+			<HeaderActionGroup className="ml-auto self-stretch gap-1">
 				<HeaderAction
 					icon={<RefreshCw className={cn(library.loading && "animate-spin")} />}
 					label="Refresh"
@@ -48,7 +51,7 @@ export function AppHeader() {
 				/>
 				<ImportUrlButton />
 				<AddTracksButton />
-			</div>
+			</HeaderActionGroup>
 		</header>
 	);
 }
