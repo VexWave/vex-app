@@ -1,7 +1,52 @@
 import type { ReactNode } from "react";
-import { Pause, Play } from "lucide-react";
+import { Pause, Pencil, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+/**
+ * The edit/delete pair a card reveals in its corner. Both stop the click from
+ * reaching the card behind them, which would otherwise open the collection on
+ * the way to its dialog.
+ */
+export function CollectionCardActions({
+	name,
+	onEdit,
+	onDelete,
+}: {
+	/** The collection's name, for the buttons' accessible labels. */
+	name: string;
+	onEdit: () => void;
+	onDelete: () => void;
+}) {
+	return (
+		<>
+			<Button
+				variant="ghost"
+				size="icon"
+				className="h-7 w-7"
+				aria-label={`Edit ${name}`}
+				onClick={(e) => {
+					e.stopPropagation();
+					onEdit();
+				}}
+			>
+				<Pencil className="h-4 w-4" />
+			</Button>
+			<Button
+				variant="ghost"
+				size="icon"
+				className="h-7 w-7"
+				aria-label={`Delete ${name}`}
+				onClick={(e) => {
+					e.stopPropagation();
+					onDelete();
+				}}
+			>
+				<Trash2 className="h-4 w-4" />
+			</Button>
+		</>
+	);
+}
 
 /**
  * One card in a collection grid — a playlist, an artist. Artwork with a

@@ -7,8 +7,8 @@ import { sessionService } from "./SessionService";
 
 /**
  * Queue context id for "the queue mirrors the whole library" (see
- * PlayerController.queueContextId). Playing a playlist replaces it with that
- * playlist's own context id.
+ * PlayerController.queueContextId). Playing a playlist or an artist replaces
+ * it with that collection's own context id.
  */
 export const LIBRARY_QUEUE_CONTEXT = "library";
 
@@ -34,8 +34,9 @@ export type EditTrackChanges = Omit<EditTrackParams, "id">;
  *
  * The library list itself lives in this snapshot; the play queue only mirrors
  * it while the library is what the user played from (queue context). When a
- * playlist owns the queue, refreshes still patch queued copies' metadata and
- * drop server-deleted tracks, but membership stays the playlist's.
+ * playlist or an artist owns the queue, refreshes still patch queued copies'
+ * metadata and drop server-deleted tracks, but membership stays that
+ * collection's.
  */
 export class LibraryService {
 	private subscribers = new Set<() => void>();
@@ -135,9 +136,9 @@ export class LibraryService {
 	/**
 	 * Push a fresh library into the play queue. When the library owns the
 	 * queue (or nothing is queued yet — fresh login), the queue mirrors it
-	 * outright. When a playlist owns the queue, only queued copies' metadata
+	 * outright. When another collection owns it, only queued copies' metadata
 	 * is patched and server-deleted tracks are dropped; membership itself is
-	 * PlaylistService's business.
+	 * that collection's service's business.
 	 */
 	private syncQueue(tracks: Track[]): void {
 		const context = playerController.queueContextId;

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { ListMusic, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { ListMusic, Loader2, Plus } from "lucide-react";
 import { openIdOf } from "@/api/NavigationService";
 import { playlistQueueContext, playlistService } from "@/api/PlaylistService";
-import { CollectionCard } from "@/components/CollectionCard";
+import {
+	CollectionCard,
+	CollectionCardActions,
+} from "@/components/CollectionCard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PlaylistCover } from "@/components/PlaylistCover";
@@ -151,32 +154,11 @@ export function PlaylistsView() {
 														: undefined
 												}
 												actions={
-													<>
-														<Button
-															variant="ghost"
-															size="icon"
-															className="h-7 w-7"
-															aria-label={`Edit ${playlist.name}`}
-															onClick={(e) => {
-																e.stopPropagation();
-																openEdit(playlist);
-															}}
-														>
-															<Pencil className="h-4 w-4" />
-														</Button>
-														<Button
-															variant="ghost"
-															size="icon"
-															className="h-7 w-7"
-															aria-label={`Delete ${playlist.name}`}
-															onClick={(e) => {
-																e.stopPropagation();
-																setPendingDelete(playlist);
-															}}
-														>
-															<Trash2 className="h-4 w-4" />
-														</Button>
-													</>
+													<CollectionCardActions
+														name={playlist.name}
+														onEdit={() => openEdit(playlist)}
+														onDelete={() => setPendingDelete(playlist)}
+													/>
 												}
 											/>
 										</li>

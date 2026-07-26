@@ -86,8 +86,8 @@ export class PlayerController {
 
 	/**
 	 * Replace the queue with a collection and start playing the track at
-	 * `index`. This is what "playing from the library" and "playing a
-	 * playlist" both do — the queue becomes that collection, in its order.
+	 * `index`. This is what playing from the library, from a playlist and from
+	 * an artist all do — the queue becomes that collection, in its order.
 	 */
 	playCollection(contextId: string, tracks: Track[], index: number): void {
 		this.queueContext = contextId;
@@ -180,8 +180,8 @@ export class PlayerController {
 	 * loaded while tracks are still queued means playback ran off the end under
 	 * repeat "off" — there is no track to resume, so the press starts the
 	 * collection again from the top. Every play button in the app funnels
-	 * through here (the transport directly, the playlist ones via
-	 * `playlistService.playOrToggle`), so it is the one place that has to know.
+	 * through here (the transport directly, the collection ones via
+	 * `playOrToggleCollection`), so it is the one place that has to know.
 	 */
 	togglePlay(): void {
 		if (!this.player.currentTrack && this.queue.tracks.length > 0) {
