@@ -28,6 +28,10 @@ const BAR_GHOST =
 export function PlayerBar() {
 	const { state, controller } = usePlayer();
 	const hasTrack = state.currentTrack !== null;
+	// The transport stays live for as long as there is a queue, not just while
+	// a track is loaded: a queue that ran to its end under repeat "off" unloads
+	// the player, and Play has to be clickable to start it over.
+	const hasQueue = state.tracks.length > 0;
 
 	return (
 		// `relative isolate` scopes the backdrop's negative z-index to this bar.
@@ -68,7 +72,7 @@ export function PlayerBar() {
 						variant="ghost"
 						size="icon"
 						aria-label="Previous track"
-						disabled={!hasTrack}
+						disabled={!hasQueue}
 						onClick={() => controller.previous()}
 						className={BAR_GHOST}
 					>
@@ -78,7 +82,7 @@ export function PlayerBar() {
 						size="icon"
 						className="h-10 w-10 rounded-full"
 						aria-label={state.isPlaying ? "Pause" : "Play"}
-						disabled={!hasTrack}
+						disabled={!hasQueue}
 						onClick={() => controller.togglePlay()}
 					>
 						{state.isPlaying ? (
@@ -91,7 +95,7 @@ export function PlayerBar() {
 						variant="ghost"
 						size="icon"
 						aria-label="Next track"
-						disabled={!hasTrack}
+						disabled={!hasQueue}
 						onClick={() => controller.next()}
 						className={BAR_GHOST}
 					>

@@ -83,11 +83,19 @@ export class PlaybackQueue {
 	 * Advance to the next track. When `wrap` is true (auto-advance after a
 	 * track ends), the end of the queue only wraps around under repeat "all".
 	 * Manual skips (wrap false) always wrap.
+	 *
+	 * Running off the end parks the cursor *before* the start rather than
+	 * leaving it on the last track: nothing is current once playback stops, so
+	 * -1 is the honest index — and it means the next start resumes at the top,
+	 * the same convention `replace` and `syncCollection` already use.
 	 */
 	next(wrap: boolean): Track | null {
 		if (this.items.length === 0) return null;
 		const atEnd = this.index >= this.items.length - 1;
-		if (atEnd && wrap && this.repeat !== "all") return null;
+		if (atEnd && wrap && this.repeat !== "all") {
+			this.index = -1;
+			return null;
+		}
 		this.index = atEnd ? 0 : this.index + 1;
 		return this.current;
 	}

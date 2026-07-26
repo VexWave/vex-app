@@ -92,13 +92,7 @@ export class PlayerController {
 	playCollection(contextId: string, tracks: Track[], index: number): void {
 		this.queueContext = contextId;
 		this.queue.replace(tracks, index);
-		const track = this.queue.current;
-		this.player.load(track);
-		if (track) {
-			this.error = null;
-			void this.player.play();
-		}
-		this.refresh();
+		this.startCurrent();
 	}
 
 	/**
@@ -158,7 +152,20 @@ export class PlayerController {
 
 	// --- transport ---
 
+	/**
+	 * Play/pause, and the one place that restarts a finished queue. Nothing
+	 * loaded while tracks are still queued means playback ran off the end under
+	 * repeat "off" — there is no track to resume, so the press starts the
+	 * collection again from the top. Every play button in the app funnels
+	 * through here (the transport directly, the playlist ones via
+	 * `playlistService.playOrToggle`), so it is the one place that has to know.
+	 */
 	togglePlay(): void {
+		if (!this.player.currentTrack && this.queue.tracks.length > 0) {
+			this.queue.jumpTo(0);
+			this.startCurrent();
+			return;
+		}
 		void this.player.toggle();
 	}
 
@@ -211,6 +218,22 @@ export class PlayerController {
 	}
 
 	// --- internals ---
+
+	/**
+	 * Load whatever the queue's cursor points at and start it, clearing any
+	 * error left by the previous track. A cursor on nothing (empty queue) just
+	 * unloads. Shared by `playCollection` and the end-of-queue restart so both
+	 * begin playback identically.
+	 */
+	private startCurrent(): void {
+		const track = this.queue.current;
+		this.player.load(track);
+		if (track) {
+			this.error = null;
+			void this.player.play();
+		}
+		this.refresh();
+	}
 
 	/**
 	 * Load persisted volume/mute/repeat from localStorage into the player and
