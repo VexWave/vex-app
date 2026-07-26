@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	ListMusic,
 	Loader2,
@@ -131,14 +131,21 @@ function PlaylistCard({
 	);
 }
 
-export function PlaylistsView() {
+export function PlaylistsView({
+	openPlaylistId,
+	onOpenPlaylist,
+}: {
+	/** The playlist whose detail view is open, or null for the grid. */
+	openPlaylistId: number | null;
+	/** Navigate to a playlist's detail view (null returns to the grid). */
+	onOpenPlaylist: (playlistId: number | null) => void;
+}) {
 	const { playlists: state } = usePlaylists();
 	// The grid's play buttons mirror playback: a playing playlist shows pause.
 	const { state: playerState } = usePlayer();
 	// Subscribe to the library so the grid's collages and track counts
 	// re-render when it loads/changes (tracksOf reads its snapshot).
 	useLibrary();
-	const [openId, setOpenId] = useState<number | null>(null);
 	const [dialogOpen, setDialogOpen] = useState(false);
 	// The playlist being edited, or null when the dialog is in "create" mode.
 	const [editing, setEditing] = useState<RemotePlaylist | null>(null);
@@ -158,9 +165,18 @@ export function PlaylistsView() {
 	// Always render the *fresh* snapshot of the opened playlist; if it was
 	// deleted (here or server-side), fall back to the grid.
 	const open =
-		openId !== null
-			? (state.playlists.find((playlist) => playlist.id === openId) ?? null)
+		openPlaylistId !== null
+			? (state.playlists.find((playlist) => playlist.id === openPlaylistId) ??
+				null)
 			: null;
+
+	// The open id lives in the app's navigation state, so when the playlist
+	// behind it vanishes (deleted by another client, or the id outlived its
+	// session) the navigation state must be told — otherwise the sidebar
+	// would keep marking a detail view the grid has already replaced.
+	useEffect(() => {
+		if (openPlaylistId !== null && open === null) onOpenPlaylist(null);
+	}, [openPlaylistId, open, onOpenPlaylist]);
 
 	const firstLoad = state.loading && state.playlists.length === 0;
 
@@ -169,7 +185,7 @@ export function PlaylistsView() {
 			{open ? (
 				<PlaylistDetail
 					playlist={open}
-					onBack={() => setOpenId(null)}
+					onBack={() => onOpenPlaylist(null)}
 					onEdit={() => openEdit(open)}
 				/>
 			) : (
@@ -213,7 +229,7 @@ export function PlaylistsView() {
 												playlist={playlist}
 												tracks={tracks}
 												playing={ownsQueue && playerState.isPlaying}
-												onOpen={() => setOpenId(playlist.id)}
+												onOpen={() => onOpenPlaylist(playlist.id)}
 												onPlay={() => playlistService.playOrToggle(playlist)}
 												onEdit={() => openEdit(playlist)}
 												onDelete={() => setPendingDelete(playlist)}
@@ -256,7 +272,9 @@ export function PlaylistsView() {
 							onClick={() => {
 								if (!pendingDelete) return;
 								void playlistService.remove(pendingDelete.id);
-								if (openId === pendingDelete.id) setOpenId(null);
+								// Back to the grid right away — the vanished-playlist
+								// effect would only catch up after the refetch.
+								if (openPlaylistId === pendingDelete.id) onOpenPlaylist(null);
 								setPendingDelete(null);
 							}}
 						>

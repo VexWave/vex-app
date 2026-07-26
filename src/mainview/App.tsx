@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react";
+import { useCallback, useState, type DragEvent } from "react";
 import { AlertCircle } from "lucide-react";
 import { uploadService } from "@/api/UploadService";
 import { AppHeader } from "@/components/AppHeader";
@@ -24,8 +24,15 @@ function App() {
 	// LibraryService fetches the server library per login and clears the queue
 	// on logout; the component only renders its error state.
 	const { library } = useLibrary();
-	const [view, setView] = useState<MainView>("library");
+	const [view, setView] = useState<MainView>({ name: "library" });
 	const [isDragging, setIsDragging] = useState(false);
+
+	// Sidebar playlist rows and the playlists view itself both navigate here;
+	// the open playlist travels inside the view value (see MainView).
+	const openPlaylist = useCallback(
+		(playlistId: number | null) => setView({ name: "playlists", playlistId }),
+		[],
+	);
 
 	// Dropped files are uploaded to the server; they re-enter the queue as
 	// streaming tracks once the upload completes.
@@ -77,10 +84,13 @@ function App() {
 				{/* min-w-0: grid items default to min-width:auto, so one nowrap
 				    track title would widen the 1fr column past the window. */}
 				<div className="min-h-0 min-w-0 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
-					{view === "library" ? (
+					{view.name === "library" ? (
 						<TrackList />
-					) : view === "playlists" ? (
-						<PlaylistsView />
+					) : view.name === "playlists" ? (
+						<PlaylistsView
+							openPlaylistId={view.playlistId}
+							onOpenPlaylist={openPlaylist}
+						/>
 					) : (
 						<ArtistsView />
 					)}

@@ -5,8 +5,16 @@ import { usePlaylists } from "@/hooks/usePlaylists";
 import { useSession } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
 
-/** The views the main content area can show; the sidebar switches them. */
-export type MainView = "library" | "playlists" | "artists";
+/**
+ * Where the main content area is: one of the three top-level views, with the
+ * playlists view optionally opened on a single playlist. One value — rather
+ * than a view name plus open-playlist side state — so the sidebar, the nav
+ * items and the main area can never disagree about the current location.
+ */
+export type MainView =
+	| { name: "library" }
+	| { name: "artists" }
+	| { name: "playlists"; playlistId: number | null };
 
 const NAV_ITEMS = [
 	{ view: "library", label: "Library", icon: LibraryBig },
@@ -28,17 +36,22 @@ export function Sidebar({
 
 	// Badge counts come straight from the stores the views render, so the
 	// sidebar can never disagree with the list next to it.
-	const counts: Record<MainView, number> = {
+	const counts: Record<MainView["name"], number> = {
 		library: library.tracks.length,
 		playlists: playlists.playlists.length,
 		artists: artists.artists.length,
 	};
 
+	// While a playlist's detail view is open, its sidebar row is the active
+	// item instead of the "Playlists" nav entry — exactly one sidebar item
+	// mirrors what the main area shows.
+	const openPlaylistId = view.name === "playlists" ? view.playlistId : null;
+
 	return (
 		<div className="flex h-full flex-col overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
 			<nav className="flex flex-col gap-1 p-2" aria-label="Main">
 				{NAV_ITEMS.map((item) => {
-					const active = item.view === view;
+					const active = item.view === view.name && openPlaylistId === null;
 					const count = counts[item.view];
 					return (
 						<button
@@ -51,7 +64,13 @@ export function Sidebar({
 									: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
 							)}
 							aria-current={active ? "page" : undefined}
-							onClick={() => onViewChange(item.view)}
+							onClick={() =>
+								onViewChange(
+									item.view === "playlists"
+										? { name: "playlists", playlistId: null }
+										: { name: item.view },
+								)
+							}
 						>
 							{/* Accent rail on the active item. Always mounted so it can
 							    grow/fade between views instead of popping in. */}
