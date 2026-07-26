@@ -34,7 +34,7 @@ export function PlaylistDetail({
 	onBack: () => void;
 	onEdit: () => void;
 }) {
-	const { state, controller } = usePlayer();
+	const { state } = usePlayer();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
 	const [addOpen, setAddOpen] = useState(false);
@@ -128,9 +128,7 @@ export function PlaylistDetail({
 					size="sm"
 					className="shrink-0"
 					disabled={rows.length === 0}
-					onClick={() =>
-						ownsQueue ? controller.togglePlay() : playlistService.play(playlist)
-					}
+					onClick={() => playlistService.playOrToggle(playlist)}
 				>
 					{ownsQueue && state.isPlaying ? (
 						<>

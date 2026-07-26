@@ -134,7 +134,7 @@ function PlaylistCard({
 export function PlaylistsView() {
 	const { playlists: state } = usePlaylists();
 	// The grid's play buttons mirror playback: a playing playlist shows pause.
-	const { state: playerState, controller } = usePlayer();
+	const { state: playerState } = usePlayer();
 	// Subscribe to the library so the grid's collages and track counts
 	// re-render when it loads/changes (tracksOf reads its snapshot).
 	useLibrary();
@@ -201,8 +201,9 @@ export function PlaylistsView() {
 							<ul className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 p-4">
 								{state.playlists.map((playlist) => {
 									const tracks = playlistService.tracksOf(playlist);
-									// The queue already mirrors this playlist → the button
-									// pauses/resumes instead of restarting from the top.
+									// The queue already mirrors this playlist → its button
+									// shows pause (playOrToggle resumes instead of
+									// restarting from the top).
 									const ownsQueue =
 										playerState.queueContextId ===
 										playlistQueueContext(playlist.id);
@@ -213,11 +214,7 @@ export function PlaylistsView() {
 												tracks={tracks}
 												playing={ownsQueue && playerState.isPlaying}
 												onOpen={() => setOpenId(playlist.id)}
-												onPlay={() =>
-													ownsQueue
-														? controller.togglePlay()
-														: playlistService.play(playlist)
-												}
+												onPlay={() => playlistService.playOrToggle(playlist)}
 												onEdit={() => openEdit(playlist)}
 												onDelete={() => setPendingDelete(playlist)}
 											/>
