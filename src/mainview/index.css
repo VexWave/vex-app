@@ -71,3 +71,71 @@
 		@apply bg-background text-foreground;
 	}
 }
+
+/*
+ * Player-indicator ring (NowPlayingRing.tsx): a purple border floating
+ * around the sidebar cover of the playlist that owns the play queue, with a
+ * bright arc orbiting it while audio runs.
+ *
+ * How it works: the element is slightly larger than the cover and gets
+ * filled edge-to-edge (a faint purple, plus the conic-gradient arc while
+ * spinning). The two-layer mask — border box minus content box, composited
+ * with `exclude` — keeps only the 2px padding band of that fill visible,
+ * turning the disc into a border and leaving everything inside genuinely
+ * transparent, so the gap between ring and cover shows the row's own
+ * hover/active tint. The arc has to orbit by animating the registered
+ * --np-ring-angle inside the gradient; rotating the element itself would
+ * rotate its rounded-square shape along with it.
+ *
+ * Deliberately purple, not the `primary` token: primary is near-white in
+ * the dark theme, and a thin white ring around a cover reads as a focus
+ * outline rather than as playback.
+ */
+@property --np-ring-angle {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 0deg;
+}
+
+@keyframes np-ring-spin {
+	to {
+		--np-ring-angle: 360deg;
+	}
+}
+
+.np-ring {
+	position: absolute;
+	/* 2px ring (the padding band the mask keeps) + 2px gap to the cover. */
+	inset: -4px;
+	padding: 2px;
+	/* Cover radius (rounded-md) + the 4px inset → concentric corners. */
+	border-radius: calc(var(--radius) + 2px);
+	pointer-events: none;
+	background-color: hsl(270 70% 65% / 0.35);
+	-webkit-mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	-webkit-mask-composite: xor;
+	mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	mask-composite: exclude;
+}
+
+.np-ring--spinning {
+	background-image: conic-gradient(
+		from var(--np-ring-angle),
+		transparent 0deg,
+		hsl(270 90% 70%) 110deg,
+		transparent 220deg
+	);
+	animation: np-ring-spin 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	/* No orbit — the faint closed ring alone marks the playlist. */
+	.np-ring--spinning {
+		background-image: none;
+		animation: none;
+	}
+}

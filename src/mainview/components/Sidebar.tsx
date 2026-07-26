@@ -39,7 +39,7 @@ export function Sidebar({
 	const { playlists } = usePlaylists();
 	const { artists } = useArtists();
 	// For the per-playlist rows: which playlist owns the queue, and whether
-	// audio is running (equalizer + play/pause overlay state).
+	// audio is running (now-playing ring + play/pause button state).
 	const { state: playerState } = usePlayer();
 
 	// Stable across renders so the memoized playlist rows can skip the
@@ -129,29 +129,42 @@ export function Sidebar({
 			</nav>
 
 			{/* Every playlist gets its own entry below the main nav: click opens
-			    it, the cover's hover overlay plays it, and the equalizer marks
-			    where the current track comes from. Hidden while there are none —
-			    the "Playlists" nav item already covers the empty state. */}
+			    it, the button at its right edge plays/pauses it, and a purple
+			    ring orbits the cover of the one the current track comes from.
+			    Hidden while there are none — the "Playlists" nav item already
+			    covers the empty state. The heading sits outside the scroll area
+			    so it stays put while the list scrolls. */}
 			{playlists.playlists.length > 0 && (
-				<ScrollArea className="min-h-0 flex-1 border-t">
-					<nav className="flex flex-col gap-0.5 p-2" aria-label="Playlists">
-						{playlists.playlists.map((playlist) => {
-							const ownsQueue =
-								playerState.queueContextId ===
-								playlistQueueContext(playlist.id);
-							return (
-								<SidebarPlaylistItem
-									key={playlist.id}
-									playlist={playlist}
-									active={playlist.id === openPlaylistId}
-									ownsQueue={ownsQueue}
-									playing={ownsQueue && playerState.isPlaying}
-									onOpen={openPlaylist}
-								/>
-							);
-						})}
-					</nav>
-				</ScrollArea>
+				<div className="flex min-h-0 flex-1 flex-col border-t">
+					<h3
+						id="sidebar-playlists-heading"
+						className="px-4 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+					>
+						Playlists
+					</h3>
+					<ScrollArea className="min-h-0 flex-1">
+						<nav
+							className="flex flex-col gap-0.5 p-2 pt-0"
+							aria-labelledby="sidebar-playlists-heading"
+						>
+							{playlists.playlists.map((playlist) => {
+								const ownsQueue =
+									playerState.queueContextId ===
+									playlistQueueContext(playlist.id);
+								return (
+									<SidebarPlaylistItem
+										key={playlist.id}
+										playlist={playlist}
+										active={playlist.id === openPlaylistId}
+										ownsQueue={ownsQueue}
+										playing={ownsQueue && playerState.isPlaying}
+										onOpen={openPlaylist}
+									/>
+								);
+							})}
+						</nav>
+					</ScrollArea>
+				</div>
 			)}
 
 			{/* Pinned to the bottom; logout just drops the local token and returns

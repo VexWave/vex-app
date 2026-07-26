@@ -1,16 +1,17 @@
 import { memo, useMemo } from "react";
 import { Pause, Play } from "lucide-react";
 import { playlistService } from "@/api/PlaylistService";
-import { NowPlayingBars } from "@/components/NowPlayingBars";
+import { NowPlayingRing } from "@/components/NowPlayingRing";
 import { PlaylistCover } from "@/components/PlaylistCover";
+import { Button } from "@/components/ui/button";
 import { useLibrary } from "@/hooks/useLibrary";
 import { cn } from "@/lib/utils";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
 
 /**
- * One playlist in the sidebar: cover, name, a hover play/pause overlay on
- * the cover, and the equalizer while it is what's playing. Clicking the row
- * opens the playlist's detail view.
+ * One playlist in the sidebar: cover (wearing the NowPlayingRing while its
+ * collection is the queue), name, and a play/pause button that fades in at
+ * the right edge. Clicking the row opens the playlist's detail view.
  *
  * Memoized: the sidebar re-renders on every player timeupdate, and this
  * keeps those ticks from rebuilding every row. All props are referentially
@@ -30,7 +31,7 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 	active: boolean;
 	/** The play queue mirrors this playlist (playing or paused). */
 	ownsQueue: boolean;
-	/** ownsQueue and audio is running — animates the equalizer. */
+	/** ownsQueue and audio is running — sets the ring's arc orbiting. */
 	playing: boolean;
 	onOpen: (playlistId: number) => void;
 }) {
@@ -57,7 +58,7 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 			}}
 			aria-current={active ? "page" : undefined}
 			className={cn(
-				"group relative flex w-full cursor-pointer items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+				"group relative flex w-full cursor-pointer items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 				active ? "bg-accent" : "hover:bg-accent/50",
 			)}
 		>
@@ -69,41 +70,22 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 					active ? "scale-y-100 opacity-100" : "scale-y-0 opacity-0",
 				)}
 			/>
-			<div className="relative h-8 w-8 shrink-0">
+			<div className="relative h-7 w-7 shrink-0">
+				{/* The player indicator: ringed while this playlist owns the
+				    queue, the arc orbiting only during actual playback. */}
+				{ownsQueue && <NowPlayingRing spinning={playing} />}
 				<PlaylistCover
 					playlist={playlist}
 					tracks={tracks}
 					className="h-full w-full"
-					iconClassName="h-3.5 w-3.5"
+					iconClassName="h-3 w-3"
 				/>
-				{/* Play sits on the cover so the row click stays "open". While the
-				    playlist owns a paused queue the overlay resumes; empty
-				    playlists get no button (nothing to start). */}
-				{tracks.length > 0 && (
-					<button
-						type="button"
-						aria-label={
-							playing ? `Pause ${playlist.name}` : `Play ${playlist.name}`
-						}
-						className="absolute inset-0 flex items-center justify-center rounded-md bg-black/50 opacity-0 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
-						onClick={(e) => {
-							e.stopPropagation();
-							playlistService.playOrToggle(playlist);
-						}}
-					>
-						{playing ? (
-							<Pause className="h-3.5 w-3.5 fill-white text-white" />
-						) : (
-							<Play className="h-3.5 w-3.5 fill-white text-white" />
-						)}
-					</button>
-				)}
 			</div>
 			<span
 				className={cn(
 					"min-w-0 flex-1 truncate text-sm font-medium transition-colors",
-					// The primary tint marks the queue's playlist even while paused;
-					// the equalizer only animates during actual playback.
+					// The primary tint marks the queue's playlist even while
+					// paused; the ring's arc only orbits during actual playback.
 					ownsQueue
 						? "text-primary"
 						: active
@@ -113,7 +95,29 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 			>
 				{playlist.name}
 			</span>
-			{playing && <NowPlayingBars />}
+			{/* Fades in at the right edge; while the playlist owns a paused
+			    queue it resumes instead of restarting. Empty playlists get no
+			    button (nothing to start). */}
+			{tracks.length > 0 && (
+				<Button
+					variant="ghost"
+					size="icon"
+					className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+					aria-label={
+						playing ? `Pause ${playlist.name}` : `Play ${playlist.name}`
+					}
+					onClick={(e) => {
+						e.stopPropagation();
+						playlistService.playOrToggle(playlist);
+					}}
+				>
+					{playing ? (
+						<Pause className="h-3.5 w-3.5 fill-current" />
+					) : (
+						<Play className="h-3.5 w-3.5 fill-current" />
+					)}
+				</Button>
+			)}
 		</div>
 	);
 });
