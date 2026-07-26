@@ -204,7 +204,6 @@ export function EditTrackDialog({
 							id="edit-title"
 							autoFocus
 							value={title}
-							onFocus={(e) => e.target.select()}
 							onChange={(e) => setTitle(e.target.value)}
 							disabled={submitting}
 						/>
