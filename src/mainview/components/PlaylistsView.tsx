@@ -59,6 +59,9 @@ function PlaylistCard({
 			tabIndex={0}
 			onClick={onOpen}
 			onKeyDown={(e) => {
+				// Keys on the inner play/edit/delete buttons bubble here; without
+				// this guard, activating one would also open the playlist.
+				if (e.target !== e.currentTarget) return;
 				if (e.key === "Enter" || e.key === " ") {
 					e.preventDefault();
 					onOpen();

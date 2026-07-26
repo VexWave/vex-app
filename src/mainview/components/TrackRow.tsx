@@ -68,6 +68,9 @@ export const TrackRow = memo(function TrackRow({
 					tabIndex={0}
 					onClick={() => onPlay(index)}
 					onKeyDown={(e) => {
+						// Keys on the inner kebab button bubble here; without this
+						// guard, activating the menu would also play the row.
+						if (e.target !== e.currentTarget) return;
 						if (e.key === "Enter" || e.key === " ") {
 							e.preventDefault();
 							onPlay(index);
