@@ -235,6 +235,7 @@ export class PlayerController {
 	private buildSnapshot(): PlayerState {
 		const current = this.player.currentTrack;
 		return {
+			queueContextId: this.queueContext,
 			tracks: this.queue.tracks,
 			currentTrack: current,
 			currentIndex: this.queue.currentIndex,

@@ -18,6 +18,13 @@ export type RepeatMode = "off" | "all" | "one";
 
 /** Immutable snapshot of the whole player, consumed by the React layer. */
 export interface PlayerState {
+	/**
+	 * The collection the queue mirrors ("library", "playlist-3", …), or null
+	 * while nothing has been queued. Views compare it against their own
+	 * collection id so only the view playback started from marks the current
+	 * track as playing.
+	 */
+	queueContextId: string | null;
 	tracks: readonly Track[];
 	currentTrack: Track | null;
 	currentIndex: number;

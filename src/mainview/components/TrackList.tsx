@@ -444,6 +444,11 @@ export function TrackList() {
 		matches(query, upload.title),
 	);
 
+	// The now-playing highlight belongs to the collection the queue mirrors:
+	// a track playing from a playlist is that playlist's business, not the
+	// library row's, even though both render the same track.
+	const ownsQueue = state.queueContextId === LIBRARY_QUEUE_CONTEXT;
+
 	const isEmpty =
 		tracks.length === 0 && uploads.length === 0 && imports.length === 0;
 	const noMatches =
@@ -516,10 +521,8 @@ export function TrackList() {
 							// Playlist membership is keyed by server id; map the track
 							// id back to one for the row's playlist checkboxes.
 							const serverId = libraryService.getRemote(track.id)?.id;
-							// The queue may hold a playlist, so "current" is by track
-							// id — the highlight follows the playing track wherever it
-							// was started from.
-							const isCurrent = track.id === state.currentTrack?.id;
+							const isCurrent =
+								ownsQueue && track.id === state.currentTrack?.id;
 							return (
 								<li key={track.id}>
 									<TrackRow

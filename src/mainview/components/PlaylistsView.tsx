@@ -574,9 +574,11 @@ function PlaylistDetail({
 		[rows],
 	);
 	// Whether this playlist is what the queue mirrors — then the Play button
-	// becomes a pause/resume toggle instead of restarting from the top.
+	// becomes a pause/resume toggle instead of restarting from the top, and
+	// the rows may mark the current track (the now-playing highlight belongs
+	// to the collection the queue mirrors, not to every view of the track).
 	const ownsQueue =
-		controller.queueContextId === playlistQueueContext(playlist.id);
+		state.queueContextId === playlistQueueContext(playlist.id);
 
 	return (
 		<div className="flex h-full flex-col">
@@ -657,9 +659,10 @@ function PlaylistDetail({
 				<ScrollArea className="min-h-0 flex-1">
 					<ul className="flex flex-col gap-1 p-2">
 						{rows.map(({ track, serverId, position }, rowIndex) => {
-							// A track is in a playlist at most once, so the id match is
-							// unambiguous no matter where playback was started from.
-							const isCurrent = track.id === state.currentTrack?.id;
+							// A track is in a playlist at most once, so within the
+							// owning playlist the id match is unambiguous.
+							const isCurrent =
+								ownsQueue && track.id === state.currentTrack?.id;
 							return (
 								<li key={track.id}>
 									<PlaylistTrackRow
@@ -772,7 +775,7 @@ export function PlaylistsView() {
 									// The queue already mirrors this playlist → the button
 									// pauses/resumes instead of restarting from the top.
 									const ownsQueue =
-										controller.queueContextId ===
+										playerState.queueContextId ===
 										playlistQueueContext(playlist.id);
 									return (
 										<li key={playlist.id}>
