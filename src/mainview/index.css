@@ -74,18 +74,26 @@
 
 /*
  * Player-indicator ring (NowPlayingRing.tsx): a purple border floating
- * around the sidebar cover of the playlist that owns the play queue, with a
- * bright arc orbiting it while audio runs.
+ * around the sidebar cover of the playlist that owns the play queue, with
+ * two glowing arcs orbiting on opposite sides while audio runs.
  *
- * How it works: the element is slightly larger than the cover and gets
- * filled edge-to-edge (a faint purple, plus the conic-gradient arc while
- * spinning). The two-layer mask — border box minus content box, composited
- * with `exclude` — keeps only the 2px padding band of that fill visible,
- * turning the disc into a border and leaving everything inside genuinely
- * transparent, so the gap between ring and cover shows the row's own
- * hover/active tint. The arc has to orbit by animating the registered
- * --np-ring-angle inside the gradient; rotating the element itself would
- * rotate its rounded-square shape along with it.
+ * Two stacked ring elements, so each state can fade in and out on its own
+ * (a background-image can't be transitioned): the base — a faint closed
+ * ring marking queue ownership — and the arcs, which fade in over it on
+ * play and back out on pause. Both are filled edge-to-edge and hollowed
+ * into a border by the two-layer mask (border box minus content box,
+ * composited with `exclude`), which keeps the inside genuinely transparent
+ * so the gap between ring and cover shows the row's own hover/active tint.
+ * The arcs orbit by animating the registered --np-ring-angle inside the
+ * conic gradient — rotating the element itself would rotate its
+ * rounded-square shape along with it.
+ *
+ * On the arc layer the mask lives on a ::before while the drop-shadow sits
+ * on the element itself: filter and mask on one element apply in
+ * filter-then-mask order (the same reason a clip-path'd element's
+ * drop-shadow gets clipped), so a shadow beside the mask would be computed
+ * from the unmasked pie wedges and then erased with them. On the parent it
+ * receives the already-masked arcs and glows around exactly those.
  *
  * Deliberately purple, not the `primary` token: primary is near-white in
  * the dark theme, and a thin white ring around a cover reads as a focus
@@ -104,14 +112,27 @@
 }
 
 .np-ring {
+	--np-ring-width: 1.5px;
+	--np-ring-gap: 2px;
 	position: absolute;
-	/* 2px ring (the padding band the mask keeps) + 2px gap to the cover. */
-	inset: -4px;
-	padding: 2px;
-	/* Cover radius (rounded-md) + the 4px inset → concentric corners. */
-	border-radius: calc(var(--radius) + 2px);
+	inset: calc(-1 * (var(--np-ring-width) + var(--np-ring-gap)));
+	/* Cover radius (rounded-md) + the inset → concentric corners. */
+	border-radius: calc(
+		var(--radius) - 2px + var(--np-ring-width) + var(--np-ring-gap)
+	);
 	pointer-events: none;
-	background-color: hsl(270 70% 65% / 0.35);
+	opacity: 0;
+	transition: opacity 0.4s ease;
+}
+
+.np-ring--on {
+	opacity: 1;
+}
+
+/* The padding band is what the mask keeps — i.e. the border width. */
+.np-ring--base,
+.np-ring--arc::before {
+	padding: var(--np-ring-width);
 	-webkit-mask:
 		linear-gradient(#000 0 0) content-box,
 		linear-gradient(#000 0 0);
@@ -122,20 +143,49 @@
 	mask-composite: exclude;
 }
 
-.np-ring--spinning {
+.np-ring--base {
+	background-color: hsl(270 70% 65% / 0.35);
+}
+
+/* Only the glow — the masked arcs it wraps live on the ::before (see the
+   header comment for why they must be separate elements). */
+.np-ring--arc {
+	filter: drop-shadow(0 0 3px hsl(270 95% 65% / 0.7));
+}
+
+/* Two comets half a turn apart (peaks at 45° and 225°), each fading in
+   and out over its 90° span with a 90° rest between them. */
+.np-ring--arc::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
 	background-image: conic-gradient(
 		from var(--np-ring-angle),
 		transparent 0deg,
-		hsl(270 90% 70%) 110deg,
-		transparent 220deg
+		hsl(270 95% 72%) 45deg,
+		transparent 90deg 180deg,
+		hsl(270 95% 72%) 225deg,
+		transparent 270deg
 	);
 	animation: np-ring-spin 2.4s linear infinite;
+	/* Runs only while visible — paused, the idle rows' invisible arcs
+	   cost no repaints. */
+	animation-play-state: paused;
+}
+
+.np-ring--arc.np-ring--on::before {
+	animation-play-state: running;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	/* No orbit — the faint closed ring alone marks the playlist. */
-	.np-ring--spinning {
+	/* No orbit — playback brightens the closed ring instead. */
+	.np-ring--arc {
+		filter: none;
+	}
+	.np-ring--arc::before {
 		background-image: none;
+		background-color: hsl(270 85% 70% / 0.6);
 		animation: none;
 	}
 }

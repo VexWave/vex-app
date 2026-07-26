@@ -72,8 +72,9 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 			/>
 			<div className="relative h-7 w-7 shrink-0">
 				{/* The player indicator: ringed while this playlist owns the
-				    queue, the arc orbiting only during actual playback. */}
-				{ownsQueue && <NowPlayingRing spinning={playing} />}
+				    queue, the arcs orbiting only during actual playback. Always
+				    mounted so state changes fade instead of popping. */}
+				<NowPlayingRing ownsQueue={ownsQueue} playing={playing} />
 				<PlaylistCover
 					playlist={playlist}
 					tracks={tracks}
