@@ -1,6 +1,8 @@
-// Negative delays stagger the bars into different phases so they read as an
-// equalizer immediately, without a synchronized "all bars rise together" start.
-const BAR_DELAYS = ["-0.4s", "-0.15s", "-0.6s", "-0.25s"];
+// Every bar runs the same full bounce at the same duration; the negative
+// delays stagger them a quarter cycle apart, so the peak travels across the
+// bars as one continuous wave instead of the bars pulsing in lockstep or
+// drifting apart.
+const BAR_DELAYS = ["0s", "-0.3s", "-0.6s", "-0.9s"];
 
 /**
  * Little equalizer whose bars bounce to mark the track that's currently
@@ -14,9 +16,9 @@ export function NowPlayingBars() {
 			className="flex h-4 w-4 shrink-0 items-end justify-center gap-[2px]"
 			aria-hidden="true"
 		>
-			{BAR_DELAYS.map((delay, i) => (
+			{BAR_DELAYS.map((delay) => (
 				<span
-					key={i}
+					key={delay}
 					className="h-full w-[2px] origin-bottom rounded-full bg-primary animate-equalize motion-reduce:animate-none"
 					style={{ animationDelay: delay }}
 				/>
