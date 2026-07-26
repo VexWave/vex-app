@@ -111,22 +111,30 @@ export class PlayerController {
 	}
 
 	/**
-	 * Mirror a collection's latest content into the queue without touching
-	 * playback. Applies only when the queue already belongs to `contextId` —
-	 * or to nothing yet (fresh login), which adopts the collection and
-	 * preloads its first track paused. The playing track keeps playing even
-	 * when it fell out of the collection; the index just drops to -1 so
-	 * auto-advance restarts from the top.
+	 * Mirror a collection's latest content into the queue. Applies only when the
+	 * queue already belongs to `contextId` — or to nothing yet (fresh login),
+	 * which adopts the collection and preloads its first track paused.
+	 *
+	 * A track that leaves the collection while it is the one playing (removed
+	 * from the playlist, unlinked from the artist) takes playback with it: the
+	 * queue is what the transport addresses, so a track playing from outside it
+	 * would keep going with nothing able to pause or follow it — and once the
+	 * collection is emptied entirely, with a transport that has no queue left to
+	 * enable. It stops where a queue that ran off its end stops instead.
 	 */
 	syncCollection(contextId: string, tracks: Track[]): void {
 		if (this.queueContext !== null && this.queueContext !== contextId) return;
 		this.queueContext = contextId;
 		const current = this.player.currentTrack;
-		this.queue.replace(
-			tracks,
-			current ? tracks.findIndex((track) => track.id === current.id) : -1,
-		);
-		if (!current && tracks.length > 0) {
+		const index = current
+			? tracks.findIndex((track) => track.id === current.id)
+			: -1;
+		this.queue.replace(tracks, index);
+		if (current && index === -1) {
+			// Same state as the end of a queue under repeat "off": nothing
+			// loaded, whatever is left still queued, so play starts it over.
+			this.player.load(null);
+		} else if (!current && tracks.length > 0) {
 			// Nothing loaded yet — preload the first track so the UI shows it,
 			// but leave starting playback to the user.
 			this.player.load(this.queue.jumpTo(0));
