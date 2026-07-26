@@ -13,7 +13,7 @@ import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
 import { useTrackActions } from "@/hooks/useTrackActions";
-import { formatTime } from "@/lib/utils";
+import { formatTime, trackCountLabel } from "@/lib/utils";
 import type { RemoteArtist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
@@ -65,17 +65,16 @@ export function ArtistDetail({
 		<div className="flex h-full flex-col">
 			<CollectionHeader
 				onBack={onBack}
-				backLabel="Back to artists"
+				parentLabel="Artists"
 				artwork={
 					<ArtistAvatar
 						imageUrl={artist.imageUrl}
-						className="h-20 w-20 shadow-md ring-1 ring-inset ring-border/60"
-						iconClassName="h-8 w-8"
+						className="h-16 w-16 shadow-md ring-1 ring-inset ring-border/60"
+						iconClassName="h-7 w-7"
 					/>
 				}
-				eyebrow="Artist"
 				title={artist.name}
-				meta={`${tracks.length} ${tracks.length === 1 ? "track" : "tracks"}${
+				meta={`${trackCountLabel(tracks.length)}${
 					tracks.length > 0 ? ` · ${formatTime(totalSec)}` : ""
 				}`}
 				playing={ownsQueue && state.isPlaying}

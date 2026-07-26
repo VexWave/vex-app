@@ -159,10 +159,11 @@ export function ArtistsView() {
 				</div>
 			) : (
 				<ScrollArea className="min-h-0 flex-1">
-					{/* A lower minimum than the playlist grid: artists accumulate one
-					    per imported uploader, so once there is width for it this
-					    list packs more per row. */}
-					<ul className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2 p-4">
+					{/* Same track sizing as the playlist grid, so both read as one
+					    system. auto-fill adds a column as soon as the minimum fits
+					    again, which keeps the cards near that minimum instead of
+					    letting `1fr` stretch a handful of them across the window. */}
+					<ul className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2 p-4">
 						{visible.map((artist) => {
 							// The queue already mirrors this artist → its button shows
 							// pause (playOrToggle resumes instead of restarting), and

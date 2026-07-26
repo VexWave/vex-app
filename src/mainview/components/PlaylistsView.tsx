@@ -114,7 +114,8 @@ export function PlaylistsView() {
 						</div>
 					) : (
 						<ScrollArea className="min-h-0 flex-1">
-							<ul className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2 p-4">
+							{/* Track sizing shared with the artists grid — see there. */}
+							<ul className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2 p-4">
 								{state.playlists.map((playlist) => {
 									const tracks = tracksByPlaylist.get(playlist.id) ?? [];
 									// The queue already mirrors this playlist → its button

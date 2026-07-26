@@ -83,16 +83,15 @@ export function PlaylistDetail({
 		<div className="flex h-full flex-col">
 			<CollectionHeader
 				onBack={onBack}
-				backLabel="Back to playlists"
+				parentLabel="Playlists"
 				artwork={
 					<PlaylistCover
 						playlist={playlist}
 						tracks={rows.map((row) => row.track)}
-						className="h-20 w-20 shrink-0"
-						iconClassName="h-8 w-8"
+						className="h-16 w-16 shrink-0"
+						iconClassName="h-7 w-7"
 					/>
 				}
-				eyebrow="Playlist"
 				title={playlist.name}
 				meta={`${trackCountLabel(rows.length)}${
 					rows.length > 0 ? ` · ${formatTime(totalSec)}` : ""

@@ -185,6 +185,14 @@ export class ArtistService {
 	 * plays takes effect. An artist that was deleted leaves the queue playing
 	 * its last known content (its context id just goes stale, which is
 	 * harmless).
+	 *
+	 * Renaming the artist that owns the queue empties it until both sides of
+	 * the name join have refetched (this list and the library land in either
+	 * order, and whichever arrives first disagrees with the other). Playback
+	 * itself is unaffected — the current track keeps playing — so the only
+	 * casualty is auto-advance if a track happens to end inside that one
+	 * round-trip. Left alone deliberately: suppressing it needs a rename-in-
+	 * flight latch here, which is more machinery than the window is worth.
 	 */
 	private syncQueue(): void {
 		const context = playerController.queueContextId;
@@ -265,6 +273,12 @@ export class ArtistService {
 	async edit(
 		input: EditArtistParams,
 	): Promise<{ ok: true } | { ok: false; error: string }> {
+		// Read before the request: the refetch below replaces the snapshot, and
+		// only an actual rename has to reach the library (see the end of this
+		// method). The dialog submits the name whether or not it was touched.
+		const renamed =
+			input.name !== undefined &&
+			input.name !== this.snapshot.artists.find(({ id }) => id === input.id)?.name;
 		let result;
 		try {
 			result = await bun.editArtist(input);
@@ -287,8 +301,8 @@ export class ArtistService {
 		// Every linked track carries this artist's name — as its displayed
 		// artist line and as the key `tracksOf` joins on — so a rename leaves
 		// the library stale (the artist would appear to have lost its tracks)
-		// until it is refetched too.
-		if (input.name !== undefined) void libraryService.refresh();
+		// until it is refetched too. An avatar-only edit changes nothing there.
+		if (renamed) void libraryService.refresh();
 		return { ok: true };
 	}
 
