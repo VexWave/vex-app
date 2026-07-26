@@ -97,6 +97,11 @@ export function AddTracksDialog({
 						<ul className="flex flex-col gap-1 pr-3">
 							{visible.map((track) => {
 								const included = isIn(track);
+								// Pending uploads have no server id yet, so they can't
+								// be added — disabled beats a button that ignores the
+								// click (same rule as the row menu's playlist entries).
+								const unresolved =
+									libraryService.getRemote(track.id)?.id === undefined;
 								return (
 									<li key={track.id}>
 										<div className="flex w-full items-center gap-3 rounded-lg py-1.5 pl-2 pr-1">
@@ -128,6 +133,7 @@ export function AddTracksDialog({
 														? `Remove ${track.title}`
 														: `Add ${track.title}`
 												}
+												disabled={unresolved}
 												onClick={() => toggle(track)}
 											>
 												{included ? (
