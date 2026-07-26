@@ -1,6 +1,11 @@
+import { useCallback } from "react";
 import { ListMusic, LibraryBig, LogOut, Users } from "lucide-react";
+import { playlistQueueContext } from "@/api/PlaylistService";
+import { SidebarPlaylistItem } from "@/components/SidebarPlaylistItem";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useArtists } from "@/hooks/useArtists";
 import { useLibrary } from "@/hooks/useLibrary";
+import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
 import { useSession } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
@@ -33,6 +38,16 @@ export function Sidebar({
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
 	const { artists } = useArtists();
+	// For the per-playlist rows: which playlist owns the queue, and whether
+	// audio is running (equalizer + play/pause overlay state).
+	const { state: playerState } = usePlayer();
+
+	// Stable across renders so the memoized playlist rows can skip the
+	// sidebar's per-timeupdate re-renders.
+	const openPlaylist = useCallback(
+		(playlistId: number) => onViewChange({ name: "playlists", playlistId }),
+		[onViewChange],
+	);
 
 	// Badge counts come straight from the stores the views render, so the
 	// sidebar can never disagree with the list next to it.
@@ -112,6 +127,32 @@ export function Sidebar({
 					);
 				})}
 			</nav>
+
+			{/* Every playlist gets its own entry below the main nav: click opens
+			    it, the cover's hover overlay plays it, and the equalizer marks
+			    where the current track comes from. Hidden while there are none —
+			    the "Playlists" nav item already covers the empty state. */}
+			{playlists.playlists.length > 0 && (
+				<ScrollArea className="min-h-0 flex-1 border-t">
+					<nav className="flex flex-col gap-0.5 p-2" aria-label="Playlists">
+						{playlists.playlists.map((playlist) => {
+							const ownsQueue =
+								playerState.queueContextId ===
+								playlistQueueContext(playlist.id);
+							return (
+								<SidebarPlaylistItem
+									key={playlist.id}
+									playlist={playlist}
+									active={playlist.id === openPlaylistId}
+									ownsQueue={ownsQueue}
+									playing={ownsQueue && playerState.isPlaying}
+									onOpen={openPlaylist}
+								/>
+							);
+						})}
+					</nav>
+				</ScrollArea>
+			)}
 
 			{/* Pinned to the bottom; logout just drops the local token and returns
 			    to the login screen (the server session isn't revoked). */}
