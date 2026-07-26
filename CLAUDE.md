@@ -10,11 +10,13 @@ The app is entirely server-backed: a blocking login screen asks for host/port of
 
 ## Commands
 
-- **bun only** — npm is not installed on this machine (the shadcn CLI fails for that reason; shadcn components are vendored by hand into `src/mainview/components/ui/`).
-- `bun run dev:hmr` — development with Vite HMR (recommended); `bun run start` — vite build + run without HMR.
+- **bun only** — npm and node are not installed on this machine (the shadcn CLI fails for that reason; shadcn components are vendored by hand into `src/mainview/components/ui/`).
+- `bun run dev:hmr` — development with Vite HMR (recommended). It runs `hmr` (Vite on port 5173) and `start` concurrently.
+- `bun run start` — `vite build` + `electrobun dev`, i.e. run from bundled assets without HMR. `bun run dev` is `electrobun dev --watch` alone (no Vite build), `bun run vite:build` is the webview bundle on its own.
+- `bun run build:canary` / `bun run build:stable` — packaged app (`electrobun build --env=…`); canary runs the Vite build first, stable does not.
 - `bunx tsc --noEmit` — type-check (no test framework or linter exists yet).
-- `scripts/test-server.ts` — throwaway backend for manual end-to-end testing (`test`/`test` on port 8790).
-- The README is the stale upstream template — it references `bun run build`/`build:prod` scripts that don't exist; trust `package.json`.
+- `bun run scripts/test-server.ts` — throwaway backend for manual end-to-end testing (`test`/`test` on port 8790).
+- The README is a showcase page for GitHub readers only — it documents no commands, so `package.json` is the sole reference here.
 
 ## Architecture
 

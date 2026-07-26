@@ -1,61 +1,41 @@
-# React + Tailwind + Vite Electrobun Template
+<div align="center">
 
-A fast Electrobun desktop app template with React, Tailwind CSS, and Vite for hot module replacement (HMR).
+<img src="assets/vex-logo.png" alt="VexWave" width="112">
 
-## Getting Started
+# VexWave
 
-```bash
-# Install dependencies
-bun install
+**A desktop music player for the server you already own.**
 
-# Development without HMR (uses bundled assets)
-bun run dev
+<img alt="Electrobun" src="https://img.shields.io/badge/Electrobun-8B3DEE?style=flat-square">
+<img alt="Bun" src="https://img.shields.io/badge/Bun-A231FF?style=flat-square">
+<img alt="React" src="https://img.shields.io/badge/React-6C3BD1?style=flat-square">
+<img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-41188F?style=flat-square">
 
-# Development with HMR (recommended)
-bun run dev:hmr
+</div>
 
-# Build for production
-bun run build
+## What it does
 
-# Build for production release
-bun run build:prod
-```
+### Your server, your library
+Sign in with a host, a port and your credentials. No folder to scan, no import step, and search
+filters everything you own as you type.
 
-## How HMR Works
+### Playlists and artists
+Build playlists, reorder them, give them cover art, and play any of them as its own queue. Manage
+artist names and avatars, and credit as many of them per track as a song deserves.
 
-When you run `bun run dev:hmr`:
+### Drop in local files
+Drag audio onto the window. VexWave reads the tags, shows you what it found so you can correct it,
+and uploads the files to your server.
 
-1. **Vite dev server** starts on `http://localhost:5173` with HMR enabled
-2. **Electrobun** starts and detects the running Vite server
-3. The app loads from the Vite dev server instead of bundled assets
-4. Changes to React components update instantly without full page reload
+### Import from a link
+A YouTube or SoundCloud URL becomes a real track in your library, with the creator suggested as an
+artist.
 
-When you run `bun run dev` (without HMR):
+### Edit anything
+Retitle a track, swap its cover, fix its credits or delete it, straight from the row.
 
-1. Electrobun starts and loads from `views://mainview/index.html`
-2. You need to rebuild (`bun run build`) to see changes
+<div align="center">
 
-## Project Structure
+Built with [Electrobun](https://framework.blackboard.sh/electrobun/), React and Tailwind CSS.
 
-```
-├── src/
-│   ├── bun/
-│   │   └── index.ts        # Main process (Electrobun/Bun)
-│   └── mainview/
-│       ├── App.tsx         # React app component
-│       ├── main.tsx        # React entry point
-│       ├── index.html      # HTML template
-│       └── index.css       # Tailwind CSS
-├── electrobun.config.ts    # Electrobun configuration
-├── vite.config.ts          # Vite configuration
-├── tailwind.config.js      # Tailwind configuration
-└── package.json
-```
-
-## Customizing
-
-- **React components**: Edit files in `src/mainview/`
-- **Tailwind theme**: Edit `tailwind.config.js`
-- **Vite settings**: Edit `vite.config.ts`
-- **Window settings**: Edit `src/bun/index.ts`
-- **App metadata**: Edit `electrobun.config.ts`
+</div>
