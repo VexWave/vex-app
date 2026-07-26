@@ -96,6 +96,21 @@ export class PlayerController {
 	}
 
 	/**
+	 * What every collection-level play button does (grid card, detail header,
+	 * sidebar row): if the collection already owns the queue, toggle
+	 * pause/resume in place; otherwise replace the queue with it and start from
+	 * the top. It lives here rather than in each service so that playing a
+	 * playlist, an artist or the library all mean the same thing.
+	 */
+	playOrToggleCollection(contextId: string, tracks: Track[]): void {
+		if (this.queueContext === contextId) {
+			this.togglePlay();
+			return;
+		}
+		this.playCollection(contextId, tracks, 0);
+	}
+
+	/**
 	 * Mirror a collection's latest content into the queue without touching
 	 * playback. Applies only when the queue already belongs to `contextId` —
 	 * or to nothing yet (fresh login), which adopts the collection and

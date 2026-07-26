@@ -1,30 +1,25 @@
 import { useCallback, useMemo, useState } from "react";
-import {
-	ChevronLeft,
-	ListMusic,
-	ListPlus,
-	Pause,
-	Pencil,
-	Play,
-} from "lucide-react";
-import { trackIdForServerId } from "@/api/LibraryService";
+import { ListMusic, ListPlus, Pencil } from "lucide-react";
+import { libraryService, trackIdForServerId } from "@/api/LibraryService";
+import { navigationService } from "@/api/NavigationService";
 import { playlistQueueContext, playlistService } from "@/api/PlaylistService";
 import { AddTracksDialog } from "@/components/AddTracksDialog";
+import { CollectionHeader } from "@/components/CollectionHeader";
 import { EditTrackDialog } from "@/components/EditTrackDialog";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { PlaylistCover } from "@/components/PlaylistCover";
-import { PlaylistsErrorBanner } from "@/components/PlaylistsErrorBanner";
 import { PlaylistTrackRow } from "@/components/PlaylistTrackRow";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { useArtists } from "@/hooks/useArtists";
 import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
-import { formatTime } from "@/lib/utils";
+import { formatTime, trackCountLabel } from "@/lib/utils";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
-/** The opened playlist: header with cover/meta/actions plus its track rows. */
+/** The opened playlist: banner with cover/meta/actions plus its track rows. */
 export function PlaylistDetail({
 	playlist,
 	onBack,
@@ -37,6 +32,9 @@ export function PlaylistDetail({
 	const { state } = usePlayer();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
+	// For the rows' "Go to artist" entry: the names a track carries have to be
+	// resolved against the artist list to become somewhere to navigate.
+	const { artists } = useArtists();
 	const [addOpen, setAddOpen] = useState(false);
 	// Track targeted by a row's "Edit…" menu item (same dialog as the library).
 	const [editTrack, setEditTrack] = useState<Track | null>(null);
@@ -78,74 +76,58 @@ export function PlaylistDetail({
 	// becomes a pause/resume toggle instead of restarting from the top, and
 	// the rows may mark the current track (the now-playing highlight belongs
 	// to the collection the queue mirrors, not to every view of the track).
-	const ownsQueue =
-		state.queueContextId === playlistQueueContext(playlist.id);
+	const ownsQueue = state.queueContextId === playlistQueueContext(playlist.id);
+	const playing = ownsQueue && state.isPlaying;
 
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex items-center gap-3 px-4 py-2.5">
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-7 w-7 shrink-0"
-					aria-label="Back to playlists"
-					onClick={onBack}
-				>
-					<ChevronLeft className="h-4 w-4" />
-				</Button>
-				<PlaylistCover
-					playlist={playlist}
-					tracks={rows.map((row) => row.track)}
-					className="h-12 w-12 shrink-0"
-					iconClassName="h-5 w-5"
-				/>
-				<div className="min-w-0 flex-1">
-					<h2 className="truncate text-sm font-semibold">{playlist.name}</h2>
-					<p className="truncate text-xs text-muted-foreground">
-						{rows.length} {rows.length === 1 ? "track" : "tracks"}
-						{rows.length > 0 ? ` · ${formatTime(totalSec)}` : ""}
-					</p>
-				</div>
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-7 w-7 shrink-0"
-					aria-label={`Edit ${playlist.name}`}
-					onClick={onEdit}
-				>
-					<Pencil className="h-4 w-4" />
-				</Button>
-				<Button
-					variant="secondary"
-					size="sm"
-					className="shrink-0"
-					onClick={() => setAddOpen(true)}
-				>
-					<ListPlus className="h-4 w-4" />
-					Add tracks
-				</Button>
-				<Button
-					size="sm"
-					className="shrink-0"
-					disabled={rows.length === 0}
-					onClick={() => playlistService.playOrToggle(playlist)}
-				>
-					{ownsQueue && state.isPlaying ? (
-						<>
-							<Pause className="h-4 w-4 fill-current" />
-							Pause
-						</>
-					) : (
-						<>
-							<Play className="h-4 w-4 fill-current" />
-							Play
-						</>
-					)}
-				</Button>
-			</div>
-			<Separator />
+			<CollectionHeader
+				onBack={onBack}
+				backLabel="Back to playlists"
+				artwork={
+					<PlaylistCover
+						playlist={playlist}
+						tracks={rows.map((row) => row.track)}
+						className="h-20 w-20 shrink-0"
+						iconClassName="h-8 w-8"
+					/>
+				}
+				eyebrow="Playlist"
+				title={playlist.name}
+				meta={`${trackCountLabel(rows.length)}${
+					rows.length > 0 ? ` · ${formatTime(totalSec)}` : ""
+				}`}
+				playing={playing}
+				playLabel={
+					playing ? `Pause ${playlist.name}` : `Play ${playlist.name}`
+				}
+				playDisabled={rows.length === 0}
+				onPlay={() => playlistService.playOrToggle(playlist)}
+				actions={
+					<>
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-8 w-8"
+							aria-label={`Edit ${playlist.name}`}
+							onClick={onEdit}
+						>
+							<Pencil className="h-4 w-4" />
+						</Button>
+						<Button
+							variant="secondary"
+							size="sm"
+							className="rounded-full px-4"
+							onClick={() => setAddOpen(true)}
+						>
+							<ListPlus className="h-4 w-4" />
+							Add tracks
+						</Button>
+					</>
+				}
+			/>
 
-			<PlaylistsErrorBanner error={playlists.error} />
+			<ErrorBanner error={playlists.error} className="border-b" />
 
 			{rows.length === 0 ? (
 				<div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
@@ -168,6 +150,10 @@ export function PlaylistDetail({
 										track={track}
 										rowIndex={rowIndex}
 										serverId={serverId}
+										// Keeps its identity until the next library
+										// refresh, so the memoized row is unaffected.
+										artistNames={libraryService.getRemote(track.id)?.artists}
+										artists={artists.artists}
 										isCurrent={isCurrent}
 										showBars={isCurrent && state.isPlaying}
 										canMoveUp={position > 0}
@@ -176,6 +162,7 @@ export function PlaylistDetail({
 										onEdit={setEditTrack}
 										onMove={moveRow}
 										onRemove={removeRow}
+										onOpenArtist={navigationService.openArtist}
 									/>
 								</li>
 							);

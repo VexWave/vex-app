@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from "react";
 import { Check, Users } from "lucide-react";
+import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -86,17 +87,11 @@ export function ArtistMultiSelect({
 										>
 											{checked && <Check className="h-3 w-3" />}
 										</span>
-										<span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted">
-											{artist.imageUrl ? (
-												<img
-													src={artist.imageUrl}
-													alt=""
-													className="h-full w-full object-cover"
-												/>
-											) : (
-												<Users className="absolute inset-0 m-auto h-4 w-4 text-muted-foreground" />
-											)}
-										</span>
+										<ArtistAvatar
+											imageUrl={artist.imageUrl}
+											className="h-8 w-8"
+											iconClassName="h-4 w-4"
+										/>
 										<span className="truncate">{artist.name}</span>
 									</button>
 								</li>

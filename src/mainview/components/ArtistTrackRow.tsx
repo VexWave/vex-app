@@ -1,0 +1,87 @@
+import { memo } from "react";
+import { UserMinus } from "lucide-react";
+import {
+	TrackDeleteItem,
+	TrackEditItem,
+	TrackPlaylistsSubmenu,
+} from "@/components/TrackMenuItems";
+import { TrackRow } from "@/components/TrackRow";
+import {
+	ContextMenuItem,
+	ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+import type { RemotePlaylist } from "../../shared/rpcSchema";
+import type { Track } from "@/player/types";
+
+/**
+ * A row of an artist's tracks: the library row's actions plus "Remove from
+ * this artist", which unlinks the track from the artist instead of deleting
+ * anything — the artist-page counterpart of a playlist row's "Remove from
+ * playlist".
+ *
+ * Memoized for the same reason as the other rows: the detail view re-renders
+ * on every player timeupdate, and this keeps those ticks from rebuilding every
+ * row (incl. a Radix ContextMenu apiece).
+ */
+export const ArtistTrackRow = memo(function ArtistTrackRow({
+	track,
+	rowIndex,
+	serverId,
+	isCurrent,
+	showBars,
+	playlists,
+	onPlay,
+	onEdit,
+	onDelete,
+	onUnlink,
+	onTogglePlaylist,
+	onNewPlaylist,
+}: {
+	track: Track;
+	rowIndex: number;
+	/** Server-side id, for playlist membership; undefined while unresolved. */
+	serverId: number | undefined;
+	isCurrent: boolean;
+	showBars: boolean;
+	playlists: RemotePlaylist[];
+	onPlay: (rowIndex: number) => void;
+	onEdit: (track: Track) => void;
+	onDelete: (track: Track) => void;
+	onUnlink: (track: Track) => void;
+	onTogglePlaylist: (
+		track: Track,
+		playlistId: number,
+		isMember: boolean,
+	) => void;
+	onNewPlaylist: (track: Track) => void;
+}) {
+	return (
+		<TrackRow
+			track={track}
+			position={rowIndex + 1}
+			isCurrent={isCurrent}
+			showBars={showBars}
+			onPlay={() => onPlay(rowIndex)}
+			menuClassName="w-52"
+			menu={
+				<>
+					<TrackEditItem onSelect={() => onEdit(track)} />
+					<TrackPlaylistsSubmenu
+						track={track}
+						serverId={serverId}
+						playlists={playlists}
+						onToggle={onTogglePlaylist}
+						onNewPlaylist={onNewPlaylist}
+					/>
+					<ContextMenuSeparator />
+					<ContextMenuItem onSelect={() => onUnlink(track)}>
+						<UserMinus className="h-4 w-4" />
+						Remove from this artist
+					</ContextMenuItem>
+					<ContextMenuSeparator />
+					<TrackDeleteItem onSelect={() => onDelete(track)} />
+				</>
+			}
+		/>
+	);
+});

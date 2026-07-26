@@ -1,22 +1,20 @@
 import { useCallback, useMemo, useState } from "react";
-import { Music, Search, X } from "lucide-react";
+import { Music, Search } from "lucide-react";
 import { LIBRARY_QUEUE_CONTEXT, libraryService } from "@/api/LibraryService";
-import { playlistService } from "@/api/PlaylistService";
-import { DeleteTrackDialog } from "@/components/DeleteTrackDialog";
-import { EditTrackDialog } from "@/components/EditTrackDialog";
+import { navigationService } from "@/api/NavigationService";
+import { LibraryTrackRow } from "@/components/LibraryTrackRow";
 import { PendingImportRow, PendingUploadRow } from "@/components/PendingRows";
-import { PlaylistDialog } from "@/components/PlaylistDialog";
-import { TrackRow } from "@/components/TrackRow";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/SearchInput";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { useArtists } from "@/hooks/useArtists";
 import { useImports } from "@/hooks/useImports";
 import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
+import { useTrackActions } from "@/hooks/useTrackActions";
 import { useUploads } from "@/hooks/useUploads";
-import { formatTime } from "@/lib/utils";
-import type { Track } from "@/player/types";
+import { formatTime, trackCountLabel } from "@/lib/utils";
 
 /** Case-insensitive "does any of these fields contain the query" test. */
 function matches(query: string, ...fields: (string | undefined)[]): boolean {
@@ -29,14 +27,14 @@ export function TrackList() {
 	const { state, controller } = usePlayer();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
+	// For the rows' "Go to artist" entry: the names a track carries have to be
+	// resolved against the artist list to become somewhere to navigate.
+	const { artists } = useArtists();
 	const { uploads } = useUploads();
 	const { imports } = useImports();
-	// The dialogs are rendered once for the whole list; the context menu sets
-	// which track they target.
-	const [editTrack, setEditTrack] = useState<Track | null>(null);
-	const [deleteTrack, setDeleteTrack] = useState<Track | null>(null);
-	// Track waiting to seed a brand-new playlist ("New playlist…" menu item).
-	const [playlistSeed, setPlaylistSeed] = useState<Track | null>(null);
+	// Edit/delete/playlist actions and the dialogs they open, rendered once
+	// for the whole list; the row menus just call into them.
+	const actions = useTrackActions();
 	// Purely a view filter over the library list — it never trims the list
 	// itself, so playback and the numbering keep using the library index.
 	const [query, setQuery] = useState("");
@@ -46,16 +44,6 @@ export function TrackList() {
 		(index: number) =>
 			controller.playCollection(LIBRARY_QUEUE_CONTEXT, tracks, index),
 		[controller, tracks],
-	);
-	const togglePlaylist = useCallback(
-		(track: Track, playlistId: number, isMember: boolean) => {
-			const serverId = libraryService.getRemote(track.id)?.id;
-			if (serverId === undefined) return;
-			void (isMember
-				? playlistService.removeTracks(playlistId, [serverId])
-				: playlistService.addTracks(playlistId, [serverId]));
-		},
-		[],
 	);
 
 	const totalSec = useMemo(
@@ -99,30 +87,15 @@ export function TrackList() {
 				<h2 className="shrink-0 text-sm font-semibold">Library</h2>
 				{tracks.length > 0 && (
 					<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-						{tracks.length} {tracks.length === 1 ? "track" : "tracks"} ·{" "}
-						{formatTime(totalSec)}
+						{trackCountLabel(tracks.length)} · {formatTime(totalSec)}
 					</span>
 				)}
-				<div className="relative ml-auto w-40 min-w-0">
-					<Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						value={query}
-						onChange={(e) => setQuery(e.target.value)}
-						placeholder="Search"
-						aria-label="Search tracks"
-						className="h-8 pl-8 pr-7 text-xs"
-					/>
-					{query && (
-						<button
-							type="button"
-							aria-label="Clear search"
-							className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-							onClick={() => setQuery("")}
-						>
-							<X className="h-3.5 w-3.5" />
-						</button>
-					)}
-				</div>
+				<SearchInput
+					value={query}
+					onChange={setQuery}
+					label="Search tracks"
+					className="ml-auto w-40 min-w-0"
+				/>
 			</div>
 			<Separator />
 
@@ -154,25 +127,30 @@ export function TrackList() {
 							</li>
 						))}
 						{visible.map(({ track, index }) => {
-							// Playlist membership is keyed by server id; map the track
-							// id back to one for the row's playlist checkboxes.
-							const serverId = libraryService.getRemote(track.id)?.id;
 							const isCurrent =
 								ownsQueue && track.id === state.currentTrack?.id;
+							// The row's server-side facts: its id (playlist membership
+							// is keyed by it) and its artist names. Both keep their
+							// identity until the next library refresh, so handing them
+							// to a memoized row costs it no re-renders.
+							const remote = libraryService.getRemote(track.id);
 							return (
 								<li key={track.id}>
-									<TrackRow
+									<LibraryTrackRow
 										track={track}
 										index={index}
-										serverId={serverId}
+										serverId={remote?.id}
+										artistNames={remote?.artists}
 										isCurrent={isCurrent}
 										showBars={isCurrent && state.isPlaying}
 										playlists={playlists.playlists}
+										artists={artists.artists}
 										onPlay={playTrackAt}
-										onEdit={setEditTrack}
-										onDelete={setDeleteTrack}
-										onTogglePlaylist={togglePlaylist}
-										onNewPlaylist={setPlaylistSeed}
+										onEdit={actions.edit}
+										onDelete={actions.remove}
+										onTogglePlaylist={actions.togglePlaylist}
+										onNewPlaylist={actions.newPlaylist}
+										onOpenArtist={navigationService.openArtist}
 									/>
 								</li>
 							);
@@ -181,38 +159,7 @@ export function TrackList() {
 				</ScrollArea>
 			)}
 
-			<EditTrackDialog
-				track={editTrack}
-				open={editTrack !== null}
-				onOpenChange={(open) => {
-					if (!open) setEditTrack(null);
-				}}
-			/>
-
-			{/* "New playlist…" from a row's context menu: create-mode dialog
-			    seeded with that track, so the new playlist starts with it. */}
-			<PlaylistDialog
-				playlist={null}
-				seedTrackIds={
-					playlistSeed
-						? [libraryService.getRemote(playlistSeed.id)?.id].filter(
-								(id): id is number => id !== undefined,
-							)
-						: undefined
-				}
-				open={playlistSeed !== null}
-				onOpenChange={(open) => {
-					if (!open) setPlaylistSeed(null);
-				}}
-			/>
-
-			<DeleteTrackDialog
-				track={deleteTrack}
-				open={deleteTrack !== null}
-				onOpenChange={(open) => {
-					if (!open) setDeleteTrack(null);
-				}}
-			/>
+			{actions.dialogs}
 		</div>
 	);
 }

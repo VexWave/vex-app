@@ -1,19 +1,20 @@
-import { useCallback, useState, type DragEvent } from "react";
-import { AlertCircle } from "lucide-react";
+import { useState, type DragEvent } from "react";
 import { uploadService } from "@/api/UploadService";
 import { AppHeader } from "@/components/AppHeader";
 import { ArtistsView } from "@/components/ArtistsView";
 import { BinarySetupScreen } from "@/components/BinarySetupScreen";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
 import { PlaylistsView } from "@/components/PlaylistsView";
-import { Sidebar, type MainView } from "@/components/Sidebar";
+import { Sidebar } from "@/components/Sidebar";
 import { TrackList } from "@/components/TrackList";
 import { UploadReviewDialog } from "@/components/UploadReviewDialog";
 import { YtDlpUpdateBanner } from "@/components/YtDlpUpdateBanner";
 import { useBinaries } from "@/hooks/useBinaries";
 import { useLibrary } from "@/hooks/useLibrary";
+import { useNavigation } from "@/hooks/useNavigation";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useSession } from "@/hooks/useSession";
 
@@ -24,15 +25,10 @@ function App() {
 	// LibraryService fetches the server library per login and clears the queue
 	// on logout; the component only renders its error state.
 	const { library } = useLibrary();
-	const [view, setView] = useState<MainView>({ name: "library" });
+	// Which view the main area shows, and which item it has opened — owned by
+	// NavigationService so any component can navigate (see useNavigation).
+	const { view } = useNavigation();
 	const [isDragging, setIsDragging] = useState(false);
-
-	// Sidebar playlist rows and the playlists view itself both navigate here;
-	// the open playlist travels inside the view value (see MainView).
-	const openPlaylist = useCallback(
-		(playlistId: number | null) => setView({ name: "playlists", playlistId }),
-		[],
-	);
 
 	// Dropped files are uploaded to the server; they re-enter the queue as
 	// streaming tracks once the upload completes.
@@ -80,35 +76,25 @@ function App() {
 			    HiDPI displays the CSS viewport can sit below Tailwind's `md`
 			    breakpoint — a responsive-hidden sidebar would be unreachable. */}
 			<main className="grid min-h-0 flex-1 grid-cols-[200px_1fr] gap-4 p-4">
-				<Sidebar view={view} onViewChange={setView} />
+				<Sidebar />
 				{/* min-w-0: grid items default to min-width:auto, so one nowrap
 				    track title would widen the 1fr column past the window. */}
 				<div className="min-h-0 min-w-0 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
 					{view.name === "library" ? (
 						<TrackList />
 					) : view.name === "playlists" ? (
-						<PlaylistsView
-							openPlaylistId={view.playlistId}
-							onOpenPlaylist={openPlaylist}
-						/>
+						<PlaylistsView />
 					) : (
 						<ArtistsView />
 					)}
 				</div>
 			</main>
 
-			{state.error && (
-				<div className="flex items-center gap-2 border-t bg-destructive/10 px-4 py-2 text-sm text-destructive">
-					<AlertCircle className="h-4 w-4 shrink-0" />
-					<span className="truncate">{state.error}</span>
-				</div>
-			)}
-			{library.error && (
-				<div className="flex items-center gap-2 border-t bg-destructive/10 px-4 py-2 text-sm text-destructive">
-					<AlertCircle className="h-4 w-4 shrink-0" />
-					<span className="truncate">Server library: {library.error}</span>
-				</div>
-			)}
+			<ErrorBanner error={state.error} className="border-t" />
+			<ErrorBanner
+				error={library.error && `Server library: ${library.error}`}
+				className="border-t"
+			/>
 
 			<PlayerBar />
 

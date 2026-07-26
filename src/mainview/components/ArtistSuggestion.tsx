@@ -1,5 +1,6 @@
-import { Check, UserCheck, UserPlus, Users } from "lucide-react";
+import { Check, UserCheck, UserPlus } from "lucide-react";
 import type { SuggestedArtist } from "@/api/UploadService";
+import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { useArtists } from "@/hooks/useArtists";
 import { findMatchingArtist } from "@/lib/artistMatch";
 import { cn } from "@/lib/utils";
@@ -57,13 +58,11 @@ export function ArtistSuggestion({
 			>
 				{checked && <Check className="h-3 w-3" />}
 			</span>
-			<span className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full bg-muted">
-				{imageUrl ? (
-					<img src={imageUrl} alt="" className="h-full w-full object-cover" />
-				) : (
-					<Users className="absolute inset-0 m-auto h-3.5 w-3.5 text-muted-foreground" />
-				)}
-			</span>
+			<ArtistAvatar
+				imageUrl={imageUrl}
+				className="h-7 w-7"
+				iconClassName="h-3.5 w-3.5"
+			/>
 			<span className="min-w-0 flex-1 truncate">{suggestion.name}</span>
 			<span
 				className={cn(

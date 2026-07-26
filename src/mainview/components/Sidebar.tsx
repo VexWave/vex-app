@@ -1,25 +1,15 @@
-import { useCallback } from "react";
 import { ListMusic, LibraryBig, LogOut, Users } from "lucide-react";
 import { playlistQueueContext } from "@/api/PlaylistService";
 import { SidebarPlaylistItem } from "@/components/SidebarPlaylistItem";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useArtists } from "@/hooks/useArtists";
 import { useLibrary } from "@/hooks/useLibrary";
+import { useNavigation } from "@/hooks/useNavigation";
 import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
 import { useSession } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
-
-/**
- * Where the main content area is: one of the three top-level views, with the
- * playlists view optionally opened on a single playlist. One value — rather
- * than a view name plus open-playlist side state — so the sidebar, the nav
- * items and the main area can never disagree about the current location.
- */
-export type MainView =
-	| { name: "library" }
-	| { name: "artists" }
-	| { name: "playlists"; playlistId: number | null };
+import type { MainViewName } from "@/api/NavigationService";
 
 const NAV_ITEMS = [
 	{ view: "library", label: "Library", icon: LibraryBig },
@@ -27,14 +17,9 @@ const NAV_ITEMS = [
 	{ view: "artists", label: "Artists", icon: Users },
 ] as const;
 
-export function Sidebar({
-	view,
-	onViewChange,
-}: {
-	view: MainView;
-	onViewChange: (view: MainView) => void;
-}) {
+export function Sidebar() {
 	const { service } = useSession();
+	const { view, service: navigation } = useNavigation();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
 	const { artists } = useArtists();
@@ -42,31 +27,27 @@ export function Sidebar({
 	// audio is running (now-playing ring + play/pause button state).
 	const { state: playerState } = usePlayer();
 
-	// Stable across renders so the memoized playlist rows can skip the
-	// sidebar's per-timeupdate re-renders.
-	const openPlaylist = useCallback(
-		(playlistId: number) => onViewChange({ name: "playlists", playlistId }),
-		[onViewChange],
-	);
-
 	// Badge counts come straight from the stores the views render, so the
 	// sidebar can never disagree with the list next to it.
-	const counts: Record<MainView["name"], number> = {
+	const counts: Record<MainViewName, number> = {
 		library: library.tracks.length,
 		playlists: playlists.playlists.length,
 		artists: artists.artists.length,
 	};
 
-	// While a playlist's detail view is open, its sidebar row is the active
+	// While a playlist's detail view is open, its own sidebar row is the active
 	// item instead of the "Playlists" nav entry — exactly one sidebar item
-	// mirrors what the main area shows.
-	const openPlaylistId = view.name === "playlists" ? view.playlistId : null;
+	// mirrors what the main area shows. Artists have no per-artist rows, so
+	// their nav entry stays active with one opened.
+	const openPlaylistId = view.name === "playlists" ? view.openId : null;
 
 	return (
 		<div className="flex h-full flex-col overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
 			<nav className="flex flex-col gap-1 p-2" aria-label="Main">
 				{NAV_ITEMS.map((item) => {
-					const active = item.view === view.name && openPlaylistId === null;
+					const active =
+						item.view === view.name &&
+						(item.view !== "playlists" || openPlaylistId === null);
 					const count = counts[item.view];
 					return (
 						<button
@@ -79,13 +60,7 @@ export function Sidebar({
 									: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
 							)}
 							aria-current={active ? "page" : undefined}
-							onClick={() =>
-								onViewChange(
-									item.view === "playlists"
-										? { name: "playlists", playlistId: null }
-										: { name: item.view },
-								)
-							}
+							onClick={() => navigation.show(item.view)}
 						>
 							{/* Accent rail on the active item. Always mounted so it can
 							    grow/fade between views instead of popping in. */}
@@ -158,7 +133,10 @@ export function Sidebar({
 										active={playlist.id === openPlaylistId}
 										ownsQueue={ownsQueue}
 										playing={ownsQueue && playerState.isPlaying}
-										onOpen={openPlaylist}
+										// Bound singleton method — stable across renders, so
+										// the memoized rows skip the sidebar's per-timeupdate
+										// re-renders.
+										onOpen={navigation.openPlaylist}
 									/>
 								);
 							})}

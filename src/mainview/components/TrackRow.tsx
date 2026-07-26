@@ -1,64 +1,47 @@
-import { memo } from "react";
-import {
-	EllipsisVertical,
-	ListMusic,
-	Music,
-	Pencil,
-	Play,
-	Plus,
-	Trash2,
-} from "lucide-react";
+import type { ReactNode } from "react";
+import { EllipsisVertical } from "lucide-react";
 import { NowPlayingBars } from "@/components/NowPlayingBars";
+import { TrackArtwork } from "@/components/TrackArtwork";
 import { Button } from "@/components/ui/button";
 import {
 	ContextMenu,
-	ContextMenuCheckboxItem,
 	ContextMenuContent,
-	ContextMenuItem,
-	ContextMenuSeparator,
-	ContextMenuSub,
-	ContextMenuSubContent,
-	ContextMenuSubTrigger,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { openRowMenu } from "@/lib/rowMenu";
 import { cn, formatTime } from "@/lib/utils";
-import type { RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
 /**
- * One playable library row. Memoized: TrackList re-renders on every player
- * timeupdate and on every import/upload progress tick, and without this each
- * of those rebuilt every row (incl. a Radix ContextMenu apiece). All props are
- * referentially stable across those ticks except the booleans, which only
- * change for rows entering/leaving the current-track state (the `playlists`
- * array and `onPlay` only change on the rare library/playlist refresh).
+ * One playable row: position, cover, title/artist, duration and a menu — the
+ * shape every track list in the app uses. Which actions the menu offers is the
+ * only thing that differs between a library, playlist or artist row, so it
+ * arrives as `menu` from the thin wrapper around this (LibraryTrackRow,
+ * PlaylistTrackRow, ArtistTrackRow).
+ *
+ * Those wrappers are the memoized layer — lists re-render on every player
+ * timeupdate and on every import/upload progress tick — so this component is
+ * only rebuilt when its row genuinely changed, and building the menu elements
+ * eagerly costs nothing.
  */
-export const TrackRow = memo(function TrackRow({
+export function TrackRow({
 	track,
-	index,
-	serverId,
+	position,
 	isCurrent,
 	showBars,
-	playlists,
 	onPlay,
-	onEdit,
-	onDelete,
-	onTogglePlaylist,
-	onNewPlaylist,
+	menu,
+	menuClassName,
 }: {
 	track: Track;
-	index: number;
-	/** Server-side id, for playlist membership; undefined while unresolved. */
-	serverId: number | undefined;
+	/** 1-based number at the left; the equalizer replaces it while playing. */
+	position: number;
 	isCurrent: boolean;
 	showBars: boolean;
-	playlists: RemotePlaylist[];
-	onPlay: (index: number) => void;
-	onEdit: (track: Track) => void;
-	onDelete: (track: Track) => void;
-	onTogglePlaylist: (track: Track, playlistId: number, isMember: boolean) => void;
-	onNewPlaylist: (track: Track) => void;
+	onPlay: () => void;
+	/** The row's context-menu items. */
+	menu: ReactNode;
+	menuClassName?: string;
 }) {
 	return (
 		<ContextMenu>
@@ -66,14 +49,14 @@ export const TrackRow = memo(function TrackRow({
 				<div
 					role="button"
 					tabIndex={0}
-					onClick={() => onPlay(index)}
+					onClick={onPlay}
 					onKeyDown={(e) => {
 						// Keys on the inner kebab button bubble here; without this
 						// guard, activating the menu would also play the row.
 						if (e.target !== e.currentTarget) return;
 						if (e.key === "Enter" || e.key === " ") {
 							e.preventDefault();
-							onPlay(index);
+							onPlay();
 						}
 					}}
 					className={cn(
@@ -89,29 +72,15 @@ export const TrackRow = memo(function TrackRow({
 							isCurrent ? "opacity-100" : "opacity-0",
 						)}
 					/>
-					{/* Queue position, replaced by the equalizer on the playing row. */}
 					<span className="flex w-5 shrink-0 justify-center text-xs tabular-nums text-muted-foreground">
-						{showBars ? <NowPlayingBars /> : index + 1}
+						{showBars ? <NowPlayingBars /> : position}
 					</span>
-					<div
-						className={cn(
-							"relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted shadow-sm ring-1 ring-inset ring-border/60 transition-shadow",
-							isCurrent && "ring-primary/40",
-						)}
-					>
-						{track.coverUrl ? (
-							<img
-								src={track.coverUrl}
-								alt=""
-								className="h-full w-full object-cover"
-							/>
-						) : (
-							<Music className="absolute inset-0 m-auto h-5 w-5 text-muted-foreground" />
-						)}
-						<div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
-							<Play className="h-4 w-4 fill-white text-white" />
-						</div>
-					</div>
+					<TrackArtwork
+						coverUrl={track.coverUrl}
+						className="h-10 w-10"
+						hoverPlay
+						highlighted={isCurrent}
+					/>
 					<div className="min-w-0 flex-1">
 						<p
 							className={cn(
@@ -143,53 +112,9 @@ export const TrackRow = memo(function TrackRow({
 					</Button>
 				</div>
 			</ContextMenuTrigger>
-			<ContextMenuContent className="w-44">
-				<ContextMenuItem onSelect={() => onEdit(track)}>
-					<Pencil className="h-4 w-4" />
-					Edit…
-				</ContextMenuItem>
-				<ContextMenuSub>
-					<ContextMenuSubTrigger className="gap-2 [&>svg]:size-4 [&>svg]:shrink-0">
-						<ListMusic className="h-4 w-4" />
-						Playlists
-					</ContextMenuSubTrigger>
-					<ContextMenuSubContent className="w-48">
-						<ContextMenuItem onSelect={() => onNewPlaylist(track)}>
-							<Plus className="h-4 w-4" />
-							New playlist…
-						</ContextMenuItem>
-						{playlists.length > 0 && <ContextMenuSeparator />}
-						{playlists.map((playlist) => {
-							const isMember =
-								serverId !== undefined &&
-								playlist.trackIds.includes(serverId);
-							return (
-								<ContextMenuCheckboxItem
-									key={playlist.id}
-									checked={isMember}
-									disabled={serverId === undefined}
-									// Keep the menu open so several playlists can be
-									// (un)checked in one go.
-									onSelect={(e) => e.preventDefault()}
-									onCheckedChange={() =>
-										onTogglePlaylist(track, playlist.id, isMember)
-									}
-								>
-									<span className="truncate">{playlist.name}</span>
-								</ContextMenuCheckboxItem>
-							);
-						})}
-					</ContextMenuSubContent>
-				</ContextMenuSub>
-				<ContextMenuSeparator />
-				<ContextMenuItem
-					className="text-destructive focus:text-destructive"
-					onSelect={() => onDelete(track)}
-				>
-					<Trash2 className="h-4 w-4" />
-					Delete from server
-				</ContextMenuItem>
+			<ContextMenuContent className={menuClassName ?? "w-48"}>
+				{menu}
 			</ContextMenuContent>
 		</ContextMenu>
 	);
-});
+}

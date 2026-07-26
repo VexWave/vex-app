@@ -16,6 +16,12 @@ export function formatTime(totalSeconds: number): string {
 	return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** "12 tracks" / "1 track" / "No tracks" — every collection's size line. */
+export function trackCountLabel(count: number): string {
+	if (count === 0) return "No tracks";
+	return `${count} ${count === 1 ? "track" : "tracks"}`;
+}
+
 /** 1_500_000 → "1.4 MB". */
 export function formatMb(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

@@ -1,154 +1,30 @@
-import { useEffect, useState } from "react";
-import {
-	ListMusic,
-	Loader2,
-	Pause,
-	Pencil,
-	Play,
-	Plus,
-	Trash2,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ListMusic, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { openIdOf } from "@/api/NavigationService";
 import { playlistQueueContext, playlistService } from "@/api/PlaylistService";
+import { CollectionCard } from "@/components/CollectionCard";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { PlaylistCover } from "@/components/PlaylistCover";
 import { PlaylistDetail } from "@/components/PlaylistDetail";
 import { PlaylistDialog } from "@/components/PlaylistDialog";
-import { PlaylistsErrorBanner } from "@/components/PlaylistsErrorBanner";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useLibrary } from "@/hooks/useLibrary";
+import { useNavigation } from "@/hooks/useNavigation";
 import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
-import { cn } from "@/lib/utils";
+import { trackCountLabel } from "@/lib/utils";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
-import type { Track } from "@/player/types";
 
-/**
- * One grid card. Click opens the playlist; hover reveals play/edit/delete.
- * While the playlist is playing, the play button stays visible as a pause
- * button (and `onPlay` toggles instead of restarting — see the grid).
- */
-function PlaylistCard({
-	playlist,
-	tracks,
-	playing,
-	onOpen,
-	onPlay,
-	onEdit,
-	onDelete,
-}: {
-	playlist: RemotePlaylist;
-	tracks: Track[];
-	playing: boolean;
-	onOpen: () => void;
-	onPlay: () => void;
-	onEdit: () => void;
-	onDelete: () => void;
-}) {
-	return (
-		<div
-			role="button"
-			tabIndex={0}
-			onClick={onOpen}
-			onKeyDown={(e) => {
-				// Keys on the inner play/edit/delete buttons bubble here; without
-				// this guard, activating one would also open the playlist.
-				if (e.target !== e.currentTarget) return;
-				if (e.key === "Enter" || e.key === " ") {
-					e.preventDefault();
-					onOpen();
-				}
-			}}
-			className="group relative flex cursor-pointer flex-col gap-2 rounded-lg p-3 transition-colors hover:bg-accent"
-		>
-			<div className="relative">
-				<PlaylistCover
-					playlist={playlist}
-					tracks={tracks}
-					className="aspect-square w-full"
-				/>
-				{tracks.length > 0 && (
-					<Button
-						size="icon"
-						className={cn(
-							"absolute bottom-2 right-2 h-9 w-9 rounded-full shadow-md transition-opacity focus-visible:opacity-100 group-hover:opacity-100",
-							playing ? "opacity-100" : "opacity-0",
-						)}
-						aria-label={
-							playing ? `Pause ${playlist.name}` : `Play ${playlist.name}`
-						}
-						onClick={(e) => {
-							e.stopPropagation();
-							onPlay();
-						}}
-					>
-						{playing ? (
-							<Pause className="h-4 w-4 fill-current" />
-						) : (
-							<Play className="h-4 w-4 fill-current" />
-						)}
-					</Button>
-				)}
-			</div>
-			<div className="min-w-0">
-				<p className="truncate text-sm font-medium">{playlist.name}</p>
-				<p className="truncate text-xs text-muted-foreground">
-					{tracks.length} {tracks.length === 1 ? "track" : "tracks"}
-				</p>
-			</div>
-			<div className="absolute right-1 top-1 flex rounded-md bg-background/70 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-7 w-7"
-					aria-label={`Edit ${playlist.name}`}
-					onClick={(e) => {
-						e.stopPropagation();
-						onEdit();
-					}}
-				>
-					<Pencil className="h-4 w-4" />
-				</Button>
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-7 w-7"
-					aria-label={`Delete ${playlist.name}`}
-					onClick={(e) => {
-						e.stopPropagation();
-						onDelete();
-					}}
-				>
-					<Trash2 className="h-4 w-4" />
-				</Button>
-			</div>
-		</div>
-	);
-}
-
-export function PlaylistsView({
-	openPlaylistId,
-	onOpenPlaylist,
-}: {
-	/** The playlist whose detail view is open, or null for the grid. */
-	openPlaylistId: number | null;
-	/** Navigate to a playlist's detail view (null returns to the grid). */
-	onOpenPlaylist: (playlistId: number | null) => void;
-}) {
+export function PlaylistsView() {
 	const { playlists: state } = usePlaylists();
+	const { view, service: navigation } = useNavigation();
 	// The grid's play buttons mirror playback: a playing playlist shows pause.
 	const { state: playerState } = usePlayer();
-	// Subscribe to the library so the grid's collages and track counts
-	// re-render when it loads/changes (tracksOf reads its snapshot).
-	useLibrary();
+	// The collages and track counts are joined against the library.
+	const { library } = useLibrary();
 	const [dialogOpen, setDialogOpen] = useState(false);
 	// The playlist being edited, or null when the dialog is in "create" mode.
 	const [editing, setEditing] = useState<RemotePlaylist | null>(null);
@@ -165,12 +41,26 @@ export function PlaylistsView({
 		setDialogOpen(true);
 	};
 
+	// Joined once for the whole grid — per-card joins would be redone on every
+	// player timeupdate. `library.tracks` is in the deps purely as the
+	// recompute trigger for the snapshot tracksOf reads.
+	const tracksByPlaylist = useMemo(
+		() =>
+			new Map(
+				state.playlists.map((playlist) => [
+					playlist.id,
+					playlistService.tracksOf(playlist),
+				]),
+			),
+		[state.playlists, library.tracks],
+	);
+
 	// Always render the *fresh* snapshot of the opened playlist; if it was
 	// deleted (here or server-side), fall back to the grid.
+	const openId = openIdOf(view);
 	const open =
-		openPlaylistId !== null
-			? (state.playlists.find((playlist) => playlist.id === openPlaylistId) ??
-				null)
+		openId !== null
+			? (state.playlists.find((playlist) => playlist.id === openId) ?? null)
 			: null;
 
 	// The open id lives in the app's navigation state, so when the playlist
@@ -178,8 +68,8 @@ export function PlaylistsView({
 	// session) the navigation state must be told — otherwise the sidebar
 	// would keep marking a detail view the grid has already replaced.
 	useEffect(() => {
-		if (openPlaylistId !== null && open === null) onOpenPlaylist(null);
-	}, [openPlaylistId, open, onOpenPlaylist]);
+		if (openId !== null && open === null) navigation.openPlaylist(null);
+	}, [openId, open, navigation]);
 
 	const firstLoad = state.loading && state.playlists.length === 0;
 
@@ -188,54 +78,105 @@ export function PlaylistsView({
 			{open ? (
 				<PlaylistDetail
 					playlist={open}
-					onBack={() => onOpenPlaylist(null)}
+					onBack={() => navigation.openPlaylist(null)}
 					onEdit={() => openEdit(open)}
 				/>
 			) : (
 				<>
-					<div className="flex items-center justify-between px-4 py-2.5">
-						<h2 className="text-sm font-semibold">Playlists</h2>
-						<Button variant="secondary" size="sm" onClick={openCreate}>
+					<div className="flex items-center gap-3 px-4 py-2.5">
+						<h2 className="shrink-0 text-sm font-semibold">Playlists</h2>
+						<Button
+							variant="secondary"
+							size="sm"
+							className="ml-auto"
+							onClick={openCreate}
+						>
 							<Plus className="h-4 w-4" />
 							New playlist
 						</Button>
 					</div>
 					<Separator />
 
-					<PlaylistsErrorBanner error={state.error} />
+					<ErrorBanner error={state.error} className="border-b" />
 
 					{firstLoad ? (
 						<div className="flex flex-1 items-center justify-center text-muted-foreground">
 							<Loader2 className="h-6 w-6 animate-spin" />
 						</div>
 					) : state.playlists.length === 0 ? (
-						<div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-							<ListMusic className="h-12 w-12" />
+						<div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+							<div className="flex h-20 w-20 items-center justify-center rounded-full border border-dashed">
+								<ListMusic className="h-9 w-9" />
+							</div>
 							<p className="text-sm">
 								No playlists yet — create one to get started.
 							</p>
 						</div>
 					) : (
 						<ScrollArea className="min-h-0 flex-1">
-							<ul className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 p-4">
+							<ul className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2 p-4">
 								{state.playlists.map((playlist) => {
-									const tracks = playlistService.tracksOf(playlist);
+									const tracks = tracksByPlaylist.get(playlist.id) ?? [];
 									// The queue already mirrors this playlist → its button
 									// shows pause (playOrToggle resumes instead of
 									// restarting from the top).
 									const ownsQueue =
 										playerState.queueContextId ===
 										playlistQueueContext(playlist.id);
+									const playing = ownsQueue && playerState.isPlaying;
 									return (
 										<li key={playlist.id}>
-											<PlaylistCard
-												playlist={playlist}
-												tracks={tracks}
-												playing={ownsQueue && playerState.isPlaying}
-												onOpen={() => onOpenPlaylist(playlist.id)}
-												onPlay={() => playlistService.playOrToggle(playlist)}
-												onEdit={() => openEdit(playlist)}
-												onDelete={() => setPendingDelete(playlist)}
+											<CollectionCard
+												artwork={
+													<PlaylistCover
+														playlist={playlist}
+														tracks={tracks}
+														className="aspect-square w-full"
+													/>
+												}
+												name={playlist.name}
+												meta={trackCountLabel(tracks.length)}
+												ownsQueue={ownsQueue}
+												playing={playing}
+												playLabel={
+													playing
+														? `Pause ${playlist.name}`
+														: `Play ${playlist.name}`
+												}
+												onOpen={() => navigation.openPlaylist(playlist.id)}
+												onPlay={
+													tracks.length > 0
+														? () => playlistService.playOrToggle(playlist)
+														: undefined
+												}
+												actions={
+													<>
+														<Button
+															variant="ghost"
+															size="icon"
+															className="h-7 w-7"
+															aria-label={`Edit ${playlist.name}`}
+															onClick={(e) => {
+																e.stopPropagation();
+																openEdit(playlist);
+															}}
+														>
+															<Pencil className="h-4 w-4" />
+														</Button>
+														<Button
+															variant="ghost"
+															size="icon"
+															className="h-7 w-7"
+															aria-label={`Delete ${playlist.name}`}
+															onClick={(e) => {
+																e.stopPropagation();
+																setPendingDelete(playlist);
+															}}
+														>
+															<Trash2 className="h-4 w-4" />
+														</Button>
+													</>
+												}
 											/>
 										</li>
 									);
@@ -252,40 +193,21 @@ export function PlaylistsView({
 				onOpenChange={setDialogOpen}
 			/>
 
-			<Dialog
+			<ConfirmDialog
 				open={pendingDelete !== null}
 				onOpenChange={(next) => {
 					if (!next) setPendingDelete(null);
 				}}
-			>
-				<DialogContent className="max-w-sm">
-					<DialogHeader>
-						<DialogTitle>Delete playlist?</DialogTitle>
-						<DialogDescription>
-							Removes “{pendingDelete?.name}” from the server. Its tracks stay
-							in the library.
-						</DialogDescription>
-					</DialogHeader>
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setPendingDelete(null)}>
-							Cancel
-						</Button>
-						<Button
-							variant="destructive"
-							onClick={() => {
-								if (!pendingDelete) return;
-								void playlistService.remove(pendingDelete.id);
-								// Back to the grid right away — the vanished-playlist
-								// effect would only catch up after the refetch.
-								if (openPlaylistId === pendingDelete.id) onOpenPlaylist(null);
-								setPendingDelete(null);
-							}}
-						>
-							Delete
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+				title="Delete playlist?"
+				description={`Removes “${pendingDelete?.name}” from the server. Its tracks stay in the library.`}
+				onConfirm={() => {
+					if (!pendingDelete) return;
+					void playlistService.remove(pendingDelete.id);
+					// Back to the grid right away — the vanished-playlist effect
+					// would only catch up after the refetch.
+					if (openId === pendingDelete.id) navigation.openPlaylist(null);
+				}}
+			/>
 		</div>
 	);
 }

@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { Check, Music, Plus, Search } from "lucide-react";
+import { Check, Plus } from "lucide-react";
 import { libraryService } from "@/api/LibraryService";
 import { playlistService } from "@/api/PlaylistService";
+import { SearchInput } from "@/components/SearchInput";
+import { TrackArtwork } from "@/components/TrackArtwork";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -11,7 +13,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useLibrary } from "@/hooks/useLibrary";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
@@ -75,17 +76,13 @@ export function AddTracksDialog({
 						remove it again.
 					</DialogDescription>
 				</DialogHeader>
-				<div className="relative">
-					<Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						autoFocus
-						value={query}
-						onChange={(e) => setQuery(e.target.value)}
-						placeholder="Search tracks"
-						aria-label="Search tracks"
-						className="h-8 pl-8 text-xs"
-					/>
-				</div>
+				<SearchInput
+					autoFocus
+					value={query}
+					onChange={setQuery}
+					placeholder="Search tracks"
+					label="Search tracks"
+				/>
 				<ScrollArea className="h-72">
 					{visible.length === 0 ? (
 						<div className="flex h-full items-center justify-center py-10 text-sm text-muted-foreground">
@@ -105,17 +102,11 @@ export function AddTracksDialog({
 								return (
 									<li key={track.id}>
 										<div className="flex w-full items-center gap-3 rounded-lg py-1.5 pl-2 pr-1">
-											<div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-inset ring-border/60">
-												{track.coverUrl ? (
-													<img
-														src={track.coverUrl}
-														alt=""
-														className="h-full w-full object-cover"
-													/>
-												) : (
-													<Music className="absolute inset-0 m-auto h-4 w-4 text-muted-foreground" />
-												)}
-											</div>
+											<TrackArtwork
+												coverUrl={track.coverUrl}
+												className="h-9 w-9"
+												iconClassName="h-4 w-4"
+											/>
 											<div className="min-w-0 flex-1">
 												<p className="truncate text-sm font-medium">
 													{track.title}

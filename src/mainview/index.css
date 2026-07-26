@@ -125,6 +125,12 @@
 	transition: opacity 0.4s ease;
 }
 
+/* Around a circular avatar (an artist) the concentric-corner math above has
+   nothing to match — a circle stays a circle however far the ring sits out. */
+.np-ring--round {
+	border-radius: 9999px;
+}
+
 .np-ring--on {
 	opacity: 1;
 }

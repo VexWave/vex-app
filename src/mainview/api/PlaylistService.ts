@@ -100,17 +100,12 @@ export class PlaylistService {
 		);
 	}
 
-	/**
-	 * What every playlist-level play button does (grid card, detail header,
-	 * sidebar row): if the playlist already owns the queue, toggle pause/resume
-	 * in place; otherwise replace the queue with it and start from the top.
-	 */
+	/** Play the playlist, or toggle playback when it already owns the queue. */
 	playOrToggle(playlist: RemotePlaylist): void {
-		if (playerController.queueContextId === playlistQueueContext(playlist.id)) {
-			playerController.togglePlay();
-		} else {
-			this.play(playlist);
-		}
+		playerController.playOrToggleCollection(
+			playlistQueueContext(playlist.id),
+			this.tracksOf(playlist),
+		);
 	}
 
 	/** Re-fetch the playlist list from the server. */

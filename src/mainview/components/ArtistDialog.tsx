@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { AlertCircle, ImagePlus, Loader2, Users } from "lucide-react";
+import { AlertCircle, ImagePlus, Loader2 } from "lucide-react";
 import { artistService } from "@/api/ArtistService";
+import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -136,15 +137,11 @@ export function ArtistDialog({
 							className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-muted disabled:opacity-50"
 							aria-label="Choose avatar image"
 						>
-							{preview ? (
-								<img
-									src={preview}
-									alt=""
-									className="h-full w-full object-cover"
-								/>
-							) : (
-								<Users className="absolute inset-0 m-auto h-6 w-6 text-muted-foreground" />
-							)}
+							<ArtistAvatar
+								imageUrl={preview ?? undefined}
+								className="h-full w-full"
+								iconClassName="h-6 w-6"
+							/>
 							<span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
 								<ImagePlus className="h-5 w-5 text-white" />
 							</span>

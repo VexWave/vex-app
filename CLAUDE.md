@@ -38,8 +38,9 @@ Two contexts, per Electrobun's model.
 
 ### `src/mainview/` — React 18 webview UI
 
-- `player/` — framework-agnostic OOP core: `AudioPlayer` (one HTMLAudioElement, typed events) + `PlaybackQueue` (pure data) owned by `PlayerController`, the facade the UI talks to. **Keep queue/transport logic in these classes, not in components.** The queue always mirrors one *collection* — the whole library or a single playlist — tagged by `PlayerController.queueContextId`; playing from a view replaces the queue with that view's collection (`playCollection`), and services push refreshed content into the queue only while they own the context (`syncCollection`). The Library and playlist views render from their services' state, not from the queue.
-- `api/` — `Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Binary`/`TrackCache` services. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. Add new state here, not in component-local state.
+- `player/` — framework-agnostic OOP core: `AudioPlayer` (one HTMLAudioElement, typed events) + `PlaybackQueue` (pure data) owned by `PlayerController`, the facade the UI talks to. **Keep queue/transport logic in these classes, not in components.** The queue always mirrors one *collection* — the whole library, a single playlist, or a single artist's tracks — tagged by `PlayerController.queueContextId`; playing from a view replaces the queue with that view's collection (`playCollection` / `playOrToggleCollection`), and services push refreshed content into the queue only while they own the context (`syncCollection`). The library, playlist and artist views render from their services' state, not from the queue.
+- `api/` — `Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Binary`/`TrackCache`/`Navigation` services. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. Add new state here, not in component-local state.
+- `NavigationService` owns which view the main area shows and which item it has opened (`MainView`). It lives beside the other services so anything can navigate — a track row jumps to one of its artists — instead of threading callbacks down the tree, and so a logout can reset it (ids belong to the session that issued them).
 - `lib/storage.ts` — **all** localStorage access goes through this typed registry; declare each persisted key there once rather than touching `localStorage` directly.
 
 ### RPC boundary
@@ -61,6 +62,8 @@ Don't "fix" these without reading the reasoning.
 - **Importer and yt-dlp updater mutually exclude each other** (in `index.ts`) — Windows can't overwrite a running exe.
 - **Track audio is fetched with plain `fetch`, not the ts-rest client** — the client buffers response bodies, which defeats progressive streaming and Range requests.
 - **Uploads only drop their pending placeholder once the following library refresh confirms the track landed**, so a failed refresh doesn't lose it.
+- **An artist's tracks are joined by name, not id.** The track listing carries its artists' *names* (`TrackResponse.artists`), so that is the only link the contract exposes — `ArtistService.tracksOf` matches on it exactly (unlike the deliberately fuzzy import matching in `lib/artistMatch.ts`). Consequences: two artists sharing a name share a track list, and a rename or delete has to refetch the library, because every linked track embeds the old name.
+- **An artist collection is re-derived from the library, a playlist's isn't.** Playlist membership is the playlist's own data, so `PlaylistService` syncs the queue when *it* refetches; an artist's tracks are a projection of the library, so `ArtistService` subscribes to `LibraryService` and re-syncs from there.
 - **The whole queue is cleared on logout** — every track streams from the session's server and stream URLs are session-scoped.
 - **Log out is local only** (drops the stored token and the bun session); it does not revoke the token server-side.
 
