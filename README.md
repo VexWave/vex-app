@@ -33,9 +33,3 @@ artist.
 
 ### Edit anything
 Retitle a track, swap its cover, fix its credits or delete it, straight from the row.
-
-<div align="center">
-
-Built with [Electrobun](https://framework.blackboard.sh/electrobun/), React and Tailwind CSS.
-
-</div>
