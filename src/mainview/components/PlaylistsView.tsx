@@ -22,7 +22,8 @@ import { libraryService, trackIdForServerId } from "@/api/LibraryService";
 import { playlistQueueContext, playlistService } from "@/api/PlaylistService";
 import { EditTrackDialog } from "@/components/EditTrackDialog";
 import { PlaylistDialog } from "@/components/PlaylistDialog";
-import { NowPlayingBars, openRowMenu } from "@/components/TrackList";
+import { NowPlayingBars } from "@/components/NowPlayingBars";
+import { openRowMenu } from "@/lib/rowMenu";
 import { Button } from "@/components/ui/button";
 import {
 	ContextMenu,
