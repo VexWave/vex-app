@@ -241,9 +241,11 @@ export class PlaylistService {
 	}
 
 	/**
-	 * Append tracks to the end of a playlist. A track can be in a playlist at
-	 * most once (the server rejects duplicates), so ids already present are
-	 * skipped; when nothing is left to add the edit is a no-op.
+	 * Add tracks to the top of a playlist — newest additions first, so what
+	 * the user just added is immediately visible without scrolling. A track
+	 * can be in a playlist at most once (the server rejects duplicates), so
+	 * ids already present are skipped; when nothing is left to add the edit
+	 * is a no-op.
 	 */
 	addTracks(
 		playlistId: number,
@@ -254,7 +256,7 @@ export class PlaylistService {
 				(id) => !current.includes(id),
 			);
 			if (additions.length === 0) return null;
-			return [...current, ...additions];
+			return [...additions, ...current];
 		});
 	}
 
