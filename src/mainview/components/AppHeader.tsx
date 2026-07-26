@@ -38,8 +38,9 @@ export function AppHeader() {
 			</div>
 
 			{/* justify-end so the growing labels eat into the empty space to the
-			    left instead of pushing the row past the window edge. */}
-			<div className="ml-auto flex min-w-0 items-center justify-end gap-1">
+			    left instead of pushing the row past the window edge. The buttons
+			    sit flush so the pointer never crosses a dead zone between them. */}
+			<div className="ml-auto flex min-w-0 items-center justify-end">
 				<HeaderAction
 					icon={<RefreshCw className={cn(library.loading && "animate-spin")} />}
 					label="Refresh"
