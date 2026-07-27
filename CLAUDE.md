@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+It holds what is worth knowing *before* writing any code here: how the project is laid out, the conventions it follows, and the decisions that look wrong until you know the reason. What the code says plainly at a glance stays out, and so does its history.
+
 ## What this is
 
 A desktop **music player** built with **Electrobun** (NOT Electron — do not use Electron APIs or patterns; see `llms.txt`).
@@ -72,6 +74,8 @@ Don't "fix" these without reading the reasoning.
 
 ## Conventions
 
+- **Comments carry what the code can't**: what a piece of code does, and why it exists in the form it does. Code whose reason is plain from reading it needs none — a comment restating the line below it is noise.
+- **Write comments in the present tense, about what is there.** They describe the code as it stands, not how it got there: no notes on what a thing replaced, what it no longer does, what was tried first, or what used to be wrong. History belongs in commit messages, where it is searchable and dated. The same goes for this file. (Contrast with a live constraint is fine and often the point — "rotating the element would rotate its shape with it" explains why the code can't take the obvious form.)
 - Tailwind **v3** + vendored shadcn (new-york style, CSS variables, dark theme via `class="dark"` on `<html>` in `index.html`). If using the shadcn CLI, pin `shadcn@2.3.0` — newer versions expect Tailwind v4.
 - `@/` path alias → `src/mainview/` (defined in both `tsconfig.json` and `vite.config.ts`; keep them in sync).
 - Tabs for indentation (template default throughout).
