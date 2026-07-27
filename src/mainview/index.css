@@ -77,31 +77,28 @@
  * around the sidebar cover of the playlist that owns the play queue, with
  * two glowing arcs orbiting on opposite sides while audio runs.
  *
- * Two stacked ring elements, so each state can fade in and out on its own
- * (a background-image can't be transitioned): the base — a faint closed
- * ring marking queue ownership — and the arcs, which fade in over it on
- * play and back out on pause. Both are filled edge-to-edge and hollowed
- * into a border by the two-layer mask (border box minus content box,
- * composited with `exclude`), which keeps the inside genuinely transparent
- * so the gap between ring and cover shows the row's own hover/active tint.
- * The arcs orbit by animating the registered --np-ring-angle inside the
- * conic gradient — rotating the element itself would rotate its
- * rounded-square shape along with it.
+ * Two stacked ring elements, so each state can fade in and out on its own:
+ * the base — a faint closed ring marking queue ownership — and the arcs,
+ * which fade in over it on play and back out on pause. Both bands are real
+ * borders, which leaves the inside genuinely transparent, so the gap shows
+ * the row's own hover/active tint. The arcs' conic gradient is the *mask*
+ * over that border rather than paint under one: the width comes from the
+ * border and the sweep only decides how much of it shows at each angle.
+ * They orbit by animating the registered --np-ring-angle inside that
+ * gradient — rotating the element itself would rotate its rounded-square
+ * shape along with it.
  *
- * The band and the gap round to whole *device* pixels, and that is
- * load-bearing rather than tidiness. Padding is not snapped the way a
- * border width is: it stays subpixel through layout, and each edge of the
- * ring's box and of the mask's content box is then rounded to the device
- * grid on its own, with no reference to the artwork they wrap — so nothing
- * keeps the four sides agreeing, and this ring used to come out a device
- * pixel thicker on one side than the other, or a pixel nearer the artwork
- * on one edge, depending on the display scale. Whole device pixels turn
- * those independent roundings into one shared offset: the ring then sits an
- * exact integer number of device pixels out from the artwork on every side,
- * so wherever the artwork's own edge lands, round(edge − n) is
- * round(edge) − n and the offset survives. The mask's content box, one band
- * further in, follows for the same reason — which is why both values have
- * to be whole individually and not merely their sum.
+ * Two separate things keep the ring even, and it needs both. Blink snaps a
+ * border width to whole device pixels at computed-value time, which is what
+ * keeps the four sides of the band equally thick. That does nothing for the
+ * *gap*: the ring's box is snapped independently of the artwork it wraps,
+ * so the offset between them only survives snapping if it is already a
+ * whole number of device pixels — hence rounding against --dpr below.
+ * Wherever the artwork's own edge lands, round(edge − n) is round(edge) − n
+ * only for integer n. Without it the ring came out a pixel nearer the
+ * artwork on one edge, or a pixel thicker on one side, depending on the
+ * display scale; band and gap each have to be whole on their own, not
+ * merely their sum.
  *
  * On the arc layer the mask lives on a ::before while the drop-shadow sits
  * on the element itself: filter and mask on one element apply in
@@ -114,6 +111,7 @@
  * the dark theme, and a thin white ring around a cover reads as a focus
  * outline rather than as playback.
  */
+
 /* CSS can't see the device pixel grid; lib/devicePixelRatio.ts publishes it
    inline on <html>, where it beats this. Declared anyway so the stylesheet
    is correct on its own — unscaled is the right guess if it never arrives. */
@@ -159,22 +157,8 @@
 	opacity: 1;
 }
 
-/* The padding band is what the mask keeps — i.e. the border width. */
-.np-ring--base,
-.np-ring--arc::before {
-	padding: var(--np-ring-width);
-	-webkit-mask:
-		linear-gradient(#000 0 0) content-box,
-		linear-gradient(#000 0 0);
-	-webkit-mask-composite: xor;
-	mask:
-		linear-gradient(#000 0 0) content-box,
-		linear-gradient(#000 0 0);
-	mask-composite: exclude;
-}
-
 .np-ring--base {
-	background-color: hsl(270 70% 65% / 0.35);
+	border: var(--np-ring-width) solid hsl(270 70% 65% / 0.35);
 }
 
 /* Only the glow — the masked arcs it wraps live on the ::before (see the
@@ -184,18 +168,21 @@
 }
 
 /* Two comets half a turn apart (peaks at 45° and 225°), each fading in
-   and out over its 90° span with a 90° rest between them. */
+   and out over its 90° span with a 90° rest between them. The parent has
+   neither border nor padding, so `inset: 0` puts this border box on the
+   parent's box and the band lands where the base ring's does. */
 .np-ring--arc::before {
 	content: "";
 	position: absolute;
 	inset: 0;
+	border: var(--np-ring-width) solid hsl(270 95% 72%);
 	border-radius: inherit;
-	background-image: conic-gradient(
+	mask-image: conic-gradient(
 		from var(--np-ring-angle),
 		transparent 0deg,
-		hsl(270 95% 72%) 45deg,
+		#000 45deg,
 		transparent 90deg 180deg,
-		hsl(270 95% 72%) 225deg,
+		#000 225deg,
 		transparent 270deg
 	);
 	animation: np-ring-spin 2.4s linear infinite;
@@ -214,8 +201,8 @@
 		filter: none;
 	}
 	.np-ring--arc::before {
-		background-image: none;
-		background-color: hsl(270 85% 70% / 0.6);
+		mask-image: none;
+		border-color: hsl(270 85% 70% / 0.6);
 		animation: none;
 	}
 }
