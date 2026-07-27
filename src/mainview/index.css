@@ -74,31 +74,29 @@
 
 /*
  * Player-indicator ring (NowPlayingRing.tsx): a purple border floating
- * around the sidebar cover of the playlist that owns the play queue, with
- * two glowing arcs orbiting on opposite sides while audio runs.
+ * around the artwork of whichever collection owns the play queue — a
+ * playlist's cover in the sidebar, an artist's avatar in the artists grid —
+ * with two glowing arcs orbiting on opposite sides while audio runs.
  *
  * Two stacked ring elements, so each state can fade in and out on its own:
  * the base — a faint closed ring marking queue ownership — and the arcs,
  * which fade in over it on play and back out on pause. Both bands are real
  * borders, which leaves the inside genuinely transparent, so the gap shows
- * the row's own hover/active tint. The arcs' conic gradient is the *mask*
- * over that border rather than paint under one: the width comes from the
- * border and the sweep only decides how much of it shows at each angle.
- * They orbit by animating the registered --np-ring-angle inside that
- * gradient — rotating the element itself would rotate its rounded-square
- * shape along with it.
+ * the row's own hover/active tint. The arcs' conic gradient masks that
+ * border: the width comes from the border, and the sweep decides how much
+ * of it shows at each angle. They orbit by animating the registered
+ * --np-ring-angle inside that gradient — rotating the element itself would
+ * rotate its rounded-square shape along with it.
  *
  * Two separate things keep the ring even, and it needs both. Blink snaps a
  * border width to whole device pixels at computed-value time, which is what
  * keeps the four sides of the band equally thick. That does nothing for the
  * *gap*: the ring's box is snapped independently of the artwork it wraps,
- * so the offset between them only survives snapping if it is already a
+ * so the offset between them survives snapping only where it is already a
  * whole number of device pixels — hence rounding against --dpr below.
  * Wherever the artwork's own edge lands, round(edge − n) is round(edge) − n
- * only for integer n. Without it the ring came out a pixel nearer the
- * artwork on one edge, or a pixel thicker on one side, depending on the
- * display scale; band and gap each have to be whole on their own, not
- * merely their sum.
+ * only for integer n, and band and gap each have to be whole on their own
+ * for that to hold, not merely their sum.
  *
  * On the arc layer the mask lives on a ::before while the drop-shadow sits
  * on the element itself: filter and mask on one element apply in
