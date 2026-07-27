@@ -42,9 +42,11 @@ Two contexts, per Electrobun's model.
 
 - `player/` — framework-agnostic OOP core: `AudioPlayer` (one HTMLAudioElement, typed events) + `PlaybackQueue` (pure data) owned by `PlayerController`, the facade the UI talks to. **Keep queue/transport logic in these classes, not in components.** The queue always mirrors one *collection* — the whole library, a single playlist, or a single artist's tracks — tagged by `PlayerController.queueContextId`; playing from a view replaces the queue with that view's collection (`playCollection` / `playOrToggleCollection`), and services push refreshed content into the queue only while they own the context (`syncCollection`). The library, playlist and artist views render from their services' state, not from the queue.
 - `api/` — `Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Binary`/`TrackCache`/`Navigation` services. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. Add new state here, not in component-local state.
+- `AudioPlayer` also owns the Web Audio graph behind `PlayerController.analyser`, built on the first playback. `createMediaElementSource` captures an element's output permanently and accepts it only once, so anything wanting the spectrum reads that analyser instead of building its own — `useAudioGlow` drives `CoverBackdrop`'s glow from it.
 - `NavigationService` holds the current view and the item opened in it, so any component can navigate (a track row jumps to one of its artists) and logging out can reset it — open ids belong to the session that issued them.
 - `components/` — the three track lists share one `TrackRow`, each supplying its own row menu, and take their edit/delete/playlist actions from `useTrackActions`; the playlist and artist views share `CollectionCard` and `CollectionHeader`. A new list or collection view composes those.
 - `lib/storage.ts` — **all** localStorage access goes through this typed registry; declare each persisted key there once rather than touching `localStorage` directly.
+- `lib/cacheBuster.ts` — a stream-proxy URL is keyed by its resource's stable id, so replacing a cover or an avatar server-side leaves Chromium serving the cached bytes from an identical URL. Bump the key's version and append it to force the refetch.
 
 ### RPC boundary
 
