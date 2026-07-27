@@ -101,10 +101,12 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 						type="button"
 						aria-label={`Reorder ${track.title}`}
 						// touch-none keeps the pointer sensor from losing the drag
-						// to the scroll container's own panning.
+						// to the scroll container's own panning. The negative margin
+						// eats into the row's gap-3, which is wider than this pair of
+						// left-hand columns wants between them.
 						className={cn(
-							"flex h-7 w-5 shrink-0 touch-none cursor-grab items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100",
-							isDragging && "cursor-grabbing opacity-100",
+							"-mr-1.5 flex h-7 w-5 shrink-0 touch-none cursor-grab items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+							isDragging && "cursor-grabbing text-foreground",
 						)}
 						// The row plays on click; a grip that was pressed but not
 						// dragged must not count as one.
