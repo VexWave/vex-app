@@ -88,6 +88,21 @@
  * conic gradient — rotating the element itself would rotate its
  * rounded-square shape along with it.
  *
+ * The band and the gap round to whole *device* pixels, and that is
+ * load-bearing rather than tidiness. Padding is not snapped the way a
+ * border width is: it stays subpixel through layout, and each edge of the
+ * ring's box and of the mask's content box is then rounded to the device
+ * grid on its own, with no reference to the artwork they wrap — so nothing
+ * keeps the four sides agreeing, and this ring used to come out a device
+ * pixel thicker on one side than the other, or a pixel nearer the artwork
+ * on one edge, depending on the display scale. Whole device pixels turn
+ * those independent roundings into one shared offset: the ring then sits an
+ * exact integer number of device pixels out from the artwork on every side,
+ * so wherever the artwork's own edge lands, round(edge − n) is
+ * round(edge) − n and the offset survives. The mask's content box, one band
+ * further in, follows for the same reason — which is why both values have
+ * to be whole individually and not merely their sum.
+ *
  * On the arc layer the mask lives on a ::before while the drop-shadow sits
  * on the element itself: filter and mask on one element apply in
  * filter-then-mask order (the same reason a clip-path'd element's
@@ -99,6 +114,13 @@
  * the dark theme, and a thin white ring around a cover reads as a focus
  * outline rather than as playback.
  */
+/* CSS can't see the device pixel grid; lib/devicePixelRatio.ts publishes it
+   inline on <html>, where it beats this. Declared anyway so the stylesheet
+   is correct on its own — unscaled is the right guess if it never arrives. */
+:root {
+	--dpr: 1;
+}
+
 @property --np-ring-angle {
 	syntax: "<angle>";
 	inherits: false;
@@ -112,8 +134,10 @@
 }
 
 .np-ring {
-	--np-ring-width: 1.5px;
-	--np-ring-gap: 2px;
+	/* 2px nominal, landing on the nearest whole device pixel: 2 of them at
+	   100%, 3 at 125% and 150%, 4 at 175% and 200%. */
+	--np-ring-width: calc(round(2px * var(--dpr), 1px) / var(--dpr));
+	--np-ring-gap: calc(round(2px * var(--dpr), 1px) / var(--dpr));
 	position: absolute;
 	inset: calc(-1 * (var(--np-ring-width) + var(--np-ring-gap)));
 	/* Cover radius (rounded-md) + the inset → concentric corners. */
