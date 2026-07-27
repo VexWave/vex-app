@@ -1,4 +1,22 @@
 import { useCallback, useMemo, useState } from "react";
+import {
+	DndContext,
+	KeyboardSensor,
+	PointerSensor,
+	closestCenter,
+	useSensor,
+	useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import {
+	restrictToParentElement,
+	restrictToVerticalAxis,
+} from "@dnd-kit/modifiers";
+import {
+	SortableContext,
+	sortableKeyboardCoordinates,
+	verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { ListMusic, ListPlus, Pencil } from "lucide-react";
 import { libraryService, trackIdForServerId } from "@/api/LibraryService";
 import { navigationService } from "@/api/NavigationService";
@@ -59,12 +77,33 @@ export function PlaylistDetail({
 	);
 	const moveRow = useCallback(
 		(serverId: number, direction: -1 | 1) =>
-			void playlistService.moveTrack(playlist.id, serverId, direction),
+			playlistService.moveTrack(playlist.id, serverId, direction),
 		[playlist.id],
 	);
 	const removeRow = useCallback(
 		(serverId: number) =>
 			void playlistService.removeTracks(playlist.id, [serverId]),
+		[playlist.id],
+	);
+
+	// A small distance before a drag begins, so pressing the grip and letting
+	// go stays a click rather than a zero-length reorder.
+	const sensors = useSensors(
+		useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+		useSensor(KeyboardSensor, {
+			coordinateGetter: sortableKeyboardCoordinates,
+		}),
+	);
+	const sortableIds = useMemo(() => rows.map((row) => row.serverId), [rows]);
+	const handleDragEnd = useCallback(
+		({ active, over }: DragEndEvent) => {
+			if (!over || active.id === over.id) return;
+			playlistService.reorderTrack(
+				playlist.id,
+				Number(active.id),
+				Number(over.id),
+			);
+		},
 		[playlist.id],
 	);
 
@@ -137,36 +176,49 @@ export function PlaylistDetail({
 				</div>
 			) : (
 				<ScrollArea className="min-h-0 flex-1">
-					<ul className="flex flex-col gap-1 p-2">
-						{rows.map(({ track, serverId, position }, rowIndex) => {
-							// A track is in a playlist at most once, so within the
-							// owning playlist the id match is unambiguous.
-							const isCurrent =
-								ownsQueue && track.id === state.currentTrack?.id;
-							return (
-								<li key={track.id}>
-									<PlaylistTrackRow
-										track={track}
-										rowIndex={rowIndex}
-										serverId={serverId}
-										// Keeps its identity until the next library
-										// refresh, so the memoized row is unaffected.
-										artistNames={libraryService.getRemote(track.id)?.artists}
-										artists={artists.artists}
-										isCurrent={isCurrent}
-										showBars={isCurrent && state.isPlaying}
-										canMoveUp={position > 0}
-										canMoveDown={position < playlist.trackIds.length - 1}
-										onPlay={playRow}
-										onEdit={setEditTrack}
-										onMove={moveRow}
-										onRemove={removeRow}
-										onOpenArtist={navigationService.openArtist}
-									/>
-								</li>
-							);
-						})}
-					</ul>
+					{/* Rows may only trade places within the list, so the drag is
+					    pinned to the vertical axis and to the <ul>'s box. */}
+					<DndContext
+						sensors={sensors}
+						collisionDetection={closestCenter}
+						modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+						onDragEnd={handleDragEnd}
+					>
+						<SortableContext
+							items={sortableIds}
+							strategy={verticalListSortingStrategy}
+						>
+							<ul className="flex flex-col gap-1 p-2">
+								{rows.map(({ track, serverId, position }, rowIndex) => {
+									// A track is in a playlist at most once, so within the
+									// owning playlist the id match is unambiguous.
+									const isCurrent =
+										ownsQueue && track.id === state.currentTrack?.id;
+									return (
+										<PlaylistTrackRow
+											key={track.id}
+											track={track}
+											rowIndex={rowIndex}
+											serverId={serverId}
+											// Keeps its identity until the next library
+											// refresh, so the memoized row is unaffected.
+											artistNames={libraryService.getRemote(track.id)?.artists}
+											artists={artists.artists}
+											isCurrent={isCurrent}
+											showBars={isCurrent && state.isPlaying}
+											canMoveUp={position > 0}
+											canMoveDown={position < playlist.trackIds.length - 1}
+											onPlay={playRow}
+											onEdit={setEditTrack}
+											onMove={moveRow}
+											onRemove={removeRow}
+											onOpenArtist={navigationService.openArtist}
+										/>
+									);
+								})}
+							</ul>
+						</SortableContext>
+					</DndContext>
 				</ScrollArea>
 			)}
 

@@ -32,6 +32,7 @@ export function TrackRow({
 	onPlay,
 	menu,
 	menuClassName,
+	dragHandle,
 }: {
 	track: Track;
 	/** 1-based number at the left; the equalizer replaces it while playing. */
@@ -42,6 +43,12 @@ export function TrackRow({
 	/** The row's context-menu items. */
 	menu: ReactNode;
 	menuClassName?: string;
+	/**
+	 * Grip that starts a drag, shown ahead of the position for lists whose
+	 * order the user owns. Its column is only laid out when there is one, so
+	 * rows without stay flush left.
+	 */
+	dragHandle?: ReactNode;
 }) {
 	return (
 		<ContextMenu>
@@ -60,7 +67,8 @@ export function TrackRow({
 						}
 					}}
 					className={cn(
-						"group relative flex w-full cursor-pointer items-center gap-3 rounded-lg py-2 pl-3 pr-2.5 text-left transition-colors",
+						"group relative flex w-full cursor-pointer items-center gap-3 rounded-lg py-2 pr-2.5 text-left transition-colors",
+						dragHandle ? "pl-1.5" : "pl-3",
 						isCurrent ? "bg-accent" : "hover:bg-accent/60",
 					)}
 				>
@@ -72,6 +80,7 @@ export function TrackRow({
 							isCurrent ? "opacity-100" : "opacity-0",
 						)}
 					/>
+					{dragHandle}
 					<span className="flex w-5 shrink-0 justify-center text-xs tabular-nums text-muted-foreground">
 						{showBars ? <NowPlayingBars /> : position}
 					</span>

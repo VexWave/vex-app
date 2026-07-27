@@ -44,6 +44,12 @@ export class PlaylistService {
 	// cache headers, so after a cover is replaced we bust it (keyed by playlist
 	// id) to force Chromium to re-fetch. See CacheBuster.
 	private imageCache = new CacheBuster();
+	// Locally held track order for playlists with a reorder in flight, keyed by
+	// playlist id (see reorderTrack).
+	private pendingOrders = new Map<
+		number,
+		{ trackIds: number[]; inFlight: number }
+	>();
 
 	constructor() {
 		let previousStatus = sessionService.getSnapshot().status;
@@ -56,6 +62,7 @@ export class PlaylistService {
 			} else if (status === "loggedOut") {
 				this.fetchSeq += 1; // drop in-flight results from the old session
 				this.imageCache.clear();
+				this.pendingOrders.clear();
 				this.update({ playlists: [], loading: false, error: null });
 			}
 		});
@@ -139,11 +146,66 @@ export class PlaylistService {
 		// still carry copies; the next membership edit persists the deduped list.
 		const playlists = result.playlists.map((playlist) => ({
 			...playlist,
-			trackIds: [...new Set(playlist.trackIds)],
+			trackIds: this.orderOf(playlist.id, [...new Set(playlist.trackIds)]),
 			imageUrl: this.imageCache.apply(String(playlist.id), playlist.imageUrl),
 		}));
 		this.update({ playlists, loading: false, error: null });
 		this.syncQueue();
+	}
+
+	/**
+	 * The order a freshly fetched playlist should be shown in: the server's,
+	 * unless a reorder for it is still on its way, in which case the local one
+	 * wins. Every reorder triggers a refetch, so without this the list would
+	 * snap back to the pre-drag order for as long as a *later* reorder is still
+	 * in flight. Membership the local order doesn't know about is the server's
+	 * to decide — ids it dropped go, ids it gained land at the end.
+	 */
+	private orderOf(playlistId: number, serverTrackIds: number[]): number[] {
+		const pending = this.pendingOrders.get(playlistId);
+		if (!pending) return serverTrackIds;
+		const remaining = new Set(serverTrackIds);
+		const trackIds = pending.trackIds.filter((id) => remaining.delete(id));
+		return [...trackIds, ...serverTrackIds.filter((id) => remaining.has(id))];
+	}
+
+	/**
+	 * Persist a new track order, showing it immediately. The reorder is applied
+	 * to the snapshot up front — a dragged row that springs back to its old
+	 * slot for the round trip reads as a failed drag — and only then sent, so
+	 * what a second reorder computes from already carries the first one's move.
+	 * A rejected edit drops the local order and refetches the server's.
+	 */
+	private applyOrder(playlistId: number, trackIds: number[]): void {
+		const pending = this.pendingOrders.get(playlistId);
+		this.pendingOrders.set(playlistId, {
+			trackIds,
+			inFlight: (pending?.inFlight ?? 0) + 1,
+		});
+		this.update({
+			playlists: this.snapshot.playlists.map((playlist) =>
+				playlist.id === playlistId ? { ...playlist, trackIds } : playlist,
+			),
+		});
+		this.syncQueue();
+
+		const run = this.membershipChain.then(async () => {
+			const result = await this.edit({ id: playlistId, trackIds });
+			const settled = this.pendingOrders.get(playlistId);
+			// Only the last reorder still out there may retire the local order;
+			// an earlier one landing must leave its successor's order standing.
+			const isLast = !settled || settled.inFlight <= 1;
+			if (isLast) this.pendingOrders.delete(playlistId);
+			else settled.inFlight -= 1;
+			if (!result.ok) {
+				this.update({ error: result.error });
+				// Rows sit in an order the server rejected. The refetch is what
+				// puts the list back to what actually persisted — unless a later
+				// reorder is still queued, which brings its own refetch.
+				if (isLast) await this.refresh();
+			}
+		});
+		this.membershipChain = run.catch(() => undefined);
 	}
 
 	/**
@@ -279,30 +341,43 @@ export class PlaylistService {
 		});
 	}
 
-	/**
-	 * Swap a track with its neighbour above/below. Addressed by server id, not
-	 * list position: membership edits are chained, so a queued op runs against
-	 * the list its predecessor produced — a position captured at render time
-	 * could name the wrong entry by then, while the id (unique per playlist)
-	 * still finds the right one.
-	 */
+	/** Swap a track with its neighbour above/below. */
 	moveTrack(
 		playlistId: number,
 		serverTrackId: number,
 		direction: -1 | 1,
-	): Promise<MutationResult> {
-		return this.chainMembershipEdit(playlistId, (current) => {
-			const position = current.indexOf(serverTrackId);
-			if (position === -1) return null;
-			const target = position + direction;
-			if (target < 0 || target >= current.length) return null;
-			const trackIds = [...current];
-			[trackIds[position], trackIds[target]] = [
-				trackIds[target],
-				trackIds[position],
-			];
-			return trackIds;
-		});
+	): void {
+		const current = this.byId(playlistId)?.trackIds;
+		if (!current) return;
+		const from = current.indexOf(serverTrackId);
+		if (from === -1) return;
+		const to = from + direction;
+		if (to < 0 || to >= current.length) return;
+		const trackIds = [...current];
+		[trackIds[from], trackIds[to]] = [trackIds[to], trackIds[from]];
+		this.applyOrder(playlistId, trackIds);
+	}
+
+	/**
+	 * Move a track into the slot another one holds — what dropping a dragged
+	 * row onto `targetServerTrackId` means. Both ends are named by server id
+	 * rather than list position: the row a drag started from is looked up again
+	 * at drop time, and the joined list the UI drags in skips ids the library
+	 * doesn't know yet, so its indices aren't the stored list's.
+	 */
+	reorderTrack(
+		playlistId: number,
+		serverTrackId: number,
+		targetServerTrackId: number,
+	): void {
+		const current = this.byId(playlistId)?.trackIds;
+		if (!current) return;
+		const from = current.indexOf(serverTrackId);
+		const to = current.indexOf(targetServerTrackId);
+		if (from === -1 || to === -1 || from === to) return;
+		const trackIds = [...current];
+		trackIds.splice(to, 0, ...trackIds.splice(from, 1));
+		this.applyOrder(playlistId, trackIds);
 	}
 
 	/**
