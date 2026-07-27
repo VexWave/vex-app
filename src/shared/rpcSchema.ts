@@ -47,7 +47,7 @@ export interface UploadTrackParams {
 	title: string;
 	/** Integer milliseconds; the webview converts the tag's float seconds once. */
 	durationMs: number;
-	/** Raw (uncompressed) file bytes, base64-encoded. */
+	/** Raw file bytes, base64-encoded. */
 	dataBase64: string;
 	/** Raw cover-image bytes, base64-encoded. Omit for no cover. */
 	coverBase64?: string;

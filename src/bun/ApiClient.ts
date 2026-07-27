@@ -29,10 +29,10 @@ function createClient(baseUrl: string, token?: string) {
 }
 
 /**
- * All server I/O lives here in the bun process: no webview CORS issues, the
- * session token is used only from here, and Bun.gzipSync is available for track
- * compression. The token is handed to the webview once (on login) purely so it
- * can be persisted for restart; see `login`/`restoreSession`.
+ * All server I/O lives here in the bun process: no webview CORS issues, and the
+ * session token is used only from here. The token is handed to the webview once
+ * (on login) purely so it can be persisted for restart; see
+ * `login`/`restoreSession`.
  */
 export class ApiClient {
 	// Single source of truth for auth state; the client is derived from
@@ -98,16 +98,13 @@ export class ApiClient {
 		if (!client) {
 			return { ok: false, status: 401, error: "Not logged in" };
 		}
-		const raw = Buffer.from(params.dataBase64, "base64");
-		const gzipped = Bun.gzipSync(new Uint8Array(raw));
 		try {
 			const res = await client.postTrack({
 				body: {
 					title: params.title,
 					// Already an integer (the webview rounds the tag's float seconds).
 					duration: params.durationMs,
-					compressed_data: Buffer.from(gzipped).toString("base64"),
-					// Cover passes through as base64; only the audio is gzipped.
+					data: params.dataBase64,
 					cover: params.coverBase64,
 					artistIds: params.artistIds,
 				},

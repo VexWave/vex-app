@@ -18,7 +18,8 @@ export const CreateTrackRequest = z.object({
   // Track length in milliseconds.
   duration: z.int32(),
   artistIds: z.array(z.int32()).optional(),
-  compressed_data: z.base64().transform((b) => Buffer.from(b, "base64")),
+  // Raw audio bytes, sent base64-encoded and stored as-is (bytea).
+  data: z.base64().transform((b) => Buffer.from(b, "base64")),
   // Raw cover-image bytes, sent base64-encoded and stored as-is (bytea).
   cover: z
     .base64()
@@ -254,7 +255,8 @@ export const ApiContract = c.router(
         401: z.string(),
         404: z.string(),
       },
-      summary: "Edit an artist's name and/or avatar image (send null to remove)",
+      summary:
+        "Edit an artist's name and/or avatar image (send null to remove)",
     },
     getTrackAudio: {
       method: "GET",
@@ -264,9 +266,9 @@ export const ApiContract = c.router(
         range: z.string().optional(),
       },
       responses: {
-        // Raw audio bytes (the stored track, decompressed). The declared
-        // contentType is the fallback; servers should send the real audio
-        // MIME (audio/mpeg, audio/flac, …) when they know it.
+        // The stored audio bytes, verbatim. The declared contentType is the
+        // fallback; servers should send the real audio MIME (audio/mpeg,
+        // audio/flac, …) when they know it.
         200: c.otherResponse({
           contentType: "application/octet-stream",
           body: c.type<Uint8Array>(),
@@ -279,16 +281,16 @@ export const ApiContract = c.router(
         404: z.string(),
         416: z.string(),
       },
-      summary: "Stream a track's raw (decompressed) audio bytes",
+      summary: "Stream a track's raw audio bytes",
       description:
         "Servers MUST send `Accept-Ranges: bytes` and answer `Range` " +
         "requests with `206 Partial Content` — that is what lets clients " +
         "start playback before the download finishes and seek instantly. " +
-        "Do not gzip the response: byte ranges address the raw audio bytes. " +
-        "Clients that need progressive bytes (the app's bun-side stream " +
-        "proxy) fetch this route directly via `trackAudioPath` — the " +
-        "ts-rest fetch client buffers response bodies, which would defeat " +
-        "streaming.",
+        "Byte ranges address the stored bytes, so the body must go out " +
+        "verbatim and un-encoded. Clients that need progressive bytes (the " +
+        "app's bun-side stream proxy) fetch this route directly via " +
+        "`trackAudioPath` — the ts-rest fetch client buffers response " +
+        "bodies, which would defeat streaming.",
     },
     editTrack: {
       method: "POST",

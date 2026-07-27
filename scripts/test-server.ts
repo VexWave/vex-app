@@ -1,4 +1,4 @@
-// Throwaway dev server for manually testing login, gzip track upload and
+// Throwaway dev server for manually testing login, track upload and
 // progressive streaming. Run: bun run scripts/test-server.ts
 // (credentials: test / test; uploaded tracks live in memory)
 import {
@@ -135,9 +135,7 @@ Bun.serve({
 				if (!parsed.success) {
 					return new Response(parsed.error.message, { status: 400 });
 				}
-				const { title, duration, artistIds, compressed_data, cover } =
-					parsed.data;
-				const raw = Bun.gunzipSync(new Uint8Array(compressed_data));
+				const { title, duration, artistIds, data: audio, cover } = parsed.data;
 				const id = nextTrackId++;
 				// Resolve artist ids to names, dropping ids that don't exist.
 				const artistNames = (artistIds ?? [])
@@ -148,13 +146,13 @@ Bun.serve({
 					title,
 					duration,
 					artists: artistNames,
-					contentType: sniffAudioType(raw),
-					data: raw,
+					contentType: sniffAudioType(audio),
+					data: audio,
 					cover: cover ? new Uint8Array(cover) : undefined,
 				});
 				console.log(
 					`postTrack ok: #${id} "${title}" duration=${duration}ms ` +
-						`compressed=${compressed_data.byteLength}B raw=${raw.byteLength}B` +
+						`audio=${audio.byteLength}B` +
 						(cover ? ` cover=${cover.byteLength}B` : "") +
 						(artistNames.length ? ` artists=${artistNames.join(", ")}` : ""),
 				);
@@ -433,9 +431,9 @@ Bun.serve({
 			},
 		},
 		// ApiContract.getTrackAudio ("/track/:id/audio" — ts-rest and Bun share
-		// the :param syntax): decompressed bytes with Accept-Ranges + 206
-		// support so clients can start playing before the download finishes
-		// and seek instantly.
+		// the :param syntax): the stored bytes with Accept-Ranges + 206 support
+		// so clients can start playing before the download finishes and seek
+		// instantly.
 		[ApiContract.getTrackAudio.path]: {
 			GET: (req: Bun.BunRequest<typeof ApiContract.getTrackAudio.path>) => {
 				if (!authorized(req)) {

@@ -8,7 +8,7 @@ It holds what is worth knowing *before* writing any code here: how the project i
 
 A desktop **music player** built with **Electrobun** (NOT Electron — do not use Electron APIs or patterns; see `llms.txt`).
 
-The app is entirely server-backed: a blocking login screen asks for host/port of a backend plus credentials, and every track in the queue streams from that server. Local files the user picks/drops are gzip-uploaded, then re-enter the queue via a library refresh. Tracks can be imported from YouTube/SoundCloud URLs via a bundled yt-dlp. Tracks, artists and playlists are all CRUD-managed against the backend. The API contract (ts-rest + zod v4) lives at `contract/contract.ts` — read it for the routes.
+The app is entirely server-backed: a blocking login screen asks for host/port of a backend plus credentials, and every track in the queue streams from that server. Local files the user picks/drops are uploaded, then re-enter the queue via a library refresh. Tracks can be imported from YouTube/SoundCloud URLs via a bundled yt-dlp. Tracks, artists and playlists are all CRUD-managed against the backend. The API contract (ts-rest + zod v4) lives at `contract/contract.ts` — read it for the routes.
 
 ## Commands
 
@@ -29,7 +29,7 @@ Two contexts, per Electrobun's model.
 | File | Role |
 | --- | --- |
 | `index.ts` | Creates the `BrowserWindow` and wires the RPC handlers. Loads the Vite dev server (port 5173) on the dev channel, else `views://mainview/index.html`. Vite output (`dist/`) is copied into the bundle via the `build.copy` map in `electrobun.config.ts`. |
-| `ApiClient.ts` | ts-rest client + session token + gzip. The only place that talks HTTP to the backend. |
+| `ApiClient.ts` | ts-rest client + session token. The only place that talks HTTP to the backend. |
 | `StreamProxy.ts` | Loopback HTTP server. Re-serves backend audio/artist-image routes to the webview with the token attached. |
 | `TrackCache.ts` | Byte-bounded in-memory LRU of fully-downloaded tracks. |
 | `BinaryManager.ts` | Downloads yt-dlp/ffmpeg/ffprobe/deno into a per-user bin dir. |

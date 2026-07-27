@@ -73,11 +73,12 @@ export interface ConfirmEdits {
 /**
  * Upload queue for picked/dropped audio files. Each file is first parsed and
  * staged for review (cover/title, plus a proposed artist for URL imports), and
- * only uploaded once the user confirms it in the dialog. Confirmed files are gzipped and POSTed by the bun
- * process; uploads run sequentially (one in flight) to bound memory use. There
- * is no local playback: a successful upload triggers a library refresh, so the
- * track re-enters the queue as a server track that streams through the bun
- * proxy. Failures stay in the snapshot so the list can surface them.
+ * only uploaded once the user confirms it in the dialog. Confirmed files are
+ * POSTed by the bun process; uploads run sequentially (one in flight) to bound
+ * memory use. There is no local playback: a successful upload triggers a
+ * library refresh, so the track re-enters the queue as a server track that
+ * streams through the bun proxy. Failures stay in the snapshot so the list can
+ * surface them.
  */
 export class UploadService {
 	private subscribers = new Set<() => void>();
