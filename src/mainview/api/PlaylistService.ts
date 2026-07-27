@@ -28,9 +28,10 @@ export interface PlaylistsState {
  * Owns the server playlists: fetches them when a session starts and clears
  * them when it ends. Mutations refetch instead of patching locally — the
  * server assigns ids and drops deleted tracks, so it stays the single source
- * of truth. Track membership is edited by full replacement of the ordered
- * `trackIds` (that's the whole contract; add/remove/reorder are conveniences
- * over it).
+ * of truth. Reordering is the one exception, and holds a local order until the
+ * server confirms it (`applyOrder`). Track membership is edited by full
+ * replacement of the ordered `trackIds` (that's the whole contract;
+ * add/remove/reorder are conveniences over it).
  */
 export class PlaylistService {
 	private subscribers = new Set<() => void>();
@@ -45,11 +46,10 @@ export class PlaylistService {
 	// id) to force Chromium to re-fetch. See CacheBuster.
 	private imageCache = new CacheBuster();
 	// Locally held track order for playlists with a reorder in flight, keyed by
-	// playlist id (see reorderTrack).
-	private pendingOrders = new Map<
-		number,
-		{ trackIds: number[]; inFlight: number }
-	>();
+	// playlist id (see applyOrder). Keyed rather than a single value because a
+	// reorder outlives the view it was made in — dragging in one playlist and
+	// navigating to another before the request lands must not cross the two.
+	private pendingOrders = new Map<number, number[]>();
 
 	constructor() {
 		let previousStatus = sessionService.getSnapshot().status;
@@ -165,7 +165,7 @@ export class PlaylistService {
 		const pending = this.pendingOrders.get(playlistId);
 		if (!pending) return serverTrackIds;
 		const remaining = new Set(serverTrackIds);
-		const trackIds = pending.trackIds.filter((id) => remaining.delete(id));
+		const trackIds = pending.filter((id) => remaining.delete(id));
 		return [...trackIds, ...serverTrackIds.filter((id) => remaining.has(id))];
 	}
 
@@ -177,11 +177,7 @@ export class PlaylistService {
 	 * A rejected edit drops the local order and refetches the server's.
 	 */
 	private applyOrder(playlistId: number, trackIds: number[]): void {
-		const pending = this.pendingOrders.get(playlistId);
-		this.pendingOrders.set(playlistId, {
-			trackIds,
-			inFlight: (pending?.inFlight ?? 0) + 1,
-		});
+		this.pendingOrders.set(playlistId, trackIds);
 		this.update({
 			playlists: this.snapshot.playlists.map((playlist) =>
 				playlist.id === playlistId ? { ...playlist, trackIds } : playlist,
@@ -189,14 +185,14 @@ export class PlaylistService {
 		});
 		this.syncQueue();
 
-		const run = this.membershipChain.then(async () => {
+		void this.enqueue(async () => {
 			const result = await this.edit({ id: playlistId, trackIds });
-			const settled = this.pendingOrders.get(playlistId);
-			// Only the last reorder still out there may retire the local order;
-			// an earlier one landing must leave its successor's order standing.
-			const isLast = !settled || settled.inFlight <= 1;
+			// Each reorder submits a fresh array, so finding this one still in
+			// the map is what identifies it as the last still out there — only
+			// that one may retire the local order, since an earlier one landing
+			// has to leave its successor's order standing.
+			const isLast = this.pendingOrders.get(playlistId) === trackIds;
 			if (isLast) this.pendingOrders.delete(playlistId);
-			else settled.inFlight -= 1;
 			if (!result.ok) {
 				this.update({ error: result.error });
 				// Rows sit in an order the server rejected. The refetch is what
@@ -205,7 +201,6 @@ export class PlaylistService {
 				if (isLast) await this.refresh();
 			}
 		});
-		this.membershipChain = run.catch(() => undefined);
 	}
 
 	/**
@@ -280,34 +275,43 @@ export class PlaylistService {
 		return { ok: true };
 	}
 
-	// Membership edits read the snapshot's trackIds and send a full
-	// replacement, so two running concurrently would clobber each other — the
-	// later one is computed from a list that lacks the earlier one's change
-	// (e.g. quick successive adds from the picker would drop all but the last).
-	// Chaining them makes each op read the list the previous one's refetch
-	// produced. Ops never reject (edit() returns failures), but the chain
-	// swallows rejections anyway so one bug can't wedge it forever.
+	// Membership edits send a full replacement of trackIds, so two in flight at
+	// once would clobber each other. Running them one after another gives each
+	// the list its predecessor left behind.
 	private membershipChain: Promise<unknown> = Promise.resolve();
 
+	/**
+	 * Queue a membership edit behind the ones already running. Steps never
+	 * reject (edit() returns failures), but the tail swallows rejections anyway
+	 * so one bug can't wedge the chain forever.
+	 */
+	private enqueue<T>(step: () => Promise<T>): Promise<T> {
+		const run = this.membershipChain.then(step);
+		this.membershipChain = run.catch(() => undefined);
+		return run;
+	}
+
+	/**
+	 * Queue an edit that computes its new track list when its turn comes, from
+	 * whatever the preceding edit's refetch produced — so quick successive adds
+	 * from the picker don't each drop the one before. Nothing is shown until
+	 * the round trip lands; reordering is the exception, see `applyOrder`.
+	 */
 	private chainMembershipEdit(
 		playlistId: number,
 		buildTrackIds: (current: readonly number[]) => number[] | null,
 	): Promise<MutationResult> {
-		const run = this.membershipChain.then(
-			async (): Promise<MutationResult> => {
-				const playlist = this.byId(playlistId);
-				if (!playlist) return { ok: false, error: "Playlist not found." };
-				const trackIds = buildTrackIds(playlist.trackIds);
-				if (trackIds === null) return { ok: true }; // no-op edit
-				const result = await this.edit({ id: playlistId, trackIds });
-				// Row menus and the add picker fire-and-forget these, so a
-				// failure also lands in the snapshot's error banner.
-				if (!result.ok) this.update({ error: result.error });
-				return result;
-			},
-		);
-		this.membershipChain = run.catch(() => undefined);
-		return run;
+		return this.enqueue(async (): Promise<MutationResult> => {
+			const playlist = this.byId(playlistId);
+			if (!playlist) return { ok: false, error: "Playlist not found." };
+			const trackIds = buildTrackIds(playlist.trackIds);
+			if (trackIds === null) return { ok: true }; // no-op edit
+			const result = await this.edit({ id: playlistId, trackIds });
+			// Row menus and the add picker fire-and-forget these, so a failure
+			// also lands in the snapshot's error banner.
+			if (!result.ok) this.update({ error: result.error });
+			return result;
+		});
 	}
 
 	/**

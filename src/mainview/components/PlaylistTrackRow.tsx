@@ -17,9 +17,10 @@ import type { Track } from "@/player/types";
  * the membership actions only a playlist has — reordering and removal — and
  * the grip that drags it to a new position.
  *
- * The row owns its `<li>` because that is what dnd-kit displaces: the sortable
- * ref and the transform belong on the element that occupies a slot in the
- * list, not on the visual row inside it.
+ * The row owns its `<li>` rather than the list rendering one around it, so the
+ * sortable ref lands on a direct child of the `<ul>`: `restrictToParentElement`
+ * bounds the drag by the *parent element* of the node it is attached to, and a
+ * node nested inside the `<li>` would be pinned to its own row.
  *
  * Memoized for the same reason as the other rows: the detail view re-renders
  * on every player timeupdate, and this keeps those ticks from rebuilding every

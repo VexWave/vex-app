@@ -37,6 +37,18 @@ import { formatTime, trackCountLabel } from "@/lib/utils";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
+/*
+ * Sensor options live out here because `useSensor` memoizes on the options
+ * object's identity: fresh literals would hand DndContext a new sensor array
+ * every render, which changes the context value every row's `useSortable`
+ * subscribes to. Context updates bypass memo(), so on a view that re-renders
+ * once a second while playing that would rebuild every row on every tick.
+ */
+// A small distance before a drag begins, so pressing the grip and letting go
+// stays a click rather than a zero-length reorder.
+const POINTER_OPTIONS = { activationConstraint: { distance: 4 } };
+const KEYBOARD_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates };
+
 /** The opened playlist: banner with cover/meta/actions plus its track rows. */
 export function PlaylistDetail({
 	playlist,
@@ -86,13 +98,9 @@ export function PlaylistDetail({
 		[playlist.id],
 	);
 
-	// A small distance before a drag begins, so pressing the grip and letting
-	// go stays a click rather than a zero-length reorder.
 	const sensors = useSensors(
-		useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
-		}),
+		useSensor(PointerSensor, POINTER_OPTIONS),
+		useSensor(KeyboardSensor, KEYBOARD_OPTIONS),
 	);
 	const sortableIds = useMemo(() => rows.map((row) => row.serverId), [rows]);
 	const handleDragEnd = useCallback(
