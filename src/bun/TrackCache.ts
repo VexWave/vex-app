@@ -14,7 +14,7 @@ export interface CachedTrack {
  * is always the least recently used.
  */
 export class TrackCache {
-	private readonly entries = new Map<number, CachedTrack>();
+	private readonly entries = new Map<string, CachedTrack>();
 	private totalBytes = 0;
 
 	constructor(private readonly maxBytes: number) {}
@@ -25,11 +25,11 @@ export class TrackCache {
 	}
 
 	/** Ids of every fully-cached track. */
-	ids(): number[] {
+	ids(): string[] {
 		return [...this.entries.keys()];
 	}
 
-	get(trackId: number): CachedTrack | undefined {
+	get(trackId: string): CachedTrack | undefined {
 		const entry = this.entries.get(trackId);
 		if (entry) {
 			this.entries.delete(trackId);
@@ -38,7 +38,7 @@ export class TrackCache {
 		return entry;
 	}
 
-	set(trackId: number, entry: CachedTrack): void {
+	set(trackId: string, entry: CachedTrack): void {
 		if (!this.fits(entry.bytes.byteLength)) return;
 		this.delete(trackId);
 		while (this.totalBytes + entry.bytes.byteLength > this.maxBytes) {
@@ -51,7 +51,7 @@ export class TrackCache {
 	}
 
 	/** Returns whether the entry existed (i.e. membership actually changed). */
-	delete(trackId: number): boolean {
+	delete(trackId: string): boolean {
 		const entry = this.entries.get(trackId);
 		if (!entry) return false;
 		this.entries.delete(trackId);

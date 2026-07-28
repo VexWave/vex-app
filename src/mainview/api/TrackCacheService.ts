@@ -10,7 +10,7 @@ import { sessionService } from "./SessionService";
  */
 export class TrackCacheService {
 	private subscribers = new Set<() => void>();
-	private snapshot: ReadonlySet<number> = new Set();
+	private snapshot: ReadonlySet<string> = new Set();
 
 	constructor() {
 		onBunMessage("trackCacheChanged", ({ trackIds }) => {
@@ -41,9 +41,9 @@ export class TrackCacheService {
 		return () => this.subscribers.delete(onChange);
 	};
 
-	getSnapshot = (): ReadonlySet<number> => this.snapshot;
+	getSnapshot = (): ReadonlySet<string> => this.snapshot;
 
-	private replace(trackIds: number[]): void {
+	private replace(trackIds: string[]): void {
 		this.snapshot = new Set(trackIds);
 		this.subscribers.forEach((notify) => notify());
 	}

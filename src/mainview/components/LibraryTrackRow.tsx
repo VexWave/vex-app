@@ -41,7 +41,7 @@ export const LibraryTrackRow = memo(function LibraryTrackRow({
 	/** Position in the library — what playback addresses, not the row number. */
 	index: number;
 	/** Server-side id, for playlist membership; undefined while unresolved. */
-	serverId: number | undefined;
+	serverId: string | undefined;
 	/** The track's linked artist names, for the "Go to artist" entry. */
 	artistNames: readonly string[] | undefined;
 	isCurrent: boolean;

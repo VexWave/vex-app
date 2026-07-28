@@ -88,12 +88,12 @@ export function PlaylistDetail({
 		[playlist],
 	);
 	const moveRow = useCallback(
-		(serverId: number, direction: -1 | 1) =>
+		(serverId: string, direction: -1 | 1) =>
 			playlistService.moveTrack(playlist.id, serverId, direction),
 		[playlist.id],
 	);
 	const removeRow = useCallback(
-		(serverId: number) =>
+		(serverId: string) =>
 			void playlistService.removeTracks(playlist.id, [serverId]),
 		[playlist.id],
 	);
@@ -106,10 +106,12 @@ export function PlaylistDetail({
 	const handleDragEnd = useCallback(
 		({ active, over }: DragEndEvent) => {
 			if (!over || active.id === over.id) return;
+			// dnd-kit widens a sortable id to `string | number`; these came from
+			// `sortableIds`, so they are the rows' own track ids.
 			playlistService.reorderTrack(
 				playlist.id,
-				Number(active.id),
-				Number(over.id),
+				String(active.id),
+				String(over.id),
 			);
 		},
 		[playlist.id],

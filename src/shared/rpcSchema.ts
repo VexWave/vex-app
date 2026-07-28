@@ -56,8 +56,8 @@ export interface UploadTrackParams {
 }
 
 export interface RemoteTrack {
-	/** Server-side track id. */
-	id: number;
+	/** Server-side track id (a uuid — it says nothing about upload order). */
+	id: string;
 	title: string;
 	/** Joined artist names for display (undefined when the track has none). */
 	artist?: string;
@@ -82,16 +82,17 @@ export interface RemoteTrack {
 	coverUrl?: string;
 }
 
+/** Oldest first, as the server sends it — the only record of upload order. */
 export type ListTracksResult = { ok: true; tracks: RemoteTrack[] } | RpcFailure;
 
 export interface DeleteTrackParams {
 	/** Server-side track id. */
-	id: number;
+	id: string;
 }
 
 export interface EditTrackParams {
 	/** Server-side track id. */
-	id: number;
+	id: string;
 	title?: string;
 	/** Replaces the track's artist links entirely (empty array clears them). */
 	artistIds?: number[];
@@ -141,7 +142,7 @@ export type ListArtistsResult =
 export interface CreatePlaylistParams {
 	name: string;
 	/** Initial ordered playback list; a track at most once. Omit for empty. */
-	trackIds?: number[];
+	trackIds?: string[];
 	/** Raw cover-image bytes, base64-encoded. Omit for no cover. */
 	imageBase64?: string;
 }
@@ -155,7 +156,7 @@ export interface EditPlaylistParams {
 	 * omit to leave it unchanged. A track may appear at most once — the
 	 * server rejects duplicates.
 	 */
-	trackIds?: number[];
+	trackIds?: string[];
 	/** New cover bytes, base64; `null` removes the cover; omit = unchanged. */
 	imageBase64?: string | null;
 }
@@ -175,7 +176,7 @@ export interface RemotePlaylist {
 	 * should exist in the track listing (a stale one is skipped by the
 	 * client-side join).
 	 */
-	trackIds: number[];
+	trackIds: string[];
 	/**
 	 * Loopback URL of the bun-side stream proxy for this playlist's cover, or
 	 * undefined when the playlist has none. Same pattern as
@@ -196,7 +197,7 @@ export type ListPlaylistsResult =
  * permanently stale.
  */
 export interface CachedTracks {
-	trackIds: number[];
+	trackIds: string[];
 }
 
 // --- Binary manager --------------------------------------------------------

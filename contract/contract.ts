@@ -28,7 +28,7 @@ export const CreateTrackRequest = z.object({
 });
 
 export const EditTrackRequest = z.object({
-  id: z.int32(),
+  id: z.uuid(),
   title: z.string().min(1).optional(),
   artistIds: z.array(z.int32()).optional(),
   // New cover-image bytes, base64-encoded; `null` removes the cover;
@@ -64,7 +64,7 @@ export const EditArtistRequest = z.object({
 // Ordered playback list of a playlist. Order is playback order; a track may
 // appear at most once — duplicate ids are a 400, same as unknown ids.
 const PlaylistTrackIds = z
-  .array(z.int32())
+  .array(z.uuid())
   .refine((ids) => new Set(ids).size === ids.length, {
     message: "trackIds must not contain duplicates",
   });
@@ -96,7 +96,11 @@ export const EditPlaylistRequest = z.object({
     .optional(),
 });
 
+// Artists and playlists are still addressed by their serial id; tracks have
+// their own request shape because a track id is a uuid.
 export const DeleteByIdRequest = z.object({ id: z.int32() });
+
+export const DeleteTrackRequest = z.object({ id: z.uuid() });
 
 // ===========================================================================
 // Response bodies — what the server RETURNS. Binary payloads are never inlined
@@ -105,7 +109,7 @@ export const DeleteByIdRequest = z.object({ id: z.int32() });
 // ===========================================================================
 
 export const TrackResponse = z.object({
-  id: z.int32(),
+  id: z.uuid(),
   title: z.string(),
   // Track length in milliseconds.
   duration: z.int32(),
@@ -129,7 +133,7 @@ export const PlaylistResponse = z.object({
   // Ordered playback list; each track id appears at most once. Ids of tracks
   // that were deleted from the library are silently dropped from every
   // playlist server-side and never appear here.
-  trackIds: z.array(z.int32()),
+  trackIds: z.array(z.uuid()),
   // URL of the `getPlaylistImage` route when the playlist has a cover, else
   // absent. The raw image bytes are fetched separately from that route.
   imageUrl: z.string().optional(),
@@ -175,7 +179,7 @@ export const ApiContract = c.router(
     deleteTrack: {
       method: "POST",
       path: "/deleteTrack",
-      body: DeleteByIdRequest,
+      body: DeleteTrackRequest,
       responses: {
         200: z.string(),
         401: z.string(),
@@ -203,7 +207,12 @@ export const ApiContract = c.router(
         401: z.string(),
         500: z.string(),
       },
-      summary: "List all tracks available for streaming",
+      summary: "List all tracks available for streaming, oldest first",
+      description:
+        "Servers MUST return the listing in ascending order of when each " +
+        "track was added. A track id is a uuid and carries no order of its " +
+        "own, so this response is the only thing telling clients which " +
+        "uploads are the recent ones.",
     },
     getArtists: {
       method: "GET",
@@ -233,7 +242,7 @@ export const ApiContract = c.router(
     getTrackImage: {
       method: "GET",
       path: "/track/:id/image",
-      pathParams: z.object({ id: z.coerce.number() }),
+      pathParams: z.object({ id: z.uuid() }),
       responses: {
         // Raw stored image bytes. The declared contentType is a fallback;
         // servers should send the real image MIME when they know it.
@@ -261,7 +270,7 @@ export const ApiContract = c.router(
     getTrackAudio: {
       method: "GET",
       path: "/track/:id/audio",
-      pathParams: z.object({ id: z.coerce.number() }),
+      pathParams: z.object({ id: z.uuid() }),
       headers: {
         range: z.string().optional(),
       },
@@ -387,10 +396,10 @@ export const ApiContract = c.router(
  * Concrete request path for `getTrackAudio` (see its description: streaming
  * consumers fetch this directly instead of going through the ts-rest client).
  */
-export const trackAudioPath = (trackId: number) =>
+export const trackAudioPath = (trackId: string) =>
   insertParamsIntoPath({
     path: ApiContract.getTrackAudio.path,
-    params: { id: String(trackId) },
+    params: { id: trackId },
   });
 
 /**
@@ -407,10 +416,10 @@ export const artistImagePath = (artistId: number) =>
  * Concrete request path for `getTrackImage`. Returned as `coverUrl` on track
  * listings so clients know where to fetch the raw cover-image bytes.
  */
-export const trackImagePath = (trackId: number) =>
+export const trackImagePath = (trackId: string) =>
   insertParamsIntoPath({
     path: ApiContract.getTrackImage.path,
-    params: { id: String(trackId) },
+    params: { id: trackId },
   });
 
 /**

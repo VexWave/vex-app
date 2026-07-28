@@ -57,7 +57,7 @@ export class StreamProxy {
 	private readonly secret = crypto.randomUUID();
 	private readonly cache = new TrackCache(MAX_CACHE_BYTES);
 	/** Track ids with a cache download in flight — never tee the same id twice. */
-	private readonly inflight = new Set<number>();
+	private readonly inflight = new Set<string>();
 	/**
 	 * Session identity the cache was filled under. Track ids are only meaningful
 	 * per server+login, so any auth change wipes the cache (and invalidates
@@ -75,7 +75,7 @@ export class StreamProxy {
 		 * changes (track fully downloaded, evicted, or the cache was wiped) — the
 		 * UI marks cached tracks as instant to play.
 		 */
-		private readonly onCacheChanged?: (trackIds: number[]) => void,
+		private readonly onCacheChanged?: (trackIds: string[]) => void,
 	) {}
 
 	/** The loopback server, started on first use. */
@@ -94,7 +94,7 @@ export class StreamProxy {
 	}
 
 	/** Stable stream URL for a server track. */
-	urlForTrack(trackId: number): string {
+	urlForTrack(trackId: string): string {
 		const { port } = this.ensureServer();
 		return `http://127.0.0.1:${port}/${this.secret}/track/${trackId}`;
 	}
@@ -106,7 +106,7 @@ export class StreamProxy {
 	}
 
 	/** Stable cover-image URL for a server track. */
-	urlForTrackImage(trackId: number): string {
+	urlForTrackImage(trackId: string): string {
 		const { port } = this.ensureServer();
 		return `http://127.0.0.1:${port}/${this.secret}/track/${trackId}/image`;
 	}
@@ -124,7 +124,7 @@ export class StreamProxy {
 	}
 
 	/** Drops a track's cached audio, e.g. after it was deleted on the server. */
-	evictTrack(trackId: number): void {
+	evictTrack(trackId: string): void {
 		if (this.cache.delete(trackId)) this.onCacheChanged?.(this.cache.ids());
 	}
 
@@ -132,7 +132,7 @@ export class StreamProxy {
 	 * Ids of every fully-cached track, synced against the live session first so
 	 * a fetch right after a re-login can't report the previous session's ids.
 	 */
-	cachedTrackIds(): number[] {
+	cachedTrackIds(): string[] {
 		const auth = this.api.auth;
 		if (!auth) return [];
 		this.syncCacheToAuth(auth);
@@ -192,13 +192,17 @@ export class StreamProxy {
 				headers: { "content-type": "audio/mpeg" },
 			});
 		}
-		// The audio regex is `$`-anchored on the bare id, so a `/image` suffix
-		// can never match it — no ambiguity between audio and cover-image URLs.
-		const trackMatch = pathname.match(/^\/([^/]+)\/track\/(\d+)$/);
+		// Track ids are uuids, so they match as an opaque segment; artists and
+		// playlists are still serial ids. The audio regex is `$`-anchored on
+		// the bare id and a segment can't span a `/`, so a `/image` suffix can
+		// never match it — no ambiguity between audio and cover-image URLs.
+		const trackMatch = pathname.match(/^\/([^/]+)\/track\/([^/]+)$/);
 		const artistImageMatch = pathname.match(
 			/^\/([^/]+)\/artist\/(\d+)\/image$/,
 		);
-		const trackImageMatch = pathname.match(/^\/([^/]+)\/track\/(\d+)\/image$/);
+		const trackImageMatch = pathname.match(
+			/^\/([^/]+)\/track\/([^/]+)\/image$/,
+		);
 		const playlistImageMatch = pathname.match(
 			/^\/([^/]+)\/playlist\/(\d+)\/image$/,
 		);
@@ -222,14 +226,14 @@ export class StreamProxy {
 
 		if (isTrack) {
 			this.syncCacheToAuth(auth);
-			const cached = this.cache.get(Number(match[2]));
+			const cached = this.cache.get(match[2]);
 			if (cached) return respondFromCache(cached, range);
 		}
 
 		const backendPath = isTrack
-			? trackAudioPath(Number(match[2]))
+			? trackAudioPath(match[2])
 			: trackImageMatch
-				? trackImagePath(Number(match[2]))
+				? trackImagePath(match[2])
 				: playlistImageMatch
 					? playlistImagePath(Number(match[2]))
 					: artistImagePath(Number(match[2]));
@@ -249,7 +253,7 @@ export class StreamProxy {
 
 		let body = upstream.body;
 		if (isTrack && body) {
-			body = this.teeIntoCache(Number(match[2]), range, upstream, body);
+			body = this.teeIntoCache(match[2], range, upstream, body);
 		}
 
 		const responseHeaders = new Headers();
@@ -279,7 +283,7 @@ export class StreamProxy {
 	 * pass through untouched — a partial payload can't seed the cache.
 	 */
 	private teeIntoCache(
-		trackId: number,
+		trackId: string,
 		range: string | null,
 		upstream: Response,
 		body: ReadableStream<Uint8Array<ArrayBuffer>>,
@@ -309,7 +313,7 @@ export class StreamProxy {
 	 * new session's cache.
 	 */
 	private async accumulate(
-		trackId: number,
+		trackId: string,
 		stream: ReadableStream<Uint8Array<ArrayBuffer>>,
 		contentType: string,
 		expectedBytes: number,

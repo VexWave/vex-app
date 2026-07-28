@@ -94,7 +94,7 @@ export function TrackPlaylistsSubmenu({
 	onNewPlaylist,
 }: {
 	track: Track;
-	serverId: number | undefined;
+	serverId: string | undefined;
 	playlists: RemotePlaylist[];
 	onToggle: (track: Track, playlistId: number, isMember: boolean) => void;
 	onNewPlaylist: (track: Track) => void;

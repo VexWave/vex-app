@@ -44,7 +44,7 @@ export class LibraryService {
 	private fetchSeq = 0;
 	// Server metadata for each library track, keyed by the track id
 	// (`server-<id>`). The context menu reads it to map a Track back to its
-	// numeric server id and currently-linked artist names.
+	// server id and currently-linked artist names.
 	private remoteById = new Map<string, RemoteTrack>();
 	// The StreamProxy cover URL for a track never changes and forwards no cache
 	// headers, so after a cover is replaced we bust it (keyed by track id) to
@@ -116,14 +116,16 @@ export class LibraryService {
 			return false;
 		}
 		// Apply the cover cache-buster once so getRemote (dialog preview) and
-		// the list rows all see the same busted URL. Server ids increase with
-		// upload order, so descending id puts the newest uploads on top.
+		// the list rows all see the same busted URL. A track id is a uuid and
+		// sorts arbitrarily, so upload order is the server's listing order
+		// (oldest first, per the contract) — reversed here to put the newest
+		// uploads on top.
 		const remotes = result.tracks
 			.map((remote) => ({
 				...remote,
 				coverUrl: this.coverCache.apply(trackIdFor(remote), remote.coverUrl),
 			}))
-			.sort((a, b) => b.id - a.id);
+			.reverse();
 		this.remoteById = new Map(
 			remotes.map((remote) => [trackIdFor(remote), remote]),
 		);
@@ -238,7 +240,7 @@ function trackIdFor(remote: RemoteTrack): string {
 }
 
 /** The queue/list id a server track id maps to (the trackIdFor counterpart). */
-export function trackIdForServerId(serverId: number): string {
+export function trackIdForServerId(serverId: string): string {
 	return `server-${serverId}`;
 }
 

@@ -64,7 +64,7 @@ export function useTrackActions(): TrackActions {
 				seedTrackIds={
 					playlistSeed
 						? [libraryService.getRemote(playlistSeed.id)?.id].filter(
-								(id): id is number => id !== undefined,
+								(id): id is string => id !== undefined,
 							)
 						: undefined
 				}

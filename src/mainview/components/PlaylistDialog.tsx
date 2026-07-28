@@ -38,7 +38,7 @@ export function PlaylistDialog({
 	onOpenChange,
 }: {
 	playlist: RemotePlaylist | null;
-	seedTrackIds?: number[];
+	seedTrackIds?: string[];
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {

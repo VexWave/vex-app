@@ -186,10 +186,13 @@ export class ApiClient {
 	 * stream-proxy URL, and `urlForTrackImage` to its cover-image proxy URL, so
 	 * complete RemoteTracks are assembled in one place. Like `listArtists`'
 	 * imageUrl rewrite, `coverUrl` stays undefined unless the server sent one.
+	 *
+	 * The server's order (oldest first) is passed through untouched — it is
+	 * what tells the webview which tracks are the recent uploads.
 	 */
 	async listTracks(
-		urlForTrack: (serverId: number) => string,
-		urlForTrackImage: (serverId: number) => string,
+		urlForTrack: (serverId: string) => string,
+		urlForTrackImage: (serverId: string) => string,
 	): Promise<ListTracksResult> {
 		const client = this.session?.client;
 		if (!client) {

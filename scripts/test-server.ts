@@ -7,6 +7,7 @@ import {
 	CreatePlaylistRequest,
 	CreateTrackRequest,
 	DeleteByIdRequest,
+	DeleteTrackRequest,
 	EditArtistRequest,
 	EditPlaylistRequest,
 	EditTrackRequest,
@@ -19,7 +20,7 @@ const PORT = 8790;
 const tokens = new Set<string>();
 
 interface StoredTrack {
-	id: number;
+	id: string;
 	title: string;
 	/** Track length in milliseconds. */
 	duration: number;
@@ -30,8 +31,7 @@ interface StoredTrack {
 	cover?: Uint8Array;
 }
 
-let nextTrackId = 1;
-const tracks = new Map<number, StoredTrack>();
+const tracks = new Map<string, StoredTrack>();
 
 interface StoredArtist {
 	id: number;
@@ -47,7 +47,7 @@ interface StoredPlaylist {
 	id: number;
 	name: string;
 	/** Ordered playback list; a track at most once per the contract. */
-	trackIds: number[];
+	trackIds: string[];
 	/** Raw image bytes, stored as-is; served from `/playlist/:id/image`. */
 	image?: Uint8Array;
 }
@@ -56,7 +56,7 @@ let nextPlaylistId = 1;
 const playlists = new Map<number, StoredPlaylist>();
 
 /** Contract rule: unknown track ids in a playlist body are a 400. */
-function unknownTrackIds(trackIds: number[]): number[] {
+function unknownTrackIds(trackIds: string[]): string[] {
 	return trackIds.filter((id) => !tracks.has(id));
 }
 
@@ -136,7 +136,7 @@ Bun.serve({
 					return new Response(parsed.error.message, { status: 400 });
 				}
 				const { title, duration, artistIds, data: audio, cover } = parsed.data;
-				const id = nextTrackId++;
+				const id = crypto.randomUUID();
 				// Resolve artist ids to names, dropping ids that don't exist.
 				const artistNames = (artistIds ?? [])
 					.map((artistId) => artists.get(artistId)?.name)
@@ -244,7 +244,7 @@ Bun.serve({
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
-				const parsed = DeleteByIdRequest.safeParse(await req.json());
+				const parsed = DeleteTrackRequest.safeParse(await req.json());
 				if (!parsed.success || !tracks.delete(parsed.data.id)) {
 					return new Response("not found", { status: 404 });
 				}
@@ -405,7 +405,7 @@ Bun.serve({
 		// bytes, public (no auth) per the contract.
 		[ApiContract.getTrackImage.path]: {
 			GET: (req: Bun.BunRequest<typeof ApiContract.getTrackImage.path>) => {
-				const track = tracks.get(Number(req.params.id));
+				const track = tracks.get(req.params.id);
 				if (!track?.cover) return new Response("not found", { status: 404 });
 				return new Response(track.cover, {
 					headers: { "content-type": "application/octet-stream" },
@@ -439,7 +439,7 @@ Bun.serve({
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
-				const track = tracks.get(Number(req.params.id));
+				const track = tracks.get(req.params.id);
 				if (!track) return new Response("not found", { status: 404 });
 				const size = track.data.byteLength;
 				const range = parseRange(req.headers.get("range"), size);

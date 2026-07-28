@@ -49,7 +49,7 @@ export class PlaylistService {
 	// playlist id (see applyOrder). Keyed rather than a single value because a
 	// reorder outlives the view it was made in — dragging in one playlist and
 	// navigating to another before the request lands must not cross the two.
-	private pendingOrders = new Map<number, number[]>();
+	private pendingOrders = new Map<number, string[]>();
 
 	constructor() {
 		let previousStatus = sessionService.getSnapshot().status;
@@ -161,7 +161,7 @@ export class PlaylistService {
 	 * in flight. Membership the local order doesn't know about is the server's
 	 * to decide — ids it dropped go, ids it gained land at the end.
 	 */
-	private orderOf(playlistId: number, serverTrackIds: number[]): number[] {
+	private orderOf(playlistId: number, serverTrackIds: string[]): string[] {
 		const pending = this.pendingOrders.get(playlistId);
 		if (!pending) return serverTrackIds;
 		const remaining = new Set(serverTrackIds);
@@ -176,7 +176,7 @@ export class PlaylistService {
 	 * what a second reorder computes from already carries the first one's move.
 	 * A rejected edit drops the local order and refetches the server's.
 	 */
-	private applyOrder(playlistId: number, trackIds: number[]): void {
+	private applyOrder(playlistId: number, trackIds: string[]): void {
 		this.pendingOrders.set(playlistId, trackIds);
 		this.update({
 			playlists: this.snapshot.playlists.map((playlist) =>
@@ -299,7 +299,7 @@ export class PlaylistService {
 	 */
 	private chainMembershipEdit(
 		playlistId: number,
-		buildTrackIds: (current: readonly number[]) => number[] | null,
+		buildTrackIds: (current: readonly string[]) => string[] | null,
 	): Promise<MutationResult> {
 		return this.enqueue(async (): Promise<MutationResult> => {
 			const playlist = this.byId(playlistId);
@@ -323,7 +323,7 @@ export class PlaylistService {
 	 */
 	addTracks(
 		playlistId: number,
-		serverTrackIds: number[],
+		serverTrackIds: string[],
 	): Promise<MutationResult> {
 		return this.chainMembershipEdit(playlistId, (current) => {
 			const additions = [...new Set(serverTrackIds)].filter(
@@ -337,7 +337,7 @@ export class PlaylistService {
 	/** Remove tracks from a playlist (ids it doesn't contain are ignored). */
 	removeTracks(
 		playlistId: number,
-		serverTrackIds: number[],
+		serverTrackIds: string[],
 	): Promise<MutationResult> {
 		return this.chainMembershipEdit(playlistId, (current) => {
 			const trackIds = current.filter((id) => !serverTrackIds.includes(id));
@@ -348,7 +348,7 @@ export class PlaylistService {
 	/** Swap a track with its neighbour above/below. */
 	moveTrack(
 		playlistId: number,
-		serverTrackId: number,
+		serverTrackId: string,
 		direction: -1 | 1,
 	): void {
 		const current = this.byId(playlistId)?.trackIds;
@@ -371,8 +371,8 @@ export class PlaylistService {
 	 */
 	reorderTrack(
 		playlistId: number,
-		serverTrackId: number,
-		targetServerTrackId: number,
+		serverTrackId: string,
+		targetServerTrackId: string,
 	): void {
 		const current = this.byId(playlistId)?.trackIds;
 		if (!current) return;

@@ -48,7 +48,7 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 	track: Track;
 	rowIndex: number;
 	/** Server-side track id — membership edits are addressed by it. */
-	serverId: number;
+	serverId: string;
 	/** The track's linked artist names, for the "Go to artist" entry. */
 	artistNames: readonly string[] | undefined;
 	artists: RemoteArtist[];
@@ -58,8 +58,8 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 	canMoveDown: boolean;
 	onPlay: (rowIndex: number) => void;
 	onEdit: (track: Track) => void;
-	onMove: (serverId: number, direction: -1 | 1) => void;
-	onRemove: (serverId: number) => void;
+	onMove: (serverId: string, direction: -1 | 1) => void;
+	onRemove: (serverId: string) => void;
 	onOpenArtist: (artistId: number) => void;
 }) {
 	const {
