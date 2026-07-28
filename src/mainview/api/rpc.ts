@@ -14,3 +14,9 @@ export const bun = rpc.request;
 
 /** Listen for messages pushed by the bun process (e.g. `sessionExpired`). */
 export const onBunMessage = rpc.addMessageListener;
+
+/**
+ * Push a fire-and-forget message to the bun process (e.g. `presenceChanged`).
+ * Nothing comes back — use `bun.…` when the answer matters.
+ */
+export const notifyBun = rpc.send;
