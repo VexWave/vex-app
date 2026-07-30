@@ -23,7 +23,6 @@ import { navigationService } from "@/api/NavigationService";
 import { playlistQueueContext, playlistService } from "@/api/PlaylistService";
 import { AddTracksDialog } from "@/components/AddTracksDialog";
 import { CollectionHeader } from "@/components/CollectionHeader";
-import { EditTrackDialog } from "@/components/EditTrackDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PlaylistCover } from "@/components/PlaylistCover";
@@ -34,9 +33,9 @@ import { useArtists } from "@/hooks/useArtists";
 import { useLibrary } from "@/hooks/useLibrary";
 import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
+import { useTrackActions } from "@/hooks/useTrackActions";
 import { formatTime, trackCountLabel } from "@/lib/utils";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
-import type { Track } from "@/player/types";
 
 /*
  * Sensor options live out here because `useSensor` memoizes on the options
@@ -67,8 +66,9 @@ export function PlaylistDetail({
 	// resolved against the artist list to become somewhere to navigate.
 	const { artists } = useArtists();
 	const [addOpen, setAddOpen] = useState(false);
-	// Track targeted by a row's "Edit…" menu item (same dialog as the library).
-	const [editTrack, setEditTrack] = useState<Track | null>(null);
+	// Edit/delete actions and the dialogs they open, rendered once for the whole
+	// list; the row menus just call into them.
+	const actions = useTrackActions();
 
 	// Join the ordered trackIds against the library. `position` is the index
 	// into trackIds (only used for the move-bound checks); the row index is
@@ -218,9 +218,10 @@ export function PlaylistDetail({
 											canMoveUp={position > 0}
 											canMoveDown={position < playlist.trackIds.length - 1}
 											onPlay={playRow}
-											onEdit={setEditTrack}
+											onEdit={actions.edit}
 											onMove={moveRow}
 											onRemove={removeRow}
+											onDelete={actions.remove}
 											onOpenArtist={navigationService.openArtist}
 										/>
 									);
@@ -237,13 +238,7 @@ export function PlaylistDetail({
 				onOpenChange={setAddOpen}
 			/>
 
-			<EditTrackDialog
-				track={editTrack}
-				open={editTrack !== null}
-				onOpenChange={(open) => {
-					if (!open) setEditTrack(null);
-				}}
-			/>
+			{actions.dialogs}
 		</div>
 	);
 }
