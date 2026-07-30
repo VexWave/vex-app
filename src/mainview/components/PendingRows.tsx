@@ -1,8 +1,12 @@
 import { AlertCircle, Link2, Loader2, Music, X } from "lucide-react";
-import { importService } from "@/api/ImportService";
+import {
+	importPercent,
+	importService,
+	importStatusLabel,
+} from "@/api/ImportService";
 import { uploadService } from "@/api/UploadService";
 import { Button } from "@/components/ui/button";
-import { cn, formatMb } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { ImportJob } from "@/api/ImportService";
 import type { UploadItem } from "@/api/UploadService";
 
@@ -51,24 +55,6 @@ export function PendingUploadRow({ upload }: { upload: UploadItem }) {
 	);
 }
 
-/** Human status line for a URL-import row, per step. */
-function importStatus(job: ImportJob): string {
-	switch (job.step) {
-		case "starting":
-			return "Preparing download…";
-		case "downloading":
-			return job.totalBytes
-				? `Downloading… ${Math.min(100, Math.round((job.receivedBytes / job.totalBytes) * 100))}%`
-				: `Downloading… ${formatMb(job.receivedBytes)}`;
-		case "converting":
-			return "Converting to MP3…";
-		case "staging":
-			return "Almost done…";
-		case "error":
-			return job.error ?? "Import failed";
-	}
-}
-
 /**
  * A URL import in progress. Like uploads it has no queue row yet — the
  * finished file goes through the upload-review dialog and lands as a streaming
@@ -77,10 +63,7 @@ function importStatus(job: ImportJob): string {
  */
 export function PendingImportRow({ job }: { job: ImportJob }) {
 	const failed = job.step === "error";
-	const percent =
-		job.step === "downloading" && job.totalBytes
-			? Math.min(100, (job.receivedBytes / job.totalBytes) * 100)
-			: null;
+	const percent = importPercent(job);
 	return (
 		<div className="flex w-full items-center gap-3 rounded-lg py-2 pl-3 pr-2.5 text-left opacity-80">
 			{/* Spacer matching the track rows' index column, so covers line up. */}
@@ -96,7 +79,7 @@ export function PendingImportRow({ job }: { job: ImportJob }) {
 						failed && "text-destructive",
 					)}
 				>
-					{importStatus(job)}
+					{importStatusLabel(job)}
 				</p>
 				{percent !== null && (
 					<div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
