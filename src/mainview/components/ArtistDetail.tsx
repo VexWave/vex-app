@@ -5,6 +5,7 @@ import { libraryService } from "@/api/LibraryService";
 import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { ArtistTrackRow } from "@/components/ArtistTrackRow";
 import { CollectionHeader } from "@/components/CollectionHeader";
+import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -101,13 +102,10 @@ export function ArtistDetail({
 			<ErrorBanner error={artists.error} className="border-b" />
 
 			{tracks.length === 0 ? (
-				<div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-					<Users className="h-12 w-12" />
-					<p className="text-sm">
-						No tracks credited to {artist.name} yet — link some from a track's
-						“Edit…” menu.
-					</p>
-				</div>
+				<EmptyState
+					icon={<Users className="h-12 w-12" />}
+					title={`No tracks credited to ${artist.name} yet — link some from a track's “Edit…” menu.`}
+				/>
 			) : (
 				<ScrollArea className="min-h-0 flex-1">
 					<ul className="flex flex-col gap-1 p-2">

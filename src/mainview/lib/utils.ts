@@ -16,10 +16,14 @@ export function formatTime(totalSeconds: number): string {
 	return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** "12 results" / "1 result" — a count with its noun, pluralised by an "s". */
+export function countLabel(count: number, noun: string): string {
+	return `${count} ${count === 1 ? noun : `${noun}s`}`;
+}
+
 /** "12 tracks" / "1 track" / "No tracks" — every collection's size line. */
 export function trackCountLabel(count: number): string {
-	if (count === 0) return "No tracks";
-	return `${count} ${count === 1 ? "track" : "tracks"}`;
+	return count === 0 ? "No tracks" : countLabel(count, "track");
 }
 
 /** 1_500_000 → "1.4 MB". */

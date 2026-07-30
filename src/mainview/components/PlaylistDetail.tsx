@@ -24,6 +24,7 @@ import { playlistQueueContext, playlistService } from "@/api/PlaylistService";
 import { AddTracksDialog } from "@/components/AddTracksDialog";
 import { CollectionHeader } from "@/components/CollectionHeader";
 import { EditTrackDialog } from "@/components/EditTrackDialog";
+import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PlaylistCover } from "@/components/PlaylistCover";
 import { PlaylistTrackRow } from "@/components/PlaylistTrackRow";
@@ -178,12 +179,10 @@ export function PlaylistDetail({
 			<ErrorBanner error={playlists.error} className="border-b" />
 
 			{rows.length === 0 ? (
-				<div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-					<ListMusic className="h-12 w-12" />
-					<p className="text-sm">
-						This playlist is empty — add tracks from the library.
-					</p>
-				</div>
+				<EmptyState
+					icon={<ListMusic className="h-12 w-12" />}
+					title="This playlist is empty — add tracks from the library."
+				/>
 			) : (
 				<ScrollArea className="min-h-0 flex-1">
 					{/* Rows may only trade places within the list, so the drag is
