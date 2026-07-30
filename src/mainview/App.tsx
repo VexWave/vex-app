@@ -1,8 +1,9 @@
-import { useState, type DragEvent } from "react";
+import { useState, type ComponentType, type DragEvent } from "react";
 import { uploadService } from "@/api/UploadService";
 import { AppHeader } from "@/components/AppHeader";
 import { ArtistsView } from "@/components/ArtistsView";
 import { BinarySetupScreen } from "@/components/BinarySetupScreen";
+import { DiscoverView } from "@/components/DiscoverView";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
@@ -17,6 +18,20 @@ import { useLibrary } from "@/hooks/useLibrary";
 import { useNavigation } from "@/hooks/useNavigation";
 import { usePlayer } from "@/hooks/usePlayer";
 import { useSession } from "@/hooks/useSession";
+import type { MainViewName } from "@/api/NavigationService";
+
+/**
+ * What each top-level view renders. A table rather than a conditional chain
+ * because it is exhaustive over MainViewName: a view added to the union without a
+ * component here is a compile error, where a chain's last `else` would quietly
+ * render the wrong view.
+ */
+const VIEWS: Record<MainViewName, ComponentType> = {
+	library: TrackList,
+	discover: DiscoverView,
+	playlists: PlaylistsView,
+	artists: ArtistsView,
+};
 
 function App() {
 	const { state } = usePlayer();
@@ -28,6 +43,7 @@ function App() {
 	// Which view the main area shows, and which item it has opened — owned by
 	// NavigationService so any component can navigate (see useNavigation).
 	const { view } = useNavigation();
+	const MainViewComponent = VIEWS[view.name];
 	const [isDragging, setIsDragging] = useState(false);
 
 	// Dropped files are uploaded to the server; they re-enter the queue as
@@ -80,13 +96,7 @@ function App() {
 				{/* min-w-0: grid items default to min-width:auto, so one nowrap
 				    track title would widen the 1fr column past the window. */}
 				<div className="min-h-0 min-w-0 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
-					{view.name === "library" ? (
-						<TrackList />
-					) : view.name === "playlists" ? (
-						<PlaylistsView />
-					) : (
-						<ArtistsView />
-					)}
+					<MainViewComponent />
 				</div>
 			</main>
 

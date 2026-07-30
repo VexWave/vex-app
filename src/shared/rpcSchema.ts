@@ -314,6 +314,41 @@ export type UrlImportProgressMessage =
 	  }
 	| { type: "failed"; importId: string; error: string };
 
+// --- Discover search -------------------------------------------------------
+
+/** The platforms yt-dlp can search for the Discover view. */
+export type SearchSource = "youtube" | "soundcloud";
+
+export interface SearchMediaParams {
+	query: string;
+	source: SearchSource;
+}
+
+/** One hit of a Discover search — everything a result card draws, and the URL
+ * that downloads it. */
+export interface MediaSearchResult {
+	/** Source-qualified media id; unique per search, so it keys the result list. */
+	id: string;
+	title: string;
+	/** The media's page URL, handed straight back to `importFromUrl`. */
+	url: string;
+	/** Publishing creator, absent when the platform names none. */
+	artist?: string;
+	/** Whole seconds; absent for live streams and unknown lengths. */
+	durationSec?: number;
+	/**
+	 * The platform's own thumbnail URL, loaded directly by the webview's <img>.
+	 * Unlike backend payloads this needs no proxy: it carries no session token,
+	 * gives away nothing about the backend, and the search that produced it has
+	 * already contacted the platform.
+	 */
+	thumbnailUrl?: string;
+}
+
+export type SearchMediaResult =
+	| { ok: true; results: MediaSearchResult[] }
+	| RpcFailure;
+
 export type PlayerRPC = {
 	bun: RPCSchema<{
 		requests: {
@@ -355,6 +390,13 @@ export type PlayerRPC = {
 			importFromUrl: { params: ImportFromUrlParams; response: RpcResult };
 			/** Deletes a finished import's temp mp3 once the webview has it. */
 			discardImport: { params: DiscardImportParams; response: RpcResult };
+			/**
+			 * One page of search hits for the Discover view. Unlike an import this
+			 * answers inside the request: it is a single metadata call, no media
+			 * is downloaded. A newer search supersedes an unanswered one, which
+			 * then fails rather than resolving with results nobody asked for.
+			 */
+			searchMedia: { params: SearchMediaParams; response: SearchMediaResult };
 			/**
 			 * Current cache membership, for (re)hydrating the webview — e.g.
 			 * after an HMR reload, which restarts the webview but not bun.

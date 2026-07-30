@@ -1,3 +1,4 @@
+import type { SearchSource } from "../../shared/rpcSchema";
 import type { RepeatMode } from "@/player/types";
 
 /**
@@ -74,5 +75,12 @@ export const storage = {
 		volume: numberValue("player.volume", (v) => v >= 0 && v <= 1),
 		muted: booleanValue("player.muted"),
 		repeat: enumValue<RepeatMode>("player.repeat", ["off", "all", "one"]),
+	},
+	discover: {
+		/** The platform the Discover view searches. */
+		source: enumValue<SearchSource>("discover.source", [
+			"youtube",
+			"soundcloud",
+		]),
 	},
 } as const;
