@@ -6,6 +6,7 @@ import type {
 	EditPlaylistParams,
 	RemotePlaylist,
 } from "../../shared/rpcSchema";
+import { submitIdList } from "./idListEdit";
 import { libraryService, trackIdForServerId } from "./LibraryService";
 import type { MutationResult } from "./LibraryService";
 import { bun } from "./rpc";
@@ -65,6 +66,27 @@ export class PlaylistService {
 				this.pendingOrders.clear();
 				this.update({ playlists: [], loading: false, error: null });
 			}
+		});
+
+		// A deleted track is dropped from every playlist server-side, which
+		// leaves this list holding an id the server no longer knows — and a
+		// membership edit replaces `trackIds` wholesale, where an unknown id is
+		// a 400. `submitIdList` recovers from that, but a deletion is the one
+		// moment the client can see it coming, so refetch the lists that
+		// carried the track and let the next edit find them current. Only ids
+		// the library *had* and lost count as deletions: one it doesn't know
+		// yet (its refresh trailing a playlist's) is a track very much alive.
+		let knownTrackIds = libraryTrackIds();
+		libraryService.subscribe(() => {
+			const trackIds = libraryTrackIds();
+			const deleted = new Set(
+				[...knownTrackIds].filter((id) => !trackIds.has(id)),
+			);
+			knownTrackIds = trackIds;
+			// Logging out empties the library too; that is the subscription
+			// above's business, and refetching would be unauthorized anyway.
+			if (sessionService.getSnapshot().status !== "loggedIn") return;
+			if (deleted.size > 0 && this.holdsAny(deleted)) void this.refresh();
 		});
 	}
 
@@ -296,17 +318,29 @@ export class PlaylistService {
 	 * whatever the preceding edit's refetch produced — so quick successive adds
 	 * from the picker don't each drop the one before. Nothing is shown until
 	 * the round trip lands; reordering is the exception, see `applyOrder`.
+	 *
+	 * `submitIdList` runs the same computation again against refetched state if
+	 * the server rejects the list, which is what makes a membership edit survive
+	 * a track that died under it.
 	 */
 	private chainMembershipEdit(
 		playlistId: number,
 		buildTrackIds: (current: readonly string[]) => string[] | null,
 	): Promise<MutationResult> {
 		return this.enqueue(async (): Promise<MutationResult> => {
-			const playlist = this.byId(playlistId);
-			if (!playlist) return { ok: false, error: "Playlist not found." };
-			const trackIds = buildTrackIds(playlist.trackIds);
-			if (trackIds === null) return { ok: true }; // no-op edit
-			const result = await this.edit({ id: playlistId, trackIds });
+			const result = await submitIdList({
+				build: () => {
+					// A playlist this list doesn't hold is either gone from the
+					// server or not fetched yet — the refetch is what tells them
+					// apart, so leave that call to submitIdList.
+					const playlist = this.byId(playlistId);
+					if (!playlist) return "stale";
+					return buildTrackIds(playlist.trackIds) ?? "noop";
+				},
+				send: (trackIds) => this.edit({ id: playlistId, trackIds }),
+				resync: () => this.refresh(),
+				staleError: "Playlist not found.",
+			});
 			// Row menus and the add picker fire-and-forget these, so a failure
 			// also lands in the snapshot's error banner.
 			if (!result.ok) this.update({ error: result.error });
@@ -416,10 +450,24 @@ export class PlaylistService {
 		);
 	}
 
+	/** Whether any playlist references one of these (library-side) track ids. */
+	private holdsAny(trackIds: ReadonlySet<string>): boolean {
+		return this.snapshot.playlists.some((playlist) =>
+			playlist.trackIds.some((serverId) =>
+				trackIds.has(trackIdForServerId(serverId)),
+			),
+		);
+	}
+
 	private update(patch: Partial<PlaylistsState>): void {
 		this.snapshot = { ...this.snapshot, ...patch };
 		this.subscribers.forEach((notify) => notify());
 	}
+}
+
+/** The library's track ids, for spotting the ones a refresh dropped. */
+function libraryTrackIds(): Set<string> {
+	return new Set(libraryService.getSnapshot().tracks.map((track) => track.id));
 }
 
 /** App-wide singleton — playlist state must survive component unmounts. */
