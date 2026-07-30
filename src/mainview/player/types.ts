@@ -34,5 +34,6 @@ export interface PlayerState {
 	volume: number;
 	muted: boolean;
 	repeatMode: RepeatMode;
+	shuffled: boolean;
 	error: string | null;
 }

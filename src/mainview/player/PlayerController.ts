@@ -86,28 +86,34 @@ export class PlayerController {
 
 	/**
 	 * Replace the queue with a collection and start playing the track at
-	 * `index`. This is what playing from the library, from a playlist and from
-	 * an artist all do — the queue becomes that collection, in its order.
+	 * `index`, or wherever the queue begins when no track is named. This is what
+	 * playing from the library, from a playlist and from an artist all do — the
+	 * queue becomes that collection, in its order.
 	 */
-	playCollection(contextId: string, tracks: Track[], index: number): void {
+	playCollection(contextId: string, tracks: Track[], index = -1): void {
 		this.queueContext = contextId;
 		this.queue.replace(tracks, index);
+		this.queue.restartShuffle();
 		this.startCurrent();
 	}
 
 	/**
 	 * What every collection-level play button does (grid card, detail header,
 	 * sidebar row): if the collection already owns the queue, toggle
-	 * pause/resume in place; otherwise replace the queue with it and start from
-	 * the top. It lives here rather than in each service so that playing a
+	 * pause/resume in place; otherwise replace the queue with it and start
+	 * playing. It lives here rather than in each service so that playing a
 	 * playlist, an artist or the library all mean the same thing.
+	 *
+	 * The press names no track — it asks for the collection, where clicking a
+	 * row asks for a track — so it opens at the queue's top, or anywhere in it
+	 * under shuffle.
 	 */
 	playOrToggleCollection(contextId: string, tracks: Track[]): void {
 		if (this.queueContext === contextId) {
 			this.togglePlay();
 			return;
 		}
-		this.playCollection(contextId, tracks, 0);
+		this.playCollection(contextId, tracks);
 	}
 
 	/**
@@ -135,9 +141,9 @@ export class PlayerController {
 			// loaded, whatever is left still queued, so play starts it over.
 			this.player.load(null);
 		} else if (!current && tracks.length > 0) {
-			// Nothing loaded yet — preload the first track so the UI shows it,
-			// but leave starting playback to the user.
-			this.player.load(this.queue.jumpTo(0));
+			// Nothing loaded yet — preload where playback would begin so the UI
+			// shows it, but leave starting it to the user.
+			this.player.load(this.queue.start());
 		}
 		this.refresh();
 	}
@@ -179,13 +185,14 @@ export class PlayerController {
 	 * Play/pause, and the one place that restarts a finished queue. Nothing
 	 * loaded while tracks are still queued means playback ran off the end under
 	 * repeat "off" — there is no track to resume, so the press starts the
-	 * collection again from the top. Every play button in the app funnels
-	 * through here (the transport directly, the collection ones via
-	 * `playOrToggleCollection`), so it is the one place that has to know.
+	 * collection over, from its top or on a fresh shuffle round. Every play
+	 * button in the app funnels through here (the transport directly, the
+	 * collection ones via `playOrToggleCollection`), so it is the one place
+	 * that has to know.
 	 */
 	togglePlay(): void {
 		if (!this.player.currentTrack && this.queue.tracks.length > 0) {
-			this.queue.jumpTo(0);
+			this.queue.start();
 			this.startCurrent();
 			return;
 		}
@@ -240,16 +247,28 @@ export class PlayerController {
 		this.refresh();
 	}
 
+	/**
+	 * Switch shuffle on or off. It decides what follows the current track, so
+	 * the track playing is unaffected either way — turning it on opens a round on
+	 * that track, turning it off returns the queue to its own order from there.
+	 */
+	toggleShuffle(): void {
+		this.queue.setShuffled(!this.queue.shuffled);
+		this.persistSettings();
+		this.refresh();
+	}
+
 	// --- internals ---
 
 	/**
 	 * Load whatever the queue's cursor points at and start it, clearing any
-	 * error left by the previous track. A cursor on nothing (empty queue) just
-	 * unloads. Shared by `playCollection` and the end-of-queue restart so both
-	 * begin playback identically.
+	 * error left by the previous track. A cursor on nothing means no track was
+	 * named, so playback begins where the queue itself begins — and on an empty
+	 * queue there is nothing there either, which just unloads. Shared by
+	 * `playCollection` and the end-of-queue restart so both begin identically.
 	 */
 	private startCurrent(): void {
-		const track = this.queue.current;
+		const track = this.queue.current ?? this.queue.start();
 		this.player.load(track);
 		if (track) {
 			this.error = null;
@@ -259,9 +278,10 @@ export class PlayerController {
 	}
 
 	/**
-	 * Load persisted volume/mute/repeat from localStorage into the player and
-	 * queue. Runs before the first snapshot so the UI opens on the last-used
-	 * settings. Malformed or missing values fall back to the constructor defaults.
+	 * Load persisted volume/mute/repeat/shuffle from localStorage into the
+	 * player and queue. Runs before the first snapshot so the UI opens on the
+	 * last-used settings. Malformed or missing values fall back to the
+	 * constructor defaults.
 	 */
 	private restoreSettings(): void {
 		const volume = storage.player.volume.get();
@@ -269,13 +289,15 @@ export class PlayerController {
 		if (storage.player.muted.get()) this.player.setMuted(true);
 		const repeat = storage.player.repeat.get();
 		if (repeat !== null) this.queue.setRepeatMode(repeat);
+		if (storage.player.shuffle.get()) this.queue.setShuffled(true);
 	}
 
-	/** Persist the current volume/mute/repeat so they survive a restart. */
+	/** Persist the current volume/mute/repeat/shuffle so they survive a restart. */
 	private persistSettings(): void {
 		storage.player.volume.set(this.player.volume);
 		storage.player.muted.set(this.player.muted);
 		storage.player.repeat.set(this.queue.repeatMode);
+		storage.player.shuffle.set(this.queue.shuffled);
 	}
 
 	private buildSnapshot(): PlayerState {
@@ -291,6 +313,7 @@ export class PlayerController {
 			volume: this.player.volume,
 			muted: this.player.muted,
 			repeatMode: this.queue.repeatMode,
+			shuffled: this.queue.shuffled,
 			error: this.error,
 		};
 	}

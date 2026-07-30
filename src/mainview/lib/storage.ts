@@ -75,6 +75,7 @@ export const storage = {
 		volume: numberValue("player.volume", (v) => v >= 0 && v <= 1),
 		muted: booleanValue("player.muted"),
 		repeat: enumValue<RepeatMode>("player.repeat", ["off", "all", "one"]),
+		shuffle: booleanValue("player.shuffle"),
 	},
 	discover: {
 		/** The platform the Discover view searches. */

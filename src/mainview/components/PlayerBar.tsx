@@ -4,6 +4,7 @@ import {
 	Play,
 	Repeat,
 	Repeat1,
+	Shuffle,
 	SkipBack,
 	SkipForward,
 	Volume2,
@@ -24,6 +25,14 @@ import { cn, formatTime } from "@/lib/utils";
  */
 const BAR_GHOST =
 	"hover:bg-foreground/10 hover:text-foreground active:bg-foreground/15";
+
+/**
+ * Shuffle and repeat flank the transport as one pair of mode toggles, so they
+ * state themselves the same way: lit in the accent colour while engaged, dimmed
+ * back into the bar while off.
+ */
+const modeToggle = (engaged: boolean): string =>
+	cn(BAR_GHOST, engaged ? "text-primary" : "text-muted-foreground");
 
 export function PlayerBar() {
 	const { state, controller } = usePlayer();
@@ -71,6 +80,15 @@ export function PlayerBar() {
 					<Button
 						variant="ghost"
 						size="icon"
+						aria-label={`Shuffle: ${state.shuffled ? "on" : "off"}`}
+						onClick={() => controller.toggleShuffle()}
+						className={modeToggle(state.shuffled)}
+					>
+						<Shuffle className="h-4 w-4" />
+					</Button>
+					<Button
+						variant="ghost"
+						size="icon"
 						aria-label="Previous track"
 						disabled={!hasQueue}
 						onClick={() => controller.previous()}
@@ -106,12 +124,7 @@ export function PlayerBar() {
 						size="icon"
 						aria-label={`Repeat: ${state.repeatMode}`}
 						onClick={() => controller.cycleRepeatMode()}
-						className={cn(
-							BAR_GHOST,
-							state.repeatMode === "off"
-								? "text-muted-foreground"
-								: "text-primary",
-						)}
+						className={modeToggle(state.repeatMode !== "off")}
 					>
 						{state.repeatMode === "one" ? (
 							<Repeat1 className="h-4 w-4" />
