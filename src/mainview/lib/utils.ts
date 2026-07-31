@@ -32,6 +32,20 @@ export function formatMb(bytes: number): string {
 }
 
 /**
+ * Why a picked file is too big for the server, or null when it fits. Every
+ * picker refuses in the same words, and names the limit rather than only the
+ * offence — the user's next move is to pick a smaller file.
+ */
+export function tooLargeMessage(
+	bytes: number,
+	limit: number,
+	what: string,
+): string | null {
+	if (bytes <= limit) return null;
+	return `That ${what} is ${formatMb(bytes)} — the server accepts up to ${formatMb(limit)}.`;
+}
+
+/**
  * Read a blob's bytes as a base64 string (without the `data:…;base64,` prefix).
  * FileReader avoids chunked btoa gymnastics for multi-MB blobs.
  */

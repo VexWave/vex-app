@@ -1,4 +1,10 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import {
+	useEffect,
+	useReducer,
+	useState,
+	type FormEvent,
+	type ReactNode,
+} from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +17,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/Logo";
 import { useSession } from "@/hooks/useSession";
+import { formatTime } from "@/lib/utils";
+import {
+	MAX_PASSWORD_LENGTH,
+	MAX_USERNAME_LENGTH,
+} from "../../shared/limits";
 
 function Field({
 	id,
@@ -38,9 +49,28 @@ export function LoginScreen() {
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [validationError, setValidationError] = useState<string | null>(null);
+	// The timer below only forces the re-render; the time left is read from the
+	// clock during it, so the first render after a 429 already shows the real
+	// countdown rather than one based on whenever the last tick happened.
+	const [, tick] = useReducer((count: number) => count + 1, 0);
 
 	const loggingIn = session.status === "loggingIn";
 	const error = validationError ?? session.error;
+	// Server-imposed wait after a 429; the contract requires honouring it rather
+	// than letting the user retry straight into the throttle.
+	const remainingMs = Math.max(0, (session.retryAfter ?? 0) - Date.now());
+
+	// A clock only while one is actually running — an expired deadline needs no
+	// timer, and neither does the form in the common case.
+	useEffect(() => {
+		const endsAt = session.retryAfter;
+		if (endsAt === null) return;
+		const id = setInterval(() => {
+			tick();
+			if (Date.now() >= endsAt) clearInterval(id);
+		}, 1000);
+		return () => clearInterval(id);
+	}, [session.retryAfter]);
 
 	const handleSubmit = (e: FormEvent) => {
 		e.preventDefault();
@@ -96,6 +126,7 @@ export function LoginScreen() {
 							<Input
 								id="username"
 								autoComplete="username"
+								maxLength={MAX_USERNAME_LENGTH}
 								value={username}
 								onChange={(e) => setUsername(e.target.value)}
 								disabled={loggingIn}
@@ -106,6 +137,7 @@ export function LoginScreen() {
 								id="password"
 								type="password"
 								autoComplete="current-password"
+								maxLength={MAX_PASSWORD_LENGTH}
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 								disabled={loggingIn}
@@ -117,9 +149,17 @@ export function LoginScreen() {
 								<span>{error}</span>
 							</div>
 						)}
-						<Button type="submit" className="w-full" disabled={loggingIn}>
+						<Button
+							type="submit"
+							className="w-full"
+							disabled={loggingIn || remainingMs > 0}
+						>
 							{loggingIn && <Loader2 className="h-4 w-4 animate-spin" />}
-							{loggingIn ? "Connecting…" : "Log in"}
+							{remainingMs > 0
+								? `Try again in ${formatTime(Math.ceil(remainingMs / 1000))}`
+								: loggingIn
+									? "Connecting…"
+									: "Log in"}
 						</Button>
 					</form>
 				</CardContent>

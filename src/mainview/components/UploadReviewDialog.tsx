@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useUploads } from "@/hooks/useUploads";
+import { tooLargeMessage } from "@/lib/utils";
+import { MAX_IMAGE_BYTES, MAX_NAME_LENGTH } from "../../shared/limits";
 
 /**
  * Per-file review step shown before uploading picked/dropped audio. One dialog
@@ -95,6 +97,19 @@ function ReviewForm({
 		return () => URL.revokeObjectURL(url);
 	}, [coverBlob]);
 
+	// A cover over the server's ceiling is refused at the picker, keeping the
+	// embedded one: the alternative is encoding it, sending it, and answering
+	// with a 413 after the upload's wait.
+	const pickCover = (file: File) => {
+		const tooLarge = tooLargeMessage(file.size, MAX_IMAGE_BYTES, "image");
+		if (tooLarge) {
+			setError(tooLarge);
+			return;
+		}
+		setError(null);
+		setCoverBlob(file);
+	};
+
 	/** Validate + confirm the head; resolves/creates the opted-in artist first.
 	 * Returns false (and shows an error) on any failure. */
 	const confirmHead = async (): Promise<boolean> => {
@@ -175,7 +190,10 @@ function ReviewForm({
 						type="file"
 						accept="image/*"
 						className="hidden"
-						onChange={(e) => setCoverBlob(e.target.files?.[0] ?? null)}
+						onChange={(e) => {
+							const file = e.target.files?.[0];
+							if (file) pickCover(file);
+						}}
 					/>
 				</div>
 
@@ -189,6 +207,7 @@ function ReviewForm({
 					<Input
 						id="upload-title"
 						autoFocus
+						maxLength={MAX_NAME_LENGTH}
 						value={title}
 						onChange={(e) => setTitle(e.target.value)}
 						disabled={submitting}

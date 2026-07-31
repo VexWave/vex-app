@@ -1,6 +1,7 @@
 import { playerController } from "@/hooks/usePlayer";
 import { CacheBuster } from "@/lib/cacheBuster";
 import type { Track } from "@/player/types";
+import { MAX_TRACKS_PER_PLAYLIST } from "../../shared/limits";
 import type {
 	CreatePlaylistParams,
 	EditPlaylistParams,
@@ -359,6 +360,24 @@ export class PlaylistService {
 		playlistId: number,
 		serverTrackIds: string[],
 	): Promise<MutationResult> {
+		// Read against the list this service mirrors, which an edit still in the
+		// chain can leave a few ids short of the server's — deliberately, because
+		// the server enforces the real ceiling either way. All this buys is a
+		// message that names the limit instead of a rejected list.
+		const held = this.byId(playlistId)?.trackIds ?? [];
+		// Only ids the playlist doesn't already hold make it grow — re-adding a
+		// track it has is a no-op the builder below drops, and counting those
+		// would refuse an add that costs the playlist nothing.
+		const growth = [...new Set(serverTrackIds)].filter(
+			(id) => !held.includes(id),
+		).length;
+		if (held.length + growth > MAX_TRACKS_PER_PLAYLIST) {
+			const error = `A playlist holds at most ${MAX_TRACKS_PER_PLAYLIST} tracks.`;
+			// Row menus and the picker fire-and-forget, so it also has to land in
+			// the banner — same reason chainMembershipEdit puts failures there.
+			this.update({ error });
+			return Promise.resolve({ ok: false, error });
+		}
 		return this.chainMembershipEdit(playlistId, (current) => {
 			const additions = [...new Set(serverTrackIds)].filter(
 				(id) => !current.includes(id),

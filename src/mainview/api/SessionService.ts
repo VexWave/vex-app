@@ -15,6 +15,16 @@ export interface SessionState {
 	 * a splash instead of the login form so a valid token doesn't flash it.
 	 */
 	restoring: boolean;
+	/**
+	 * When the server's login throttle lets the next attempt through, as an
+	 * epoch timestamp; null when nothing is holding attempts back. A deadline
+	 * rather than a remaining duration: the form counts down against it once a
+	 * second, and a duration would have to be re-based on every tick.
+	 *
+	 * Only held in memory — the server owns the real budget. This keeps the app
+	 * from spending it against a wall the server already said no at.
+	 */
+	retryAfter: number | null;
 }
 
 /**
@@ -33,6 +43,7 @@ export class SessionService {
 		lastPort: storage.session.port.get() ?? "",
 		// Attempt a silent restore whenever every piece of a session is stored.
 		restoring: hasStoredSession(),
+		retryAfter: null,
 	};
 
 	constructor() {
@@ -77,7 +88,12 @@ export class SessionService {
 		password: string,
 	): Promise<void> {
 		if (this.snapshot.status === "loggingIn") return;
-		this.update({ status: "loggingIn", error: null });
+		// The contract requires waiting out a 429 rather than retrying into it.
+		// The button is disabled meanwhile, but Enter reaches this path too.
+		if (this.snapshot.retryAfter !== null && Date.now() < this.snapshot.retryAfter) {
+			return;
+		}
+		this.update({ status: "loggingIn", error: null, retryAfter: null });
 		let result;
 		try {
 			result = await bun.login({ host, port, username, password });
@@ -100,7 +116,14 @@ export class SessionService {
 				lastPort: String(port),
 			});
 		} else {
-			this.update({ status: "loggedOut", error: result.error });
+			this.update({
+				status: "loggedOut",
+				error: result.error,
+				retryAfter:
+					result.retryAfterSec === undefined
+						? null
+						: Date.now() + result.retryAfterSec * 1000,
+			});
 		}
 	}
 

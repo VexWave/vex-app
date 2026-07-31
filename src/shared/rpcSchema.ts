@@ -38,6 +38,13 @@ export interface RpcFailure {
 	ok: false;
 	/** HTTP status when the server answered; absent on transport failures. */
 	status?: number;
+	/**
+	 * Seconds the server asked the caller to wait before trying again, from the
+	 * `Retry-After` of a 429. The contract requires clients to honour it rather
+	 * than retrying immediately, so it travels with the failure instead of being
+	 * flattened into the message.
+	 */
+	retryAfterSec?: number;
 	error: string;
 }
 

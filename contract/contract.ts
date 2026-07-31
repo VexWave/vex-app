@@ -6,94 +6,106 @@ const c = initContract();
 // ===========================================================================
 // Request bodies — what clients SEND. Binary payloads (audio, images) arrive
 // base64-encoded and are transformed to Buffers for storage.
+//
+// Every field a client controls is bounded. An unbounded one is an open
+// invitation to spend the server's resources: a megabyte-long title costs a
+// megabyte of storage per row, a megabyte-long password costs argon2 the CPU
+// to hash it, and a million-entry track list costs a million junction rows.
+// The server enforces matching per-route body limits (see `limitRouteBodies`),
+// so these bounds are the finer-grained half of the same fence.
 // ===========================================================================
 
+const MAX_NAME_LENGTH = 200;
+const MAX_USERNAME_LENGTH = 64;
+const MAX_PASSWORD_LENGTH = 1024;
+const MAX_ARTISTS_PER_TRACK = 64;
+const MAX_TRACKS_PER_PLAYLIST = 5000;
+// Longest track the API accepts, as a sanity bound rather than a real limit:
+// 24 hours in milliseconds.
+const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
+// Base64 costs 4 characters per 3 bytes, so these cap the decoded payloads at
+// roughly 7.5 MiB of image and 75 MiB of audio. Exported because the server
+// sizes each route's body ceiling from them (see `limitRouteBodies`); the two
+// have to move together or a payload this schema accepts would be rejected
+// before the schema ever saw it.
+export const MAX_IMAGE_BASE64 = 10 * 1024 * 1024;
+export const MAX_AUDIO_BASE64 = 100 * 1024 * 1024;
+
+// Base64-encoded image bytes, decoded to a Buffer for storage.
+const ImageBase64 = z
+  .base64()
+  .max(MAX_IMAGE_BASE64)
+  .transform((b) => Buffer.from(b, "base64"));
+
 export const LoginRequest = z.object({
-  username: z.string(),
-  password: z.string(),
+  username: z.string().min(1).max(MAX_USERNAME_LENGTH),
+  password: z.string().min(1).max(MAX_PASSWORD_LENGTH),
 });
 
 export const CreateTrackRequest = z.object({
-  title: z.string(),
+  title: z.string().min(1).max(MAX_NAME_LENGTH),
   // Track length in milliseconds.
-  duration: z.int32(),
-  artistIds: z.array(z.int32()).optional(),
+  duration: z.int32().min(0).max(MAX_DURATION_MS),
+  artistIds: z.array(z.int32()).max(MAX_ARTISTS_PER_TRACK).optional(),
   // Raw audio bytes, sent base64-encoded and stored as-is (bytea).
-  data: z.base64().transform((b) => Buffer.from(b, "base64")),
-  // Raw cover-image bytes, sent base64-encoded and stored as-is (bytea).
-  cover: z
+  data: z
     .base64()
-    .transform((b) => Buffer.from(b, "base64"))
-    .optional(),
+    .max(MAX_AUDIO_BASE64)
+    .transform((b) => Buffer.from(b, "base64")),
+  // Raw cover-image bytes, sent base64-encoded and stored as-is (bytea).
+  cover: ImageBase64.optional(),
 });
 
 export const EditTrackRequest = z.object({
   id: z.uuid(),
-  title: z.string().min(1).optional(),
-  artistIds: z.array(z.int32()).optional(),
+  title: z.string().min(1).max(MAX_NAME_LENGTH).optional(),
+  artistIds: z.array(z.int32()).max(MAX_ARTISTS_PER_TRACK).optional(),
   // New cover-image bytes, base64-encoded; `null` removes the cover;
   // omit to leave it unchanged.
-  cover: z
-    .base64()
-    .transform((b) => Buffer.from(b, "base64"))
-    .nullable()
-    .optional(),
+  cover: ImageBase64.nullable().optional(),
 });
 
 export const CreateArtistRequest = z.object({
-  name: z.string(),
+  name: z.string().min(1).max(MAX_NAME_LENGTH),
   // Raw image bytes, sent base64-encoded and stored as-is (bytea).
-  image: z
-    .base64()
-    .transform((b) => Buffer.from(b, "base64"))
-    .optional(),
+  image: ImageBase64.optional(),
 });
 
 export const EditArtistRequest = z.object({
   id: z.int32(),
-  name: z.string().min(1).optional(),
+  name: z.string().min(1).max(MAX_NAME_LENGTH).optional(),
   // New avatar image bytes, base64-encoded; `null` removes the avatar;
   // omit to leave it unchanged.
-  image: z
-    .base64()
-    .transform((b) => Buffer.from(b, "base64"))
-    .nullable()
-    .optional(),
+  image: ImageBase64.nullable().optional(),
 });
 
 // Ordered playback list of a playlist. Order is playback order; a track may
 // appear at most once — duplicate ids are a 400, same as unknown ids.
 const PlaylistTrackIds = z
   .array(z.uuid())
+  .max(MAX_TRACKS_PER_PLAYLIST)
   .refine((ids) => new Set(ids).size === ids.length, {
     message: "trackIds must not contain duplicates",
   });
 
 export const CreatePlaylistRequest = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1).max(MAX_NAME_LENGTH),
   // Initial ordered playback list (see PlaylistTrackIds).
   trackIds: PlaylistTrackIds.optional(),
   // Raw cover-image bytes, sent base64-encoded and stored as-is (bytea).
-  image: z
-    .base64()
-    .transform((b) => Buffer.from(b, "base64"))
-    .optional(),
+  image: ImageBase64.optional(),
 });
 
 export const EditPlaylistRequest = z.object({
   id: z.int32(),
-  name: z.string().min(1).optional(),
+  name: z.string().min(1).max(MAX_NAME_LENGTH).optional(),
   // Full replacement of the ordered track list (an empty array clears it);
   // omit to leave it unchanged. Same semantics as the create route (see
   // PlaylistTrackIds): duplicate and unknown ids are a 400.
   trackIds: PlaylistTrackIds.optional(),
   // New cover-image bytes, base64-encoded; `null` removes the cover;
   // omit to leave it unchanged.
-  image: z
-    .base64()
-    .transform((b) => Buffer.from(b, "base64"))
-    .nullable()
-    .optional(),
+  image: ImageBase64.nullable().optional(),
 });
 
 // Artists and playlists are still addressed by their serial id; tracks have
@@ -139,6 +151,68 @@ export const PlaylistResponse = z.object({
   imageUrl: z.string().optional(),
 });
 
+// Statuses produced by the request pipeline rather than by an endpoint, and so
+// possible on routes whose handler never returns them itself. `429` is the
+// rate limiter turning a caller away — it carries a `Retry-After` header —
+// and `413` is a request body over the route's ceiling.
+const RateLimited = { 429: z.string() };
+const BodyTooLarge = { 413: z.string() };
+
+// ===========================================================================
+// Route policy — how the server treats a route, carried on the route itself so
+// that adding a route can't leave its policy behind in another file. The hooks
+// in `src/app/hooks.ts` read this (via ts-rest's per-route `metadata`) instead
+// of keeping their own lists of route names.
+//
+// Every field is optional and every default is the restrictive one: a route
+// that says nothing requires a session token, accepts only a small body, and
+// is never stored by a cache.
+// ===========================================================================
+
+export type RoutePolicy = {
+  /** Answers callers with no session token. Default: a token is required. */
+  public?: true;
+
+  /**
+   * Size class of the request body, sized from the base64 caps above. The
+   * default leaves room for ids and names only.
+   */
+  body?: "image" | "audio";
+
+  /**
+   * How the response may be cached. The default forbids storing it at all.
+   * `"private"` keeps a per-user body out of shared caches while still
+   * letting the browser reuse it; `"shared"` is for bodies any caller may
+   * read, and leaves caching to the client and any CDN in front.
+   */
+  cache?: "private" | "shared";
+
+  /**
+   * A stricter per-address request budget than the blanket one, as
+   * `[limit, windowMs]`, for routes where a caller can guess at a secret.
+   */
+  throttle?: readonly [limit: number, windowMs: number];
+};
+
+// The three image routes serve any caller, with no token and no ownership
+// check, so that a client can point an `<img>` at them directly. Two things
+// follow, and both are accepted rather than overlooked:
+//
+//   - Artist and playlist ids are sequential integers, so anyone can walk the
+//     range and pull down every user's artist avatars and playlist covers.
+//     Track covers are addressed by uuid and are not enumerable this way.
+//   - A 404 distinguishes "no such id" from "id exists but has no image",
+//     which tells an anonymous caller how many artists and playlists exist.
+//
+// Nothing else is public: the listings that hand out these URLs, and the audio
+// itself, are all scoped to the requesting user. Treat image bytes uploaded
+// here as world-readable.
+const PUBLIC_IMAGE_DISCLAIMER =
+  "Public and un-scoped: this route serves the stored bytes to any caller, " +
+  "with no token and no ownership check, so anything uploaded as an image " +
+  "is world-readable. Artist and playlist ids are sequential, so their " +
+  "images are enumerable by anyone.";
+
 export const ApiContract = c.router(
   {
     login: {
@@ -149,8 +223,24 @@ export const ApiContract = c.router(
         200: z.object({ token: z.string() }),
         401: z.string(),
         500: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary: "Log in with username and password, returns a session token",
+      description:
+        "Login is rate limited per source address and per account. A `429` " +
+        "carries `Retry-After` (in seconds); clients MUST wait that long " +
+        "rather than retrying immediately. A wrong password and an unknown " +
+        "username are deliberately indistinguishable, in both body and " +
+        "response time.",
+      metadata: {
+        public: true,
+        // Tight, because this is the one route where a caller can guess at a
+        // secret. The per-account budget lives in the endpoint: at the point
+        // this one is applied the body hasn't been parsed, so there is no
+        // username to key on yet.
+        throttle: [10, 15 * 60 * 1000],
+      } satisfies RoutePolicy,
     },
     postArtist: {
       method: "POST",
@@ -161,8 +251,11 @@ export const ApiContract = c.router(
         400: z.string(),
         401: z.string(),
         500: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary: "Post an artist",
+      metadata: { body: "image" } satisfies RoutePolicy,
     },
     postTrack: {
       method: "POST",
@@ -173,8 +266,11 @@ export const ApiContract = c.router(
         400: z.string(),
         401: z.string(),
         500: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary: "Post a track",
+      metadata: { body: "audio" } satisfies RoutePolicy,
     },
     deleteTrack: {
       method: "POST",
@@ -184,6 +280,8 @@ export const ApiContract = c.router(
         200: z.string(),
         401: z.string(),
         404: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary: "Delete a track owned by the requesting user",
     },
@@ -195,6 +293,8 @@ export const ApiContract = c.router(
         200: z.string(),
         401: z.string(),
         404: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary:
         "Delete an artist owned by the requesting user (tracks are kept)",
@@ -206,6 +306,7 @@ export const ApiContract = c.router(
         200: z.array(TrackResponse),
         401: z.string(),
         500: z.string(),
+        ...RateLimited,
       },
       summary: "List all tracks available for streaming, oldest first",
       description:
@@ -221,6 +322,7 @@ export const ApiContract = c.router(
         200: z.array(ArtistResponse),
         401: z.string(),
         500: z.string(),
+        ...RateLimited,
       },
       summary: "List all artists",
     },
@@ -236,8 +338,11 @@ export const ApiContract = c.router(
           body: c.type<Uint8Array>(),
         }),
         404: z.string(),
+        ...RateLimited,
       },
       summary: "Get an artist's raw image bytes (public, no auth required)",
+      description: PUBLIC_IMAGE_DISCLAIMER,
+      metadata: { public: true, cache: "shared" } satisfies RoutePolicy,
     },
     getTrackImage: {
       method: "GET",
@@ -251,8 +356,11 @@ export const ApiContract = c.router(
           body: c.type<Uint8Array>(),
         }),
         404: z.string(),
+        ...RateLimited,
       },
       summary: "Get a track's raw cover image bytes (public, no auth required)",
+      description: PUBLIC_IMAGE_DISCLAIMER,
+      metadata: { public: true, cache: "shared" } satisfies RoutePolicy,
     },
     editArtist: {
       method: "POST",
@@ -263,9 +371,12 @@ export const ApiContract = c.router(
         400: z.string(),
         401: z.string(),
         404: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary:
         "Edit an artist's name and/or avatar image (send null to remove)",
+      metadata: { body: "image" } satisfies RoutePolicy,
     },
     getTrackAudio: {
       method: "GET",
@@ -289,6 +400,7 @@ export const ApiContract = c.router(
         401: z.string(),
         404: z.string(),
         416: z.string(),
+        ...RateLimited,
       },
       summary: "Stream a track's raw audio bytes",
       description:
@@ -300,6 +412,9 @@ export const ApiContract = c.router(
         "app's bun-side stream proxy) fetch this route directly via " +
         "`trackAudioPath` — the ts-rest fetch client buffers response " +
         "bodies, which would defeat streaming.",
+      // Per-user bytes, but whole tracks: refusing to cache them would cost
+      // more than it protects, so they stay out of shared caches only.
+      metadata: { cache: "private" } satisfies RoutePolicy,
     },
     editTrack: {
       method: "POST",
@@ -310,9 +425,12 @@ export const ApiContract = c.router(
         400: z.string(),
         401: z.string(),
         404: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary:
         "Edit a track's title, cover image, and/or replace its artist links",
+      metadata: { body: "image" } satisfies RoutePolicy,
     },
     postPlaylist: {
       method: "POST",
@@ -323,8 +441,11 @@ export const ApiContract = c.router(
         400: z.string(),
         401: z.string(),
         500: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary: "Create a playlist, optionally with an initial track list",
+      metadata: { body: "image" } satisfies RoutePolicy,
     },
     editPlaylist: {
       method: "POST",
@@ -335,10 +456,13 @@ export const ApiContract = c.router(
         400: z.string(),
         401: z.string(),
         404: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary:
         "Edit a playlist's name, cover, and/or replace its ordered track " +
         "list (send null to remove the cover)",
+      metadata: { body: "image" } satisfies RoutePolicy,
     },
     deletePlaylist: {
       method: "POST",
@@ -348,6 +472,8 @@ export const ApiContract = c.router(
         200: z.string(),
         401: z.string(),
         404: z.string(),
+        ...BodyTooLarge,
+        ...RateLimited,
       },
       summary:
         "Delete a playlist owned by the requesting user (tracks are kept)",
@@ -359,6 +485,7 @@ export const ApiContract = c.router(
         200: z.array(PlaylistResponse),
         401: z.string(),
         500: z.string(),
+        ...RateLimited,
       },
       summary: "List all playlists with their ordered track ids",
       description:
@@ -380,9 +507,12 @@ export const ApiContract = c.router(
           body: c.type<Uint8Array>(),
         }),
         404: z.string(),
+        ...RateLimited,
       },
       summary:
         "Get a playlist's raw cover-image bytes (public, no auth required)",
+      description: PUBLIC_IMAGE_DISCLAIMER,
+      metadata: { public: true, cache: "shared" } satisfies RoutePolicy,
     },
   },
   {

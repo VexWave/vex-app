@@ -12,7 +12,8 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { blobToBase64 } from "@/lib/utils";
+import { blobToBase64, tooLargeMessage } from "@/lib/utils";
+import { MAX_IMAGE_BYTES, MAX_NAME_LENGTH } from "../../shared/limits";
 import type { RemoteArtist } from "../../shared/rpcSchema";
 
 /**
@@ -68,6 +69,19 @@ export function ArtistDialog({
 		}
 		setPreview(image.kind === "removed" ? null : (artist?.imageUrl ?? null));
 	}, [image, artist]);
+
+	// An avatar over the server's ceiling is refused at the picker, keeping the
+	// previous one selected: the alternative is encoding it, sending it, and
+	// answering with a 413 after the wait.
+	const pickImage = (file: File) => {
+		const tooLarge = tooLargeMessage(file.size, MAX_IMAGE_BYTES, "image");
+		if (tooLarge) {
+			setError(tooLarge);
+			return;
+		}
+		setError(null);
+		setImage({ kind: "new", file });
+	};
 
 	const removeImage = () => {
 		// Removing an artist that has no avatar is a no-op edit — revert to
@@ -178,7 +192,7 @@ export function ArtistDialog({
 							className="hidden"
 							onChange={(e) => {
 								const file = e.target.files?.[0];
-								if (file) setImage({ kind: "new", file });
+								if (file) pickImage(file);
 								// Reset so re-picking the same file fires onChange again.
 								e.target.value = "";
 							}}
@@ -194,6 +208,7 @@ export function ArtistDialog({
 						<Input
 							id="artist-name"
 							autoFocus
+							maxLength={MAX_NAME_LENGTH}
 							value={name}
 							onChange={(e) => setName(e.target.value)}
 							disabled={submitting}
