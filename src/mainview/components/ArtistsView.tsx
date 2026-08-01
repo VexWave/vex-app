@@ -10,6 +10,7 @@ import {
 	CollectionCardActions,
 } from "@/components/CollectionCard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { NowPlayingRing } from "@/components/NowPlayingRing";
 import { SearchInput } from "@/components/SearchInput";
@@ -20,7 +21,7 @@ import { useArtists } from "@/hooks/useArtists";
 import { useLibrary } from "@/hooks/useLibrary";
 import { useNavigation } from "@/hooks/useNavigation";
 import { usePlayer } from "@/hooks/usePlayer";
-import { trackCountLabel } from "@/lib/utils";
+import { countLabel, trackCountLabel } from "@/lib/utils";
 import type { RemoteArtist } from "../../shared/rpcSchema";
 
 export function ArtistsView() {
@@ -92,8 +93,7 @@ export function ArtistsView() {
 						<h2 className="shrink-0 text-sm font-semibold">Artists</h2>
 						{state.artists.length > 0 && (
 							<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-								{state.artists.length}{" "}
-								{state.artists.length === 1 ? "artist" : "artists"}
+								{countLabel(state.artists.length, "artist")}
 							</span>
 						)}
 						<div className="ml-auto flex items-center gap-2">
@@ -120,19 +120,16 @@ export function ArtistsView() {
 							<Loader2 className="h-6 w-6 animate-spin" />
 						</div>
 					) : state.artists.length === 0 ? (
-						<div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-							<div className="flex h-20 w-20 items-center justify-center rounded-full border border-dashed">
-								<Users className="h-9 w-9" />
-							</div>
-							<p className="text-sm">
-								No artists yet — create one to get started.
-							</p>
-						</div>
+						<EmptyState
+							framed
+							icon={<Users className="h-9 w-9" />}
+							title="No artists yet — create one to get started."
+						/>
 					) : visible.length === 0 ? (
-						<div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-							<Search className="h-8 w-8" />
-							<p className="text-sm">No artists match “{query}”.</p>
-						</div>
+						<EmptyState
+							icon={<Search className="h-8 w-8" />}
+							title={`No artists match “${query}”.`}
+						/>
 					) : (
 						<ScrollArea className="min-h-0 flex-1">
 							{/* Same track sizing as the playlist grid, so both read as

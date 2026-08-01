@@ -11,6 +11,10 @@
 <img alt="React" src="https://img.shields.io/badge/React-6C3BD1?style=flat-square">
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-41188F?style=flat-square">
 
+<br><br>
+
+<img src="assets/preview.png" alt="The VexWave library, with a track playing" width="880">
+
 </div>
 
 ## What it does

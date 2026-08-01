@@ -1,24 +1,40 @@
 import { sessionService } from "./SessionService";
 
 /**
- * Where the main content area is: one of the three top-level views, with the
- * playlists and artists views optionally opened on a single item. One value —
- * rather than a view name plus open-item side state — so the sidebar, the nav
- * items and the main area can never disagree about the current location.
+ * The views that can be opened on one of their items, as opposed to only ever
+ * showing a list. Declared once: `set` dedupes on the name *plus* the open id, so
+ * a detail view missing from here would report no open id and have every
+ * navigation between two of its items silently dropped as a repeat.
+ */
+const DETAIL_VIEWS = ["playlists", "artists"] as const;
+
+type DetailViewName = (typeof DETAIL_VIEWS)[number];
+
+/**
+ * Where the main content area is: one of the top-level views, with the playlists
+ * and artists views optionally opened on a single item. One value — rather than a
+ * view name plus open-item side state — so the sidebar, the nav items and the
+ * main area can never disagree about the current location.
  */
 export type MainView =
 	| { name: "library" }
-	| { name: "playlists"; openId: number | null }
-	| { name: "artists"; openId: number | null };
+	| { name: "discover" }
+	| { name: DetailViewName; openId: number | null };
 
 export type MainViewName = MainView["name"];
 
+function hasDetail(name: MainViewName): name is DetailViewName {
+	return (DETAIL_VIEWS as readonly MainViewName[]).includes(name);
+}
+
 /**
- * The item a list view is opened on (a playlist, an artist), or null when it
- * is showing its list — the library, having no detail view, is always null.
+ * The item a list view is opened on (a playlist, an artist), or null when it is
+ * showing its list — the library and Discover, having no detail view, are always
+ * null. Reads the shape rather than the name, so it needs no edit when a view is
+ * added either way.
  */
 export function openIdOf(view: MainView): number | null {
-	return view.name === "library" ? null : view.openId;
+	return "openId" in view ? view.openId : null;
 }
 
 /**
@@ -53,7 +69,7 @@ export class NavigationService {
 
 	/** Show a top-level view's list, closing any item opened in it. */
 	show = (name: MainViewName): void => {
-		this.set(name === "library" ? { name } : { name, openId: null });
+		this.set(hasDetail(name) ? { name, openId: null } : { name });
 	};
 
 	/** Open a playlist's detail view (null returns to the playlist grid). */

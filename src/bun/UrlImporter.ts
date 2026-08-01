@@ -7,6 +7,17 @@ import type {
 	UrlImportStep,
 } from "../shared/rpcSchema";
 import { describeError, fileExists, type BinaryManager } from "./BinaryManager";
+import {
+	childEnv,
+	cleanArtistName,
+	cleanField,
+	collectStderr,
+	describeYtDlpFailure,
+	readLines,
+	readYtDlpOutput,
+	YT_DLP_BASE_ARGS,
+	ytDlpNumber,
+} from "./ytDlp";
 
 /**
  * Machine-readable markers injected via yt-dlp's --progress-template/--print so
@@ -92,7 +103,7 @@ export class UrlImporter {
 
 	/** Queues a job and returns immediately; progress arrives via messages. */
 	start({ importId, url }: ImportFromUrlParams): RpcResult {
-		if (!this.binaries.binDir) {
+		if (!this.binaries.isSupported) {
 			return { ok: false, error: "URL imports are not supported on this platform." };
 		}
 		if (!UUID_RE.test(importId)) {
@@ -169,11 +180,7 @@ export class UrlImporter {
 		const binDir = this.binaries.binDir;
 
 		const args = [
-			// Force UTF-8 stdout: yt-dlp otherwise encodes --print output in the
-			// Windows console codepage, which mangles accents in titles and artist
-			// names. yt-dlp's own flag works where PYTHONIOENCODING doesn't (the
-			// binary is frozen).
-			"--encoding", "UTF-8",
+			...YT_DLP_BASE_ARGS,
 			// A URL that names both a video and a playlist means the video; a pure
 			// playlist/set URL imports its first track (one job = one file).
 			"--no-playlist",
@@ -199,7 +206,7 @@ export class UrlImporter {
 		];
 
 		const proc = Bun.spawn([this.binaries.ytDlpPath(), ...args], {
-			env: this.childEnv(binDir),
+			env: childEnv(binDir),
 			stdout: "pipe",
 			stderr: "pipe",
 		});
@@ -209,7 +216,7 @@ export class UrlImporter {
 			artist: undefined,
 			avatar: null,
 		};
-		const stderrTail = this.collectStderr(proc.stderr);
+		const stderrTail = collectStderr(proc.stderr);
 		await this.parseStdout(proc.stdout, job.id, state, binDir);
 		const exitCode = await proc.exited;
 
@@ -252,23 +259,16 @@ export class UrlImporter {
 		const proc = Bun.spawn(
 			[
 				this.binaries.ytDlpPath(),
-				"--encoding", "UTF-8",
+				...YT_DLP_BASE_ARGS,
 				// Metadata only: --playlist-items 0 matches no entry, so nothing is
 				// resolved beyond the channel page the `playlist:` print reads.
 				"--flat-playlist", "--playlist-items", "0",
 				"--print", `playlist:${AVATAR_MARK}%(thumbnails)j`,
 				aboutUrl,
 			],
-			{ env: this.childEnv(binDir), stdout: "pipe", stderr: "ignore" },
+			{ env: childEnv(binDir), stdout: "pipe", stderr: "ignore" },
 		);
-		const timeout = setTimeout(() => proc.kill(), AVATAR_LOOKUP_TIMEOUT_MS);
-		let stdout: string;
-		try {
-			stdout = await new Response(proc.stdout).text();
-			await proc.exited;
-		} finally {
-			clearTimeout(timeout);
-		}
+		const { stdout } = await readYtDlpOutput(proc, AVATAR_LOOKUP_TIMEOUT_MS);
 
 		const line = stdout
 			.split(/\r?\n/)
@@ -286,21 +286,6 @@ export class UrlImporter {
 		const bytes = new Uint8Array(await res.arrayBuffer());
 		if (bytes.byteLength === 0 || bytes.byteLength > MAX_AVATAR_BYTES) return null;
 		return { base64: Buffer.from(bytes).toString("base64"), mime };
-	}
-
-	/**
-	 * Child env with the managed bin dir prepended to PATH. yt-dlp discovers
-	 * deno (and ffprobe) by scanning PATH. The existing key must be overwritten
-	 * in place: a GUI-launched app inherits "Path", and spreading plus a new
-	 * "PATH" key would put BOTH in the child's block — with the original
-	 * (bin-dir-less) one winning the %PATH% lookup.
-	 */
-	private childEnv(binDir: string): Record<string, string | undefined> {
-		const env: Record<string, string | undefined> = { ...process.env };
-		const pathKey =
-			Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
-		env[pathKey] = binDir + path.delimiter + (env[pathKey] ?? "");
-		return env;
 	}
 
 	/** Streams stdout, turning marker lines into throttled progress messages. */
@@ -345,7 +330,7 @@ export class UrlImporter {
 				const [received, total, estimate] = line
 					.slice(DOWNLOAD_MARK.length)
 					.split(" ")
-					.map(parseYtDlpNumber);
+					.map(ytDlpNumber);
 				progress("downloading", {
 					receivedBytes: received ?? 0,
 					totalBytes: total ?? estimate,
@@ -355,28 +340,6 @@ export class UrlImporter {
 			}
 		}
 	}
-
-	/** Keeps only a bounded tail of stderr for the failure message. */
-	private collectStderr(stderr: ReadableStream<Uint8Array>): Promise<string> {
-		return new Response(stderr).text().then(
-			(text) => text.slice(-4000),
-			() => "",
-		);
-	}
-}
-
-/** Trim a printed field, mapping yt-dlp's "NA" / empty to undefined. */
-function cleanField(raw: string): string | undefined {
-	const value = raw.trim();
-	return value && value !== "NA" ? value : undefined;
-}
-
-/**
- * Like cleanField, but also drops YouTube's auto-generated " - Topic" suffix on
- * artist channel names so the proposed artist matches how they're stored.
- */
-function cleanArtistName(raw: string | undefined): string | undefined {
-	return cleanField(raw ?? "")?.replace(/\s*-\s*Topic$/i, "").trim() || undefined;
 }
 
 /** The "/about" page of a YouTube creator URL; null for any other host. */
@@ -419,49 +382,8 @@ function pickAvatarUrl(rawJson: string): string | undefined {
 	return best?.url;
 }
 
-/** yt-dlp prints "NA" (or nothing) for unknown fields, and floats for bytes. */
-function parseYtDlpNumber(raw: string | undefined): number | undefined {
-	const value = Number(raw);
-	return Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
-}
-
-async function describeYtDlpFailure(
-	exitCode: number,
-	stderrTail: Promise<string>,
-): Promise<string> {
-	const tail = await stderrTail;
-	// yt-dlp prefixes its own failures with "ERROR:"; the last one is the cause.
-	const errorLine = tail
-		.split(/\r?\n/)
-		.reverse()
-		.find((line) => line.startsWith("ERROR:"));
-	if (errorLine) return errorLine.replace(/^ERROR:\s*/, "");
-	const lastLine = tail
-		.split(/\r?\n/)
-		.reverse()
-		.find((line) => line.trim() !== "");
-	return lastLine ?? `yt-dlp exited with code ${exitCode}`;
-}
-
 /** Strip characters Windows forbids in file names; the name is display-only. */
 function sanitizeFileName(name: string): string {
 	const cleaned = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim();
 	return cleaned || "Imported track";
-}
-
-async function* readLines(
-	stream: ReadableStream<Uint8Array>,
-): AsyncGenerator<string> {
-	const decoder = new TextDecoder();
-	const reader = stream.getReader();
-	let buffer = "";
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		buffer += decoder.decode(value, { stream: true });
-		const lines = buffer.split(/\r?\n/);
-		buffer = lines.pop() ?? "";
-		yield* lines;
-	}
-	if (buffer) yield buffer;
 }

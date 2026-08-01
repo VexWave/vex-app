@@ -261,6 +261,16 @@ export class StreamProxy {
 			const value = upstream.headers.get(name);
 			if (value) responseHeaders.set(name, value);
 		}
+		// Images state how long their bytes may be reused (the contract's
+		// `cache: "shared"`), and a proxy URL is stable per resource id — so
+		// forwarding that lets the webview reuse a cover it already has, with
+		// `lib/cacheBuster.ts` still the only thing that invalidates one. Audio
+		// is deliberately left out: whole tracks already sit in this proxy's LRU,
+		// and a second copy in the webview's HTTP cache would store each twice.
+		if (!isTrack) {
+			const cacheControl = upstream.headers.get("cache-control");
+			if (cacheControl) responseHeaders.set("cache-control", cacheControl);
+		}
 		return new Response(body, {
 			status: upstream.status,
 			headers: responseHeaders,

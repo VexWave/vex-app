@@ -7,6 +7,8 @@ import { playerController } from "@/hooks/usePlayer";
 import { findMatchingArtist } from "@/lib/artistMatch";
 import { CacheBuster } from "@/lib/cacheBuster";
 import type { Track } from "@/player/types";
+import { submitIdList } from "./idListEdit";
+import type { IdListDraft } from "./idListEdit";
 import { libraryService } from "./LibraryService";
 import { bun } from "./rpc";
 import { sessionService } from "./SessionService";
@@ -324,13 +326,40 @@ export class ArtistService {
 	 * Unlink a track from this artist, leaving the track and its other artists
 	 * alone. The edit route replaces a track's links by id while the track only
 	 * carries its artists' names, so the names that stay are resolved back to
-	 * ids through this list; a name that resolves to nothing would silently drop
-	 * that link, so it aborts instead. Failures land in the snapshot's `error` —
-	 * the row menu that triggers this is long gone by the time one arrives.
+	 * ids through this list — and a name that resolves to nothing means this
+	 * list is behind, which `submitIdList` answers by refetching and building
+	 * again. Failures land in the snapshot's `error` — the row menu that
+	 * triggers this is long gone by the time one arrives.
 	 */
 	async unlinkTrack(artist: RemoteArtist, trackId: string): Promise<void> {
+		const result = await submitIdList({
+			build: () => this.linksWithout(artist, trackId),
+			send: (artistIds) => libraryService.editTrack(trackId, { artistIds }),
+			// The names come from the library, the ids from this list, so a build
+			// that couldn't reconcile them needs both refetched. Settled, not
+			// all: one list failing to load must still let the other through.
+			resync: () =>
+				Promise.allSettled([this.refresh(), libraryService.refresh()]),
+			staleError: `“${artist.name}” could not be unlinked — the artist list is out of date.`,
+		});
+		if (!result.ok) this.update({ error: result.error });
+	}
+
+	/**
+	 * The artist ids a track keeps once `artist` is unlinked — its links minus
+	 * this one, since the edit replaces the whole set.
+	 *
+	 * The track carries its artists' *names*, so each one is resolved against
+	 * this list to get an id back. A name nothing answers to leaves the set
+	 * unbuildable rather than one member short: sending it short would unlink
+	 * an artist nobody asked to unlink.
+	 */
+	private linksWithout(
+		artist: RemoteArtist,
+		trackId: string,
+	): IdListDraft<number> {
 		const remote = libraryService.getRemote(trackId);
-		if (!remote) return;
+		if (!remote) return "noop"; // not a library track — nothing to unlink
 		const idsByName = new Map(
 			this.snapshot.artists.map((candidate) => [candidate.name, candidate.id]),
 		);
@@ -340,16 +369,10 @@ export class ArtistService {
 			// indistinguishable from this one in the UI, so both links go.
 			if (name === artist.name) continue;
 			const id = idsByName.get(name);
-			if (id === undefined) {
-				this.update({
-					error: `“${name}” is missing from the artist list — reload and try again.`,
-				});
-				return;
-			}
+			if (id === undefined) return "stale";
 			artistIds.push(id);
 		}
-		const result = await libraryService.editTrack(trackId, { artistIds });
-		if (!result.ok) this.update({ error: result.error });
+		return artistIds;
 	}
 
 	/**

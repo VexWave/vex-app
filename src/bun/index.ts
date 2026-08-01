@@ -2,10 +2,11 @@ import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { ApiClient } from "./ApiClient";
 import { BinaryManager } from "./BinaryManager";
 import { DiscordPresence } from "./DiscordPresence";
+import { MediaSearch } from "./MediaSearch";
 import { StreamProxy } from "./StreamProxy";
 import { UrlImporter } from "./UrlImporter";
 import { applyWindowChrome } from "./WindowChrome";
-import type { PlayerRPC } from "../shared/rpcSchema";
+import type { PlayerRPC, RpcFailure } from "../shared/rpcSchema";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -70,6 +71,31 @@ const importer: UrlImporter = new UrlImporter(
 	(importId) => streamProxy.urlForImportFile(importId),
 );
 
+const mediaSearch = new MediaSearch(binaryManager);
+
+/**
+ * Why the yt-dlp updater can't run, or null when it can. Windows refuses to
+ * overwrite a running exe, so the updater excludes every spawner of it — this is
+ * the one place that knows the full set, and a new spawner belongs here.
+ */
+function ytDlpBusyReason(): string | null {
+	if (importer.isActive) {
+		return "A URL import is running — try again when it's done.";
+	}
+	if (mediaSearch.isActive) {
+		return "A search is running — try again in a moment.";
+	}
+	return null;
+}
+
+/** The other direction of the same exclusion: nothing may spawn yt-dlp while
+ * the binaries are being replaced on disk. */
+function unlessInstalling<T>(run: () => T): T | RpcFailure {
+	return binaryManager.isBusy
+		? { ok: false, error: "Components are updating — try again in a moment." }
+		: run();
+}
+
 const rpc = BrowserView.defineRPC<PlayerRPC>({
 	// Default is 1s; logins and multi-MB uploads need far more.
 	maxRequestTime: 120_000,
@@ -111,24 +137,16 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			deletePlaylist: (params) => api.deletePlaylist(params),
 			getBinaryStatus: () => binaryManager.getStatus(),
 			installMissingBinaries: () => binaryManager.startInstall(),
-			// A running yt-dlp.exe can't be overwritten on Windows, so the
-			// updater and the importer mutually exclude each other.
-			updateYtDlp: () =>
-				importer.isActive
-					? {
-							ok: false as const,
-							error: "A URL import is running — try again when it's done.",
-						}
-					: binaryManager.startYtDlpUpdate(),
+			updateYtDlp: () => {
+				const busy = ytDlpBusyReason();
+				return busy
+					? { ok: false as const, error: busy }
+					: binaryManager.startYtDlpUpdate();
+			},
 			checkYtDlpUpdate: () => binaryManager.checkYtDlpUpdate(),
-			importFromUrl: (params) =>
-				binaryManager.isBusy
-					? {
-							ok: false as const,
-							error: "Components are updating — try again in a moment.",
-						}
-					: importer.start(params),
+			importFromUrl: (params) => unlessInstalling(() => importer.start(params)),
 			discardImport: (params) => importer.discard(params),
+			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
 			getCachedTracks: () => ({ trackIds: streamProxy.cachedTrackIds() }),
 		},
 		messages: {

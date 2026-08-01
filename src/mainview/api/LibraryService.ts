@@ -184,12 +184,13 @@ export class LibraryService {
 			return;
 		}
 		this.remoteById.delete(trackId);
+		// The server also drops the track from every playlist. Their join skips
+		// ids the library doesn't know, so those lists render right away; their
+		// stored trackIds are PlaylistService's to catch up, which it does off
+		// this snapshot change (see its constructor).
 		this.update({
 			tracks: this.snapshot.tracks.filter((track) => track.id !== trackId),
 		});
-		// The server also drops the track from every playlist; the playlist
-		// join skips ids missing from the library, so stale trackIds are
-		// harmless until the next playlists refresh.
 		playerController.removeTracks((track) => track.id === trackId);
 	}
 

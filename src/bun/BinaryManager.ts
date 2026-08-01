@@ -74,9 +74,18 @@ export class BinaryManager {
 
 	/** True while an install/update run is replacing binaries on disk — a
 	 * spawned yt-dlp must not be running then (Windows can't overwrite a
-	 * running exe), so URL imports are refused for the duration. */
+	 * running exe), so everything that spawns one is refused for the duration. */
 	get isBusy(): boolean {
 		return this.installTask !== null;
+	}
+
+	/**
+	 * Whether managed binaries can exist on this platform at all. The callers
+	 * that spawn them ask this rather than reading `binDir` for emptiness, which
+	 * only means "unsupported" by coincidence of how it is constructed.
+	 */
+	get isSupported(): boolean {
+		return this.unsupported === null;
 	}
 
 	// --- Paths (consumed by the URL-import downloader) ---

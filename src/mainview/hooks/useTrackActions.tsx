@@ -22,8 +22,9 @@ export interface TrackActions {
 /**
  * The track actions any list of library tracks offers, plus the dialogs they
  * open. A list renders `dialogs` once and hands the callbacks to its rows, so
- * the library and an artist's tracks behave identically without repeating the
- * plumbing.
+ * every view of a track — the library, an artist's tracks, a playlist — edits
+ * and deletes it identically without repeating the plumbing. A list takes only
+ * the callbacks its rows offer; the dialogs it leaves unreachable stay closed.
  *
  * Every callback is referentially stable, which is what lets the rows that
  * receive them stay memoized across the player's timeupdate re-renders.

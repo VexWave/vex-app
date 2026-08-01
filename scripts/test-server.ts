@@ -11,9 +11,12 @@ import {
 	EditArtistRequest,
 	EditPlaylistRequest,
 	EditTrackRequest,
+	MAX_AUDIO_BASE64,
+	MAX_IMAGE_BASE64,
 	artistImagePath,
 	playlistImagePath,
 	trackImagePath,
+	type RoutePolicy,
 } from "../contract/contract";
 
 const PORT = 8790;
@@ -108,9 +111,144 @@ function parseRange(
 	return { start, end: endRaw === "" ? size - 1 : Math.min(Number(endRaw), size - 1) };
 }
 
+// ---------------------------------------------------------------------------
+// Route policy. Every route carries its own in the contract's `metadata`, so
+// this file applies it by looking it up rather than by keeping a second list of
+// route names — a route added to the contract arrives here with its policy.
+// ---------------------------------------------------------------------------
+
+type RouteName = keyof typeof ApiContract;
+
+/** Route name of a served path; everything served here has to be one. */
+const ROUTE_BY_PATH = Object.fromEntries(
+	Object.entries(ApiContract).map(([name, route]) => [route.path, name]),
+) as Record<string, RouteName>;
+
+/**
+ * Room for everything around a route's binary fields — ids, names and the JSON
+ * itself — and the whole ceiling for a route that declares no size class. A
+ * playlist's 5000 track uuids are the largest such body.
+ */
+const BODY_SLACK = 512 * 1024;
+
+/**
+ * The contract's login budget is 15 minutes wide, so watching a client sit out
+ * a 429 would mean waiting it out too. `LOGIN_THROTTLE="3,20000"` (limit, then
+ * window in ms) shortens it for a manual run.
+ */
+const throttleOverride = process.env.LOGIN_THROTTLE?.split(",")
+	.map(Number)
+	// A malformed value is ignored rather than parsed into a NaN limit, which
+	// no request count could ever reach — i.e. silently no throttle at all.
+	.filter((n) => Number.isFinite(n) && n > 0);
+
+/** Timestamps of admitted requests, per path and source address. */
+const requestLog = new Map<string, number[]>();
+
+type Handler = (
+	req: Request,
+	server: Bun.Server,
+) => Response | Promise<Response>;
+
+function policyOf(path: string): RoutePolicy {
+	const name = ROUTE_BY_PATH[path];
+	if (!name) throw new Error(`${path} is not a route in the contract`);
+	// A route that declares nothing gets every default, all restrictive.
+	return (ApiContract[name] as { metadata?: RoutePolicy }).metadata ?? {};
+}
+
+/**
+ * Wraps a handler in its route's policy: the request budget and the body
+ * ceiling are checked before it runs, the cache header set on what it returns.
+ *
+ * The ceiling is read from `content-length` alone, so a chunked request slips
+ * past it. A real server measures as it reads; this one exists to let the
+ * client's 413 handling be exercised, not to be a fence.
+ */
+function withPolicy(policy: RoutePolicy, handler: Handler): Handler {
+	// Sized so it can't reject a body the schemas accept, which is the rule the
+	// contract states for these two moving together: a track carries a cover
+	// beside its audio, so the audio class has to hold both at their caps.
+	const bodyLimit =
+		policy.body === "audio"
+			? MAX_AUDIO_BASE64 + MAX_IMAGE_BASE64 + BODY_SLACK
+			: policy.body === "image"
+				? MAX_IMAGE_BASE64 + BODY_SLACK
+				: BODY_SLACK;
+	return async (req, server) => {
+		const limited = policy.throttle
+			? rateLimit(req, server, policy.throttle)
+			: null;
+		if (limited) return limited;
+		if (Number(req.headers.get("content-length") ?? 0) > bodyLimit) {
+			console.log(`413 ${new URL(req.url).pathname} (over ${bodyLimit}B)`);
+			return new Response("request body too large", { status: 413 });
+		}
+		const res = await handler(req, server);
+		// Only what the route actually served is cacheable — a 404 answered with
+		// `public, max-age=…` would have every client hold on to the miss.
+		if (res.ok) res.headers.set("cache-control", cacheControl(policy.cache));
+		return res;
+	};
+}
+
+/**
+ * The per-address half of a route's budget. The per-account half the contract
+ * describes lives in the endpoint, because at this point the body hasn't been
+ * parsed and there is no username to key on.
+ */
+function rateLimit(
+	req: Request,
+	server: Bun.Server,
+	throttle: NonNullable<RoutePolicy["throttle"]>,
+): Response | null {
+	const [limit, windowMs] =
+		throttleOverride?.length === 2 ? throttleOverride : throttle;
+	const { pathname } = new URL(req.url);
+	const key = `${pathname}\n${server.requestIP(req)?.address ?? "?"}`;
+	const now = Date.now();
+	const hits = (requestLog.get(key) ?? []).filter((at) => at > now - windowMs);
+	requestLog.set(key, hits);
+	if (hits.length >= limit) {
+		const retryAfter = Math.ceil((hits[0] + windowMs - now) / 1000);
+		console.log(`429 ${pathname}, retry after ${retryAfter}s`);
+		return new Response("too many requests", {
+			status: 429,
+			headers: { "retry-after": String(retryAfter) },
+		});
+	}
+	hits.push(now);
+	return null;
+}
+
+/** The contract's default is that a response is never stored at all. */
+function cacheControl(cache: RoutePolicy["cache"]): string {
+	if (cache === "shared") return "public, max-age=3600";
+	if (cache === "private") return "private, max-age=3600";
+	return "no-store";
+}
+
+/** Applies each route's policy to every method it serves. */
+function withPolicies<T extends Record<string, Record<string, unknown>>>(
+	routes: T,
+): T {
+	return Object.fromEntries(
+		Object.entries(routes).map(([path, methods]) => [
+			path,
+			Object.fromEntries(
+				// The handlers take Bun's path-typed request; the wrapper only
+				// passes it along, so it sees a plain Request.
+				Object.entries(methods as Record<string, Handler>).map(
+					([method, handler]) => [method, withPolicy(policyOf(path), handler)],
+				),
+			),
+		]),
+	) as T;
+}
+
 Bun.serve({
 	port: PORT,
-	routes: {
+	routes: withPolicies({
 		"/login": {
 			POST: async (req) => {
 				const { username, password } = (await req.json()) as {
@@ -469,7 +607,7 @@ Bun.serve({
 				});
 			},
 		},
-	},
+	}),
 	fetch: () => new Response("not found", { status: 404 }),
 });
 

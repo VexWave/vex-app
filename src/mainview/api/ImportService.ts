@@ -2,6 +2,7 @@ import type {
 	ImportedArtist,
 	UrlImportProgressMessage,
 } from "../../shared/rpcSchema";
+import { formatMb } from "@/lib/utils";
 import { bun, onBunMessage } from "./rpc";
 import { uploadService } from "./UploadService";
 
@@ -62,6 +63,41 @@ export interface ImportsState {
 }
 
 /**
+ * How far a download has got as a percentage, or null when that isn't a number
+ * yet: the job isn't downloading, or the server never said how big the media is.
+ * The pending row and the Discover card both draw a bar from it, and the status
+ * line below rounds the same value.
+ */
+export function importPercent(job: ImportJob): number | null {
+	return job.step === "downloading" && job.totalBytes
+		? Math.min(100, (job.receivedBytes / job.totalBytes) * 100)
+		: null;
+}
+
+/**
+ * A job's status as a line of text. Lives here, next to the steps it names, so
+ * the pending row in the track list and the Discover card a download was started
+ * from describe the same job the same way.
+ */
+export function importStatusLabel(job: ImportJob): string {
+	const percent = importPercent(job);
+	switch (job.step) {
+		case "starting":
+			return "Preparing download…";
+		case "downloading":
+			return percent === null
+				? `Downloading… ${formatMb(job.receivedBytes)}`
+				: `Downloading… ${Math.round(percent)}%`;
+		case "converting":
+			return "Converting to MP3…";
+		case "staging":
+			return "Almost done…";
+		case "error":
+			return job.error ?? "Import failed";
+	}
+}
+
+/**
  * Tracks URL imports (YouTube/SoundCloud → mp3 via the bun-side yt-dlp). The
  * `importFromUrl` RPC only starts a job; progress arrives as pushed
  * `urlImportProgress` messages. When a job finishes, the converted mp3 (title +
@@ -84,7 +120,21 @@ export class ImportService {
 
 	getSnapshot = (): ImportsState => this.snapshot;
 
-	/** Start importing a (already parseImportUrl-normalized) URL. */
+	/**
+	 * The job importing this (already parseImportUrl-normalized) URL, or null. At
+	 * most one can exist — see `start` — which is what lets anything holding a URL
+	 * find its download: a Discover hit shares no id with an import.
+	 */
+	jobFor(url: string): ImportJob | null {
+		return this.jobs.find((job) => job.url === url) ?? null;
+	}
+
+	/**
+	 * Start importing a (already parseImportUrl-normalized) URL. A failed attempt
+	 * at the same URL is dropped rather than kept beside the new one: two rows for
+	 * one link, one of them a dead error, is never what the retry meant — and it
+	 * is what makes a URL enough to identify a download (`jobFor`).
+	 */
 	async start(url: string): Promise<void> {
 		const job: ImportJob = {
 			id: crypto.randomUUID(),
@@ -97,7 +147,10 @@ export class ImportService {
 		};
 		// The row exists before the RPC resolves, so pushed progress messages
 		// can never reference an id the UI doesn't know yet.
-		this.jobs = [...this.jobs, job];
+		this.jobs = [
+			...this.jobs.filter((old) => old.url !== url || old.step !== "error"),
+			job,
+		];
 		this.emit();
 		try {
 			const result = await bun.importFromUrl({ importId: job.id, url });

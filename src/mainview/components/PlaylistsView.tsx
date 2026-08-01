@@ -7,6 +7,7 @@ import {
 	CollectionCardActions,
 } from "@/components/CollectionCard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PlaylistCover } from "@/components/PlaylistCover";
 import { PlaylistDetail } from "@/components/PlaylistDetail";
@@ -107,14 +108,11 @@ export function PlaylistsView() {
 							<Loader2 className="h-6 w-6 animate-spin" />
 						</div>
 					) : state.playlists.length === 0 ? (
-						<div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-							<div className="flex h-20 w-20 items-center justify-center rounded-full border border-dashed">
-								<ListMusic className="h-9 w-9" />
-							</div>
-							<p className="text-sm">
-								No playlists yet — create one to get started.
-							</p>
-						</div>
+						<EmptyState
+							framed
+							icon={<ListMusic className="h-9 w-9" />}
+							title="No playlists yet — create one to get started."
+						/>
 					) : (
 						<ScrollArea className="min-h-0 flex-1">
 							{/* Track sizing shared with the artists grid — see there. */}

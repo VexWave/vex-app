@@ -16,8 +16,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useArtists } from "@/hooks/useArtists";
-import { blobToBase64 } from "@/lib/utils";
+import { blobToBase64, tooLargeMessage } from "@/lib/utils";
 import type { Track } from "@/player/types";
+import {
+	MAX_ARTISTS_PER_TRACK,
+	MAX_IMAGE_BYTES,
+	MAX_NAME_LENGTH,
+} from "../../shared/limits";
 
 /**
  * Cover editing is three-state: leave it untouched, replace it with a picked
@@ -90,12 +95,31 @@ export function EditTrackDialog({
 	}, [cover, track]);
 
 	const toggle = (id: number) => {
+		// The server takes a track's artists as one list and refuses an oversized
+		// one outright, so the cap is held here rather than discovered on save.
+		if (!selected.has(id) && selected.size >= MAX_ARTISTS_PER_TRACK) {
+			setError(`A track can name at most ${MAX_ARTISTS_PER_TRACK} artists.`);
+			return;
+		}
 		setSelected((prev) => {
 			const next = new Set(prev);
 			if (next.has(id)) next.delete(id);
 			else next.add(id);
 			return next;
 		});
+	};
+
+	// A cover over the server's ceiling is refused at the picker, keeping the
+	// previous one selected: the alternative is encoding it, sending it, and
+	// answering with a 413 after the wait.
+	const pickCover = (file: File) => {
+		const tooLarge = tooLargeMessage(file.size, MAX_IMAGE_BYTES, "image");
+		if (tooLarge) {
+			setError(tooLarge);
+			return;
+		}
+		setError(null);
+		setCover({ kind: "new", file });
 	};
 
 	const removeCover = () => {
@@ -186,7 +210,7 @@ export function EditTrackDialog({
 							className="hidden"
 							onChange={(e) => {
 								const file = e.target.files?.[0];
-								if (file) setCover({ kind: "new", file });
+								if (file) pickCover(file);
 								// Reset so re-picking the same file fires onChange again.
 								e.target.value = "";
 							}}
@@ -203,6 +227,7 @@ export function EditTrackDialog({
 						<Input
 							id="edit-title"
 							autoFocus
+							maxLength={MAX_NAME_LENGTH}
 							value={title}
 							onChange={(e) => setTitle(e.target.value)}
 							disabled={submitting}

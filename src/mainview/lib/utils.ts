@@ -16,15 +16,33 @@ export function formatTime(totalSeconds: number): string {
 	return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** "12 results" / "1 result" — a count with its noun, pluralised by an "s". */
+export function countLabel(count: number, noun: string): string {
+	return `${count} ${count === 1 ? noun : `${noun}s`}`;
+}
+
 /** "12 tracks" / "1 track" / "No tracks" — every collection's size line. */
 export function trackCountLabel(count: number): string {
-	if (count === 0) return "No tracks";
-	return `${count} ${count === 1 ? "track" : "tracks"}`;
+	return count === 0 ? "No tracks" : countLabel(count, "track");
 }
 
 /** 1_500_000 → "1.4 MB". */
 export function formatMb(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Why a picked file is too big for the server, or null when it fits. Every
+ * picker refuses in the same words, and names the limit rather than only the
+ * offence — the user's next move is to pick a smaller file.
+ */
+export function tooLargeMessage(
+	bytes: number,
+	limit: number,
+	what: string,
+): string | null {
+	if (bytes <= limit) return null;
+	return `That ${what} is ${formatMb(bytes)} — the server accepts up to ${formatMb(limit)}.`;
 }
 
 /**

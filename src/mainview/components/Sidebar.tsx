@@ -1,4 +1,4 @@
-import { ListMusic, LibraryBig, LogOut, Users } from "lucide-react";
+import { Compass, ListMusic, LibraryBig, LogOut, Users } from "lucide-react";
 import { playlistQueueContext } from "@/api/PlaylistService";
 import { SidebarPlaylistItem } from "@/components/SidebarPlaylistItem";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,6 +13,7 @@ import type { MainViewName } from "@/api/NavigationService";
 
 const NAV_ITEMS = [
 	{ view: "library", label: "Library", icon: LibraryBig },
+	{ view: "discover", label: "Discover", icon: Compass },
 	{ view: "playlists", label: "Playlists", icon: ListMusic },
 	{ view: "artists", label: "Artists", icon: Users },
 ] as const;
@@ -27,10 +28,13 @@ export function Sidebar() {
 	// audio is running (now-playing ring + play/pause button state).
 	const { state: playerState } = usePlayer();
 
-	// Badge counts come straight from the stores the views render, so the
-	// sidebar can never disagree with the list next to it.
-	const counts: Record<MainViewName, number> = {
+	// Badge counts come straight from the stores the views render, so the sidebar
+	// can never disagree with the list next to it. Exhaustive over the views so a
+	// new one has to say whether it counts: null is "nothing to count" (Discover
+	// holds search results, not a collection), which is not the same claim as 0.
+	const counts: Record<MainViewName, number | null> = {
 		library: library.tracks.length,
+		discover: null,
 		playlists: playlists.playlists.length,
 		artists: artists.artists.length,
 	};
@@ -86,7 +90,7 @@ export function Sidebar() {
 							    an exact circle; only 3+ digits stretch it into a pill.
 							    leading-none keeps the glyph from pushing the box taller
 							    than it is wide. */}
-							{count > 0 && (
+							{!!count && (
 								<span
 									className={cn(
 										"ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[11px] font-medium leading-none tabular-nums transition-colors",

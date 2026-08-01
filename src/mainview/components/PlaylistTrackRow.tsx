@@ -2,7 +2,11 @@ import { memo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ArrowDown, ArrowUp, GripVertical, X } from "lucide-react";
-import { TrackArtistItems, TrackEditItem } from "@/components/TrackMenuItems";
+import {
+	TrackArtistItems,
+	TrackDeleteItem,
+	TrackEditItem,
+} from "@/components/TrackMenuItems";
 import { TrackRow } from "@/components/TrackRow";
 import {
 	ContextMenuItem,
@@ -15,7 +19,9 @@ import type { Track } from "@/player/types";
 /**
  * One row of the open playlist's ordered track list: the shared TrackRow with
  * the membership actions only a playlist has — reordering and removal — and
- * the grip that drags it to a new position.
+ * the grip that drags it to a new position. Removal unlinks the track from
+ * this playlist; deleting it from the server is the separate entry below,
+ * which is the one that gets the destructive styling.
  *
  * The row owns its `<li>` rather than the list rendering one around it, so the
  * sortable ref lands on a direct child of the `<ul>`: `restrictToParentElement`
@@ -43,6 +49,7 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 	onEdit,
 	onMove,
 	onRemove,
+	onDelete,
 	onOpenArtist,
 }: {
 	track: Track;
@@ -60,6 +67,7 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 	onEdit: (track: Track) => void;
 	onMove: (serverId: string, direction: -1 | 1) => void;
 	onRemove: (serverId: string) => void;
+	onDelete: (track: Track) => void;
 	onOpenArtist: (artistId: number) => void;
 }) {
 	const {
@@ -141,13 +149,12 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 							Move down
 						</ContextMenuItem>
 						<ContextMenuSeparator />
-						<ContextMenuItem
-							className="text-destructive focus:text-destructive"
-							onSelect={() => onRemove(serverId)}
-						>
+						<ContextMenuItem onSelect={() => onRemove(serverId)}>
 							<X className="h-4 w-4" />
 							Remove from playlist
 						</ContextMenuItem>
+						<ContextMenuSeparator />
+						<TrackDeleteItem onSelect={() => onDelete(track)} />
 					</>
 				}
 			/>

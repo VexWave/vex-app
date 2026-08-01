@@ -1,6 +1,12 @@
 import { parseBlob } from "music-metadata";
+import {
+	MAX_AUDIO_BYTES,
+	MAX_DURATION_MS,
+	MAX_IMAGE_BYTES,
+	MAX_NAME_LENGTH,
+} from "../../shared/limits";
 import type { ImportedArtist } from "../../shared/rpcSchema";
-import { blobToBase64 } from "@/lib/utils";
+import { blobToBase64, tooLargeMessage } from "@/lib/utils";
 import { artistService } from "./ArtistService";
 import { bun } from "./rpc";
 import { libraryService } from "./LibraryService";
@@ -124,6 +130,21 @@ export class UploadService {
 		);
 		if (audioFiles.length === 0) return;
 		for (const file of audioFiles) {
+			// Refused before it is even read: base64 costs a third more again and
+			// the whole string crosses the RPC bridge, so a file the server's
+			// ceiling rules out is never encoded. It surfaces as a failed row,
+			// the same place every other upload failure lands.
+			const tooLarge = tooLargeMessage(file.size, MAX_AUDIO_BYTES, "track");
+			if (tooLarge) {
+				this.items.push({
+					id: crypto.randomUUID(),
+					title: file.name,
+					status: "error",
+					error: tooLarge,
+				});
+				this.emit();
+				continue;
+			}
 			// Tags are best-effort: an unreadable/absent title falls back to the
 			// file name, a missing duration to 0, and no picture to no cover.
 			const metadata = await parseBlob(file).catch(() => null);
@@ -132,11 +153,18 @@ export class UploadService {
 				id: crypto.randomUUID(),
 				file,
 				fileName: file.name,
-				title: metadata?.common.title ?? file.name.replace(/\.[^.]+$/, ""),
-				durationMs: Math.round((metadata?.format.duration ?? 0) * 1000),
-				coverBlob: pic
-					? new Blob([new Uint8Array(pic.data)], { type: pic.format })
-					: null,
+				title: clampTitle(
+					metadata?.common.title ?? file.name.replace(/\.[^.]+$/, ""),
+				),
+				durationMs: clampDuration(metadata?.format.duration),
+				// Artwork embedded in a tag can be over the image ceiling on its
+				// own, and it is the one cover nobody chose — carrying it would
+				// fail the whole upload for it. The file is staged without one
+				// instead, which the review dialog shows and can replace.
+				coverBlob:
+					pic && pic.data.byteLength <= MAX_IMAGE_BYTES
+						? new Blob([new Uint8Array(pic.data)], { type: pic.format })
+						: null,
 				suggestedArtist,
 			});
 			this.emit();
@@ -281,6 +309,29 @@ export class UploadService {
 		};
 		this.subscribers.forEach((notify) => notify());
 	}
+}
+
+/**
+ * A title the server will accept: bounded at both ends, since the contract
+ * takes 1…MAX_NAME_LENGTH characters. What a tag or a file name yields reaches
+ * the upload without passing the review dialog's input — "Upload all" confirms
+ * a staged title as it stands — so it is bounded where it is derived rather
+ * than where it is edited. A file named `.mp3` has no stem to fall back on.
+ */
+function clampTitle(title: string): string {
+	return title.trim().slice(0, MAX_NAME_LENGTH) || "Untitled";
+}
+
+/**
+ * Tag durations are float seconds and best-effort. A damaged file reports no
+ * duration, a broken VBR header an absurd one, and both reach the contract as
+ * int32 milliseconds — where `NaN` and a century-long track are a 400 whose
+ * message tells the user nothing they can act on.
+ */
+function clampDuration(seconds: number | undefined): number {
+	const ms = Math.round((seconds ?? 0) * 1000);
+	if (!Number.isFinite(ms) || ms < 0) return 0;
+	return Math.min(ms, MAX_DURATION_MS);
 }
 
 /** App-wide singleton — uploads must survive component unmounts. */

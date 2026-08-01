@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Music, Search } from "lucide-react";
 import { LIBRARY_QUEUE_CONTEXT, libraryService } from "@/api/LibraryService";
 import { navigationService } from "@/api/NavigationService";
+import { EmptyState } from "@/components/EmptyState";
 import { LibraryTrackRow } from "@/components/LibraryTrackRow";
 import { PendingImportRow, PendingUploadRow } from "@/components/PendingRows";
 import { SearchInput } from "@/components/SearchInput";
@@ -100,19 +101,16 @@ export function TrackList() {
 			<Separator />
 
 			{isEmpty ? (
-				<div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-					<div className="flex h-20 w-20 items-center justify-center rounded-full border border-dashed">
-						<Music className="h-9 w-9" />
-					</div>
-					<p className="text-sm">
-						Your library is empty — add songs or drop audio files anywhere.
-					</p>
-				</div>
+				<EmptyState
+					framed
+					icon={<Music className="h-9 w-9" />}
+					title="Your library is empty — add songs or drop audio files anywhere."
+				/>
 			) : noMatches ? (
-				<div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-					<Search className="h-8 w-8" />
-					<p className="text-sm">No tracks match “{query}”.</p>
-				</div>
+				<EmptyState
+					icon={<Search className="h-8 w-8" />}
+					title={`No tracks match “${query}”.`}
+				/>
 			) : (
 				<ScrollArea className="min-h-0 flex-1">
 					<ul className="flex flex-col gap-1 p-2">
