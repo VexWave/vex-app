@@ -70,12 +70,6 @@ export class StreamProxy {
 		private readonly onUnauthorized?: () => void,
 		/** importId → local file path, or null when unknown/already discarded. */
 		private readonly resolveImportFile?: (importId: string) => string | null,
-		/**
-		 * Called with the full set of cached track ids whenever cache membership
-		 * changes (track fully downloaded, evicted, or the cache was wiped) — the
-		 * UI marks cached tracks as instant to play.
-		 */
-		private readonly onCacheChanged?: (trackIds: string[]) => void,
 	) {}
 
 	/** The loopback server, started on first use. */
@@ -125,18 +119,7 @@ export class StreamProxy {
 
 	/** Drops a track's cached audio, e.g. after it was deleted on the server. */
 	evictTrack(trackId: string): void {
-		if (this.cache.delete(trackId)) this.onCacheChanged?.(this.cache.ids());
-	}
-
-	/**
-	 * Ids of every fully-cached track, synced against the live session first so
-	 * a fetch right after a re-login can't report the previous session's ids.
-	 */
-	cachedTrackIds(): string[] {
-		const auth = this.api.auth;
-		if (!auth) return [];
-		this.syncCacheToAuth(auth);
-		return this.cache.ids();
+		this.cache.delete(trackId);
 	}
 
 	/**
@@ -281,7 +264,7 @@ export class StreamProxy {
 	private syncCacheToAuth(auth: { baseUrl: string; token: string }): void {
 		const key = `${auth.baseUrl}\n${auth.token}`;
 		if (key !== this.authKey) {
-			if (this.cache.clear()) this.onCacheChanged?.([]);
+			this.cache.clear();
 			this.authKey = key;
 		}
 	}
@@ -352,7 +335,6 @@ export class StreamProxy {
 				offset += chunk.byteLength;
 			}
 			this.cache.set(trackId, { bytes, contentType });
-			this.onCacheChanged?.(this.cache.ids());
 		} catch {
 			// Upstream died mid-download; the partial bytes are useless.
 		} finally {

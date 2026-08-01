@@ -11,8 +11,6 @@ It holds what is worth knowing *before* writing any code here: how the project i
 | `src/mainview/player/CLAUDE.md` | the playback core: queue, transport, shuffle |
 | `src/mainview/api/CLAUDE.md` | the webview's services: session, library, artists, playlists, uploads, imports, discover |
 
-`NOTES.md` is a different kind of document again: loose ends someone noticed and wrote down rather than fixed on the spot. Decisions belong in these files, findings belong there.
-
 What the code says plainly at a glance stays out of all of them, and so does its history.
 
 ## What this is

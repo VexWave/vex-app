@@ -197,16 +197,6 @@ export type ListPlaylistsResult =
 	| { ok: true; playlists: RemotePlaylist[] }
 	| RpcFailure;
 
-/**
- * Server ids of tracks whose complete audio sits in the bun-side memory cache
- * (StreamProxy/TrackCache) — the UI marks these as instant to play. Always the
- * full current set, never a delta, so a missed message can't leave the webview
- * permanently stale.
- */
-export interface CachedTracks {
-	trackIds: string[];
-}
-
 // --- Binary manager --------------------------------------------------------
 
 /**
@@ -435,12 +425,6 @@ export type PlayerRPC = {
 			 * then fails rather than resolving with results nobody asked for.
 			 */
 			searchMedia: { params: SearchMediaParams; response: SearchMediaResult };
-			/**
-			 * Current cache membership, for (re)hydrating the webview — e.g.
-			 * after an HMR reload, which restarts the webview but not bun.
-			 * Later changes arrive as `trackCacheChanged` messages.
-			 */
-			getCachedTracks: { params: undefined; response: CachedTracks };
 		};
 		messages: {
 			/**
@@ -467,8 +451,6 @@ export type PlayerRPC = {
 			binaryProgress: BinaryProgressMessage;
 			/** Progress/completion stream of running URL imports. */
 			urlImportProgress: UrlImportProgressMessage;
-			/** Pushed whenever the set of fully-cached tracks changes. */
-			trackCacheChanged: CachedTracks;
 		};
 	}>;
 };

@@ -49,9 +49,6 @@ const streamProxy: StreamProxy = new StreamProxy(
 	// Forward reference: import files are only requested after an import
 	// finished, so `importer` exists long before this resolver ever runs.
 	(importId) => importer.filePathFor(importId),
-	// Same forward reference: the cache can only change after a stream request,
-	// which requires a login, which requires the RPC.
-	(trackIds) => rpc.send.trackCacheChanged({ trackIds }),
 );
 
 // Same forward-reference pattern as StreamProxy: progress messages only flow
@@ -147,7 +144,6 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			importFromUrl: (params) => unlessInstalling(() => importer.start(params)),
 			discardImport: (params) => importer.discard(params),
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
-			getCachedTracks: () => ({ trackIds: streamProxy.cachedTrackIds() }),
 		},
 		messages: {
 			presenceChanged: ({ track }) => discordPresence.setNowPlaying(track),

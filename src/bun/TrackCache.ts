@@ -24,11 +24,6 @@ export class TrackCache {
 		return byteLength <= this.maxBytes;
 	}
 
-	/** Ids of every fully-cached track. */
-	ids(): string[] {
-		return [...this.entries.keys()];
-	}
-
 	get(trackId: string): CachedTrack | undefined {
 		const entry = this.entries.get(trackId);
 		if (entry) {
@@ -50,21 +45,16 @@ export class TrackCache {
 		this.totalBytes += entry.bytes.byteLength;
 	}
 
-	/** Returns whether the entry existed (i.e. membership actually changed). */
-	delete(trackId: string): boolean {
+	delete(trackId: string): void {
 		const entry = this.entries.get(trackId);
-		if (!entry) return false;
+		if (!entry) return;
 		this.entries.delete(trackId);
 		this.totalBytes -= entry.bytes.byteLength;
-		return true;
 	}
 
-	/** Returns whether anything was dropped (i.e. membership actually changed). */
-	clear(): boolean {
-		const hadEntries = this.entries.size > 0;
+	clear(): void {
 		this.entries.clear();
 		this.totalBytes = 0;
-		return hadEntries;
 	}
 }
 
