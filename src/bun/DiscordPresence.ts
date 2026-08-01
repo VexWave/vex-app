@@ -25,8 +25,13 @@ import type { PresenceTrack } from "../shared/rpcSchema";
  * from https://discord.com/developers/applications: its name is what Discord
  * prints as "Listening to …", and its uploaded art assets are what the keys
  * below resolve against. Empty disables the integration outright.
+ *
+ * Checked in rather than configured. The id is not a secret — it rides in every
+ * presence payload and names the app to every client that renders one — and a
+ * packaged build has no shell to read an override out of, so the value that
+ * ships is the only one that could ever apply.
  */
-const APPLICATION_ID = process.env.VEX_DISCORD_APP_ID?.trim() || "";
+const APPLICATION_ID = "";
 
 /**
  * Art asset keys, as uploaded under the application's Rich Presence → Art
@@ -130,7 +135,7 @@ export class DiscordPresence {
 	start(): void {
 		if (!this.applicationId) {
 			console.log(
-				"Discord Rich Presence: disabled (no application id — set VEX_DISCORD_APP_ID or fill in APPLICATION_ID).",
+				"Discord Rich Presence: disabled (no application id — fill in APPLICATION_ID in src/bun/DiscordPresence.ts).",
 			);
 			return;
 		}
