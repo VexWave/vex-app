@@ -1,0 +1,23 @@
+# src/mainview — the React 18 webview
+
+The UI, and nothing that reaches the network itself: every server payload arrives over RPC or through a `StreamProxy` loopback URL (see the root `CLAUDE.md`). State lives in the services under `api/` and in the playback core under `player/`, each of which has its own `CLAUDE.md`.
+
+## Components
+
+- `components/` — the three track lists share one `TrackRow`, each supplying its own row menu, and take their edit/delete/playlist actions from `useTrackActions`; the playlist and artist views share `CollectionCard` and `CollectionHeader`; every view states its emptiness through `EmptyState`. A new list or collection view composes those.
+- **A list's rows are `memo`ized** (`LibraryTrackRow`, `PlaylistTrackRow`, `ArtistTrackRow`, `SidebarPlaylistItem`, `DiscoverCard`). `App` subscribes to the player, so every view re-renders on each `timeupdate` — several times a second during playback — and an unmemoized row rebuilds the whole list with it. Hand rows referentially stable props: bound singleton methods, or callbacks from `useTrackActions`. React context is the hole in this — a context update reaches a memoized consumer regardless, which is why `PlaylistDetail` hoists its dnd-kit sensor options out of the component.
+- `App` renders top-level views from an exhaustive `Record<MainViewName, ComponentType>` rather than a conditional chain: a view added to the union without a component here is a compile error, where a chain's last `else` would quietly render the wrong view.
+- **Discover result cards show the creator's initial, not their avatar.** The search output carries only the media thumbnail; a real creator avatar costs a second yt-dlp run per channel (see the avatar lookup in `src/bun/CLAUDE.md`), so it first appears on the artist the review dialog proposes once a download has finished.
+- **Result thumbnails are loaded straight from the platform's CDN**, not through the `StreamProxy`. The webview-never-reaches-the-backend rule is about the *backend*: a thumbnail URL carries no token, reveals nothing about the server, and the search that produced it has already contacted the platform.
+
+## lib/
+
+- `storage.ts` — **all** localStorage access goes through this typed registry; declare each persisted key there once rather than touching `localStorage` directly.
+- `cacheBuster.ts` — a stream-proxy URL is keyed by its resource's stable id, so replacing a cover or an avatar server-side leaves Chromium serving the cached bytes from an identical URL. Bump the key's version and append it to force the refetch.
+- `devicePixelRatio.ts` — publishes the webview's device pixel ratio as `--dpr` on `<html>`, and keeps it current through a media query re-armed on every change plus a `resize` listener (the bun-side startup nudge is why the second one is needed).
+
+## Styling
+
+- Tailwind **v3** + vendored shadcn (new-york style, CSS variables, dark theme via `class="dark"` on `<html>` in `index.html`). If using the shadcn CLI, pin `shadcn@2.3.0` — newer versions expect Tailwind v4.
+- Icons are lucide, except the platform brand marks in `components/Platforms.tsx` — vendored from Simple Icons (CC0), since lucide carries none. That file is the one table of how a searchable platform presents itself (label, mark, brand colour), with the toggle's order derived from its keys so a platform can't be added and still be invisible. The marks are *filled* paths taking `fill="currentColor"`, not lucide's stroked ones, and the brand colours are whole class names (`text-[#FF0000]`) because Tailwind only generates what it can read in the source.
+- **The now-playing ring rounds its width and gap to whole device pixels** (`--dpr`) rather than stating them as a plain `2px`. Its box is snapped to the device grid independently of the artwork it wraps, so only an integer offset holds its shape on all four sides at fractional display scales. Reasoning in full above `.np-ring` in `index.css`.
