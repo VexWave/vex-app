@@ -15,13 +15,13 @@ import { notifyBun } from "./rpc";
  * several times a second, while Discord accepts a handful of updates per
  * minute; pushing each one would be pure waste even before its rate limit. So
  * only changes Discord would actually render are forwarded — and because
- * logging out clears the queue, the idle card follows from that with nothing
- * here having to know about sessions.
+ * logging out clears the queue, the presence comes down with it, nothing here
+ * having to know about sessions.
  *
- * A track is forwarded only while it is *playing*. Paused is not a state the
- * presence has: audio that isn't sounding is the same to a reader as audio that
- * was never started, so a pause reads as idle and the track comes back when it
- * resumes.
+ * A track is forwarded only while it is *playing*; `null` says there is no
+ * presence to show at all. Paused is not a state the presence has: audio that
+ * isn't sounding is the same to a reader as audio that was never started, so a
+ * pause takes the card down and the track comes back when it resumes.
  */
 
 /**
@@ -60,7 +60,7 @@ function push(next: PresenceTrack | null): void {
 function presenceFor(state: PlayerState): PresenceTrack | null {
 	const track = state.currentTrack;
 	// A track loaded but stopped — paused, or preloaded by `syncCollection` and
-	// never started — is idle as far as the presence is concerned.
+	// never started — is nothing to advertise.
 	if (!track || !state.isPlaying) return null;
 	return {
 		id: track.id,
@@ -75,7 +75,7 @@ function presenceFor(state: PlayerState): PresenceTrack | null {
 }
 
 function hasChanged(next: PresenceTrack | null): boolean {
-	// Covers idle→idle (nothing changed) and either side of a transition.
+	// Covers both ends of a transition, and nothing→nothing (no change at all).
 	if (!next || !sent) return next !== sent;
 	if (
 		next.id !== sent.id ||

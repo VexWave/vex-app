@@ -13,6 +13,10 @@ import type { PresenceTrack } from "../shared/rpcSchema";
  * dispatch; from there each presence update is a SET_ACTIVITY command carried
  * in a FRAME.
  *
+ * The presence exists only while a track is playing: with nothing playing there
+ * is no card at all rather than an idle one, and nothing is published until the
+ * first track starts.
+ *
  * The whole integration is best-effort and quiet by design. Discord not being
  * installed or not running is the ordinary case rather than a fault, so a
  * failed connection only schedules another attempt — nothing surfaces to the
@@ -36,9 +40,9 @@ const APPLICATION_ID = "1533078418541908019";
 /**
  * Art asset key, as uploaded under the application's Rich Presence → Art
  * Assets. Optional: an asset that was never uploaded simply renders no image,
- * which is why nothing here has to check whether it exists. It carries the idle
- * card, badges a playing track in the corner, and stands in for the cover
- * whenever `coverUrl` can't produce one.
+ * which is why nothing here has to check whether it exists. It badges a playing
+ * track in the corner, and stands in for the cover whenever `coverUrl` can't
+ * produce one.
  */
 const LOGO_ASSET = "vexwave";
 
@@ -63,8 +67,7 @@ const MAX_FRAME_BYTES = 1 << 20;
 /** Discord occupies one socket per running client, numbered 0-9. */
 const MAX_SOCKET_INDEX = 9;
 
-/** Activity types Discord accepts over RPC; a music player is "Listening". */
-const ACTIVITY_PLAYING = 0;
+/** Activity type Discord renders a music player under: "Listening to …". */
 const ACTIVITY_LISTENING = 2;
 
 /**
@@ -95,7 +98,6 @@ const MAX_TEXT_LENGTH = 128;
 
 interface ActivityAssets {
 	large_image?: string;
-	large_text?: string;
 	small_image?: string;
 	small_text?: string;
 }
@@ -115,6 +117,12 @@ export class DiscordPresence {
 	/** True between Discord's READY dispatch and the socket closing. */
 	private ready = false;
 	private now: PresenceTrack | null = null;
+	/**
+	 * Whether Discord is currently showing a card of ours. Only a card that is up
+	 * has to be taken down, so this keeps an app that idles from birth — started
+	 * but never played from — off the wire entirely.
+	 */
+	private shown = false;
 	private lastSentAt = 0;
 	private updateTimer: ReturnType<typeof setTimeout> | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -135,7 +143,8 @@ export class DiscordPresence {
 
 	/**
 	 * Begins connecting, and keeps trying for as long as the app runs. Safe to
-	 * call before anything is playing: until then the idle card is what shows.
+	 * call before anything is playing: a connection with nothing to advertise
+	 * publishes nothing.
 	 */
 	start(): void {
 		if (!this.applicationId) {
@@ -148,7 +157,7 @@ export class DiscordPresence {
 	}
 
 	/**
-	 * Points the presence at a playing track, or at the idle card with `null` —
+	 * Points the presence at a playing track, or takes the card down with `null` —
 	 * which is where a pause lands, there being no paused state to show. Callers
 	 * are expected to have filtered out no-op updates already (the webview only
 	 * pushes on a real change), so this always schedules a send.
@@ -195,6 +204,9 @@ export class DiscordPresence {
 		this.socket = socket;
 		this.inbox = Buffer.alloc(0);
 		this.ready = false;
+		// Whatever was on the last connection went with it: Discord drops the card
+		// when the socket that set it closes.
+		this.shown = false;
 		this.loggedError = false;
 		socket.on("data", (chunk: Buffer) => this.receive(chunk));
 		socket.on("close", () => this.detach());
@@ -322,28 +334,25 @@ export class DiscordPresence {
 
 	private publish(): void {
 		if (!this.ready) return;
+		const now = this.now;
+		// Nothing playing and no card up: there is nothing to take down, and a
+		// clear nobody can see is still a request against the rate limit.
+		if (!now && !this.shown) return;
 		this.lastSentAt = Date.now();
+		this.shown = now !== null;
 		this.writeJson(OP_FRAME, {
 			cmd: "SET_ACTIVITY",
-			// Discord clears the presence itself when this process dies.
-			args: { pid: process.pid, activity: this.buildActivity() },
+			// An `activity` left out of the args is what removes the card — the
+			// state Discord also falls back to by itself when this process dies.
+			args: {
+				pid: process.pid,
+				activity: now ? this.buildActivity(now) : undefined,
+			},
 			nonce: crypto.randomUUID(),
 		});
 	}
 
-	private buildActivity(): Activity {
-		const now = this.now;
-		if (!now) {
-			// No timestamps: idling is not an activity anyone is timing, and a
-			// counter ticking up next to "Nothing playing" only draws the eye to it.
-			return {
-				type: ACTIVITY_PLAYING,
-				details: "Idle",
-				state: "Nothing playing",
-				assets: { large_image: LOGO_ASSET, large_text: "VexWave" },
-			};
-		}
-
+	private buildActivity(now: PresenceTrack): Activity {
 		const cover = this.coverUrl(now);
 		// Discord derives the progress bar from wall-clock times, so anchoring the
 		// start to the current position keeps it honest with no further updates.

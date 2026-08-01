@@ -359,15 +359,15 @@ export type SearchMediaResult =
 // --- Discord Rich Presence -------------------------------------------------
 
 /**
- * The track the Discord presence should advertise, or `null` for the idle card.
+ * The track the Discord presence should advertise, or `null` to take it down.
  * Only the pieces Discord itself renders travel here — the cover is named by
  * track id rather than by URL, because the webview's cover URLs all point at
  * the loopback stream proxy and Discord fetches activity images from its own
  * servers. Bun holds the backend's real address and builds the public URL.
  *
- * A track here is always one that is *playing*: there is no paused presence, so
- * pausing arrives as `null` and resuming as the track again. Nothing carries a
- * play/pause flag because there is no state it could describe.
+ * A track here is always one that is *playing*: there is no paused presence and
+ * no idle one, so pausing arrives as `null` and resuming as the track again.
+ * Nothing carries a play/pause flag because there is no state it could describe.
  */
 export interface PresenceTrack {
 	/** Server-side track id, which is also what the cover route is keyed by. */
