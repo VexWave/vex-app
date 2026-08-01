@@ -1,5 +1,4 @@
 import { useCallback, useState, type ReactNode } from "react";
-import { libraryService } from "@/api/LibraryService";
 import { playlistService } from "@/api/PlaylistService";
 import { DeleteTrackDialog } from "@/components/DeleteTrackDialog";
 import { EditTrackDialog } from "@/components/EditTrackDialog";
@@ -38,12 +37,9 @@ export function useTrackActions(): TrackActions {
 
 	const togglePlaylist = useCallback(
 		(track: Track, playlistId: number, isMember: boolean) => {
-			// Playlist membership is keyed by server id; map the track id back.
-			const serverId = libraryService.getRemote(track.id)?.id;
-			if (serverId === undefined) return;
 			void (isMember
-				? playlistService.removeTracks(playlistId, [serverId])
-				: playlistService.addTracks(playlistId, [serverId]));
+				? playlistService.removeTracks(playlistId, [track.id])
+				: playlistService.addTracks(playlistId, [track.id]));
 		},
 		[],
 	);
@@ -62,13 +58,7 @@ export function useTrackActions(): TrackActions {
 			    seeded with that track, so the new playlist starts with it. */}
 			<PlaylistDialog
 				playlist={null}
-				seedTrackIds={
-					playlistSeed
-						? [libraryService.getRemote(playlistSeed.id)?.id].filter(
-								(id): id is string => id !== undefined,
-							)
-						: undefined
-				}
+				seedTrackIds={playlistSeed ? [playlistSeed.id] : undefined}
 				open={playlistSeed !== null}
 				onOpenChange={(open) => {
 					if (!open) setPlaylistSeed(null);

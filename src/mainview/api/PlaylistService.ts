@@ -8,7 +8,7 @@ import type {
 	RemotePlaylist,
 } from "../../shared/rpcSchema";
 import { submitIdList } from "./idListEdit";
-import { libraryService, trackIdForServerId } from "./LibraryService";
+import { libraryService } from "./LibraryService";
 import type { MutationResult } from "./LibraryService";
 import { bun } from "./rpc";
 import { sessionService } from "./SessionService";
@@ -111,8 +111,8 @@ export class PlaylistService {
 			libraryService.getSnapshot().tracks.map((track) => [track.id, track]),
 		);
 		const tracks: Track[] = [];
-		for (const serverId of playlist.trackIds) {
-			const track = byId.get(trackIdForServerId(serverId));
+		for (const trackId of playlist.trackIds) {
+			const track = byId.get(trackId);
 			if (track) tracks.push(track);
 		}
 		return tracks;
@@ -469,12 +469,10 @@ export class PlaylistService {
 		);
 	}
 
-	/** Whether any playlist references one of these (library-side) track ids. */
+	/** Whether any playlist references one of these track ids. */
 	private holdsAny(trackIds: ReadonlySet<string>): boolean {
 		return this.snapshot.playlists.some((playlist) =>
-			playlist.trackIds.some((serverId) =>
-				trackIds.has(trackIdForServerId(serverId)),
-			),
+			playlist.trackIds.some((trackId) => trackIds.has(trackId)),
 		);
 	}
 

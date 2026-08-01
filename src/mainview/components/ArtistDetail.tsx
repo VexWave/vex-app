@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { Pencil, Users } from "lucide-react";
 import { artistQueueContext, artistService } from "@/api/ArtistService";
-import { libraryService } from "@/api/LibraryService";
 import { ArtistAvatar } from "@/components/ArtistAvatar";
 import { ArtistTrackRow } from "@/components/ArtistTrackRow";
 import { CollectionHeader } from "@/components/CollectionHeader";
@@ -119,7 +118,6 @@ export function ArtistDetail({
 									<ArtistTrackRow
 										track={track}
 										rowIndex={rowIndex}
-										serverId={libraryService.getRemote(track.id)?.id}
 										isCurrent={isCurrent}
 										showBars={isCurrent && state.isPlaying}
 										playlists={playlists.playlists}

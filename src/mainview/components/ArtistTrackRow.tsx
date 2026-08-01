@@ -26,7 +26,6 @@ import type { Track } from "@/player/types";
 export const ArtistTrackRow = memo(function ArtistTrackRow({
 	track,
 	rowIndex,
-	serverId,
 	isCurrent,
 	showBars,
 	playlists,
@@ -39,8 +38,6 @@ export const ArtistTrackRow = memo(function ArtistTrackRow({
 }: {
 	track: Track;
 	rowIndex: number;
-	/** Server-side id, for playlist membership; undefined while unresolved. */
-	serverId: string | undefined;
 	isCurrent: boolean;
 	showBars: boolean;
 	playlists: RemotePlaylist[];
@@ -68,7 +65,6 @@ export const ArtistTrackRow = memo(function ArtistTrackRow({
 					<TrackEditItem onSelect={() => onEdit(track)} />
 					<TrackPlaylistsSubmenu
 						track={track}
-						serverId={serverId}
 						playlists={playlists}
 						onToggle={onTogglePlaylist}
 						onNewPlaylist={onNewPlaylist}

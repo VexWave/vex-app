@@ -356,6 +356,37 @@ export type SearchMediaResult =
 	| { ok: true; results: MediaSearchResult[] }
 	| RpcFailure;
 
+// --- Discord Rich Presence -------------------------------------------------
+
+/**
+ * The track the Discord presence should advertise, or `null` for the idle card.
+ * Only the pieces Discord itself renders travel here — the cover is named by
+ * track id rather than by URL, because the webview's cover URLs all point at
+ * the loopback stream proxy and Discord fetches activity images from its own
+ * servers. Bun holds the backend's real address and builds the public URL.
+ *
+ * A track here is always one that is *playing*: there is no paused presence, so
+ * pausing arrives as `null` and resuming as the track again. Nothing carries a
+ * play/pause flag because there is no state it could describe.
+ */
+export interface PresenceTrack {
+	/** Server-side track id, which is also what the cover route is keyed by. */
+	id: string;
+	title: string;
+	/** Joined artist names; absent when the track has none. */
+	artist?: string;
+	/** Whether the server holds a cover for this track. */
+	hasCover: boolean;
+	/** Playback position, which anchors Discord's progress bar. */
+	positionSec: number;
+	/** 0 while still unknown — Discord then shows elapsed time, not a bar. */
+	durationSec: number;
+}
+
+export interface PresenceMessage {
+	track: PresenceTrack | null;
+}
+
 export type PlayerRPC = {
 	bun: RPCSchema<{
 		requests: {
@@ -410,6 +441,17 @@ export type PlayerRPC = {
 			 * Later changes arrive as `trackCacheChanged` messages.
 			 */
 			getCachedTracks: { params: undefined; response: CachedTracks };
+		};
+		messages: {
+			/**
+			 * Pushed by the webview whenever what Discord should display changes
+			 * — a different track, play/pause, a seek. A message rather than a
+			 * request because nothing comes back and nothing waits on it: the
+			 * presence is decoration, and a dropped update is corrected by the
+			 * next one. The webview filters out no-op changes so this doesn't
+			 * fire on every timeupdate.
+			 */
+			presenceChanged: PresenceMessage;
 		};
 	}>;
 	webview: RPCSchema<{

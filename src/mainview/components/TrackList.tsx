@@ -137,7 +137,6 @@ export function TrackList() {
 									<LibraryTrackRow
 										track={track}
 										index={index}
-										serverId={remote?.id}
 										artistNames={remote?.artists}
 										isCurrent={isCurrent}
 										showBars={isCurrent && state.isPlaying}

@@ -1,6 +1,7 @@
 import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { ApiClient } from "./ApiClient";
 import { BinaryManager } from "./BinaryManager";
+import { DiscordPresence } from "./DiscordPresence";
 import { MediaSearch } from "./MediaSearch";
 import { StreamProxy } from "./StreamProxy";
 import { UrlImporter } from "./UrlImporter";
@@ -57,6 +58,12 @@ const streamProxy: StreamProxy = new StreamProxy(
 // after the webview kicks off an install over RPC, so `rpc` exists by then.
 const binaryManager = new BinaryManager((msg) => rpc.send.binaryProgress(msg));
 binaryManager.startUpdateCheckIfInstalled();
+
+// Cover URLs are built against the live backend address: Discord fetches
+// activity images from its own servers, so it needs the backend's real
+// (public) URL rather than the loopback proxy one the webview uses.
+const discordPresence = new DiscordPresence(() => api.auth?.baseUrl ?? null);
+discordPresence.start();
 
 const importer: UrlImporter = new UrlImporter(
 	binaryManager,
@@ -141,6 +148,9 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			discardImport: (params) => importer.discard(params),
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
 			getCachedTracks: () => ({ trackIds: streamProxy.cachedTrackIds() }),
+		},
+		messages: {
+			presenceChanged: ({ track }) => discordPresence.setNowPlaying(track),
 		},
 	},
 });
