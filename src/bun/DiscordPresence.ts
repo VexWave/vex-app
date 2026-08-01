@@ -68,10 +68,18 @@ const ACTIVITY_PLAYING = 0;
 const ACTIVITY_LISTENING = 2;
 
 /**
+ * How long the player has to hold still before its state is worth sending. A
+ * track change is rarely alone — a skip lands on a track that is immediately
+ * skipped again — and the presence only has to be right once the user stops.
+ */
+const DEBOUNCE_MS = 1_000;
+
+/**
  * SET_ACTIVITY is limited to 5 updates per 20 seconds. Spacing sends by at
  * least a fifth of that window puts at most 5 in any 20-second stretch, so the
- * limit can't be tripped however hard the user leans on the skip button.
- * Bursts are coalesced rather than queued — see `schedule`.
+ * limit can't be tripped however hard the user leans on the skip button. The
+ * debounce above usually keeps sends well clear of this; it is the floor under
+ * changes spaced just far enough apart to clear the debounce every time.
  */
 const MIN_UPDATE_INTERVAL_MS = 5_000;
 
@@ -287,21 +295,28 @@ export class DiscordPresence {
 	// --- sending ---
 
 	/**
-	 * Queues the current state for delivery under the rate limit. A send already
-	 * waiting is left alone rather than re-armed: it reads `this.now` when it
-	 * fires, so the newest state goes out and everything in between is dropped.
+	 * Queues the current state for delivery once things have gone quiet, and no
+	 * sooner than the rate limit allows.
+	 *
+	 * Every update re-arms the wait rather than joining the one already running,
+	 * so a run of changes — skipping through half a playlist to find something —
+	 * sends once at the end instead of narrating every track passed through. The
+	 * timer reads `this.now` when it fires, so whatever it lands on is current
+	 * and everything in between is simply dropped.
 	 */
 	private schedule(): void {
-		if (!this.ready || this.updateTimer) return;
-		const waited = Date.now() - this.lastSentAt;
-		if (waited >= MIN_UPDATE_INTERVAL_MS) {
-			this.publish();
-			return;
-		}
-		this.updateTimer = setTimeout(() => {
-			this.updateTimer = null;
-			this.publish();
-		}, MIN_UPDATE_INTERVAL_MS - waited);
+		if (!this.ready) return;
+		if (this.updateTimer) clearTimeout(this.updateTimer);
+		// Whichever is further out: the quiet period, or what the rate limit
+		// still owes since the last send.
+		const owed = MIN_UPDATE_INTERVAL_MS - (Date.now() - this.lastSentAt);
+		this.updateTimer = setTimeout(
+			() => {
+				this.updateTimer = null;
+				this.publish();
+			},
+			Math.max(DEBOUNCE_MS, owed),
+		);
 		this.updateTimer.unref?.();
 	}
 
