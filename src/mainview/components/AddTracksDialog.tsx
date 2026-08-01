@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Check, Plus } from "lucide-react";
-import { libraryService } from "@/api/LibraryService";
 import { playlistService } from "@/api/PlaylistService";
 import { SearchInput } from "@/components/SearchInput";
 import { TrackArtwork } from "@/components/TrackArtwork";
@@ -46,18 +45,14 @@ export function AddTracksDialog({
 		);
 	}, [library.tracks, query]);
 
-	const isIn = (track: Track): boolean => {
-		const serverId = libraryService.getRemote(track.id)?.id;
-		if (serverId === undefined || !playlist) return false;
-		return playlist.trackIds.includes(serverId);
-	};
+	const isIn = (track: Track): boolean =>
+		playlist !== null && playlist.trackIds.includes(track.id);
 
 	const toggle = (track: Track) => {
-		const serverId = libraryService.getRemote(track.id)?.id;
-		if (serverId === undefined || !playlist) return;
+		if (!playlist) return;
 		void (isIn(track)
-			? playlistService.removeTracks(playlist.id, [serverId])
-			: playlistService.addTracks(playlist.id, [serverId]));
+			? playlistService.removeTracks(playlist.id, [track.id])
+			: playlistService.addTracks(playlist.id, [track.id]));
 	};
 
 	return (
@@ -94,11 +89,6 @@ export function AddTracksDialog({
 						<ul className="flex flex-col gap-1 pr-3">
 							{visible.map((track) => {
 								const included = isIn(track);
-								// Pending uploads have no server id yet, so they can't
-								// be added — disabled beats a button that ignores the
-								// click (same rule as the row menu's playlist entries).
-								const unresolved =
-									libraryService.getRemote(track.id)?.id === undefined;
 								return (
 									<li key={track.id}>
 										<div className="flex w-full items-center gap-3 rounded-lg py-1.5 pl-2 pr-1">
@@ -124,7 +114,6 @@ export function AddTracksDialog({
 														? `Remove ${track.title}`
 														: `Add ${track.title}`
 												}
-												disabled={unresolved}
 												onClick={() => toggle(track)}
 											>
 												{included ? (

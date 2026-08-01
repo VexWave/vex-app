@@ -18,7 +18,7 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ListMusic, ListPlus, Pencil } from "lucide-react";
-import { libraryService, trackIdForServerId } from "@/api/LibraryService";
+import { libraryService } from "@/api/LibraryService";
 import { navigationService } from "@/api/NavigationService";
 import { playlistQueueContext, playlistService } from "@/api/PlaylistService";
 import { AddTracksDialog } from "@/components/AddTracksDialog";
@@ -77,7 +77,7 @@ export function PlaylistDetail({
 	const rows = useMemo(() => {
 		const byId = new Map(library.tracks.map((track) => [track.id, track]));
 		return playlist.trackIds.flatMap((serverId, position) => {
-			const track = byId.get(trackIdForServerId(serverId));
+			const track = byId.get(serverId);
 			return track ? [{ track, serverId, position }] : [];
 		});
 	}, [playlist, library.tracks]);

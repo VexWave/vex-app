@@ -42,9 +42,9 @@ export class LibraryService {
 	private subscribers = new Set<() => void>();
 	private snapshot: LibraryState = { tracks: [], loading: false, error: null };
 	private fetchSeq = 0;
-	// Server metadata for each library track, keyed by the track id
-	// (`server-<id>`). The context menu reads it to map a Track back to its
-	// server id and currently-linked artist names.
+	// Server metadata for each library track, keyed by track id — the same id
+	// the queue and the rows use. Holds what a Track has no field for, chiefly
+	// the currently-linked artist names.
 	private remoteById = new Map<string, RemoteTrack>();
 	// The StreamProxy cover URL for a track never changes and forwards no cache
 	// headers, so after a cover is replaced we bust it (keyed by track id) to
@@ -123,12 +123,10 @@ export class LibraryService {
 		const remotes = result.tracks
 			.map((remote) => ({
 				...remote,
-				coverUrl: this.coverCache.apply(trackIdFor(remote), remote.coverUrl),
+				coverUrl: this.coverCache.apply(remote.id, remote.coverUrl),
 			}))
 			.reverse();
-		this.remoteById = new Map(
-			remotes.map((remote) => [trackIdFor(remote), remote]),
-		);
+		this.remoteById = new Map(remotes.map((remote) => [remote.id, remote]));
 		const tracks = remotes.map(toTrack);
 		this.update({ tracks, loading: false, error: null });
 		this.syncQueue(tracks);
@@ -235,19 +233,9 @@ export class LibraryService {
 	}
 }
 
-/** Stable track id for a server track (`server-<id>`), shared with the queue. */
-function trackIdFor(remote: RemoteTrack): string {
-	return `server-${remote.id}`;
-}
-
-/** The queue/list id a server track id maps to (the trackIdFor counterpart). */
-export function trackIdForServerId(serverId: string): string {
-	return `server-${serverId}`;
-}
-
 function toTrack(remote: RemoteTrack): Track {
 	return {
-		id: trackIdFor(remote),
+		id: remote.id,
 		title: remote.title,
 		artist: remote.artist,
 		// ms→s at the player boundary: Track.durationSec / AudioPlayer /

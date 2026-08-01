@@ -82,19 +82,15 @@ export function TrackArtistItems({
 
 /**
  * Playlist membership as a submenu of checkboxes, plus a "New playlist…"
- * entry that seeds a fresh playlist with this track. Membership is keyed by
- * the server id, so a track that hasn't got one yet (an upload still in
- * flight) has its checkboxes disabled rather than silently ignoring clicks.
+ * entry that seeds a fresh playlist with this track.
  */
 export function TrackPlaylistsSubmenu({
 	track,
-	serverId,
 	playlists,
 	onToggle,
 	onNewPlaylist,
 }: {
 	track: Track;
-	serverId: string | undefined;
 	playlists: RemotePlaylist[];
 	onToggle: (track: Track, playlistId: number, isMember: boolean) => void;
 	onNewPlaylist: (track: Track) => void;
@@ -112,13 +108,11 @@ export function TrackPlaylistsSubmenu({
 				</ContextMenuItem>
 				{playlists.length > 0 && <ContextMenuSeparator />}
 				{playlists.map((playlist) => {
-					const isMember =
-						serverId !== undefined && playlist.trackIds.includes(serverId);
+					const isMember = playlist.trackIds.includes(track.id);
 					return (
 						<ContextMenuCheckboxItem
 							key={playlist.id}
 							checked={isMember}
-							disabled={serverId === undefined}
 							// Keep the menu open so several playlists can be
 							// (un)checked in one go.
 							onSelect={(e) => e.preventDefault()}

@@ -370,7 +370,7 @@ export type SearchMediaResult =
  * play/pause flag because there is no state it could describe.
  */
 export interface PresenceTrack {
-	/** Server-side track id. */
+	/** Server-side track id, which is also what the cover route is keyed by. */
 	id: string;
 	title: string;
 	/** Joined artist names; absent when the track has none. */
