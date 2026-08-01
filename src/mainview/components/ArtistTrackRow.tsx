@@ -38,7 +38,6 @@ export const ArtistTrackRow = memo(function ArtistTrackRow({
 }: {
 	track: Track;
 	rowIndex: number;
-	/** Server-side id, for playlist membership; undefined while unresolved. */
 	isCurrent: boolean;
 	showBars: boolean;
 	playlists: RemotePlaylist[];
