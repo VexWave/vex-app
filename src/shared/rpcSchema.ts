@@ -364,6 +364,10 @@ export type SearchMediaResult =
  * track id rather than by URL, because the webview's cover URLs all point at
  * the loopback stream proxy and Discord fetches activity images from its own
  * servers. Bun holds the backend's real address and builds the public URL.
+ *
+ * A track here is always one that is *playing*: there is no paused presence, so
+ * pausing arrives as `null` and resuming as the track again. Nothing carries a
+ * play/pause flag because there is no state it could describe.
  */
 export interface PresenceTrack {
 	/** Server-side track id. */
@@ -373,7 +377,6 @@ export interface PresenceTrack {
 	artist?: string;
 	/** Whether the server holds a cover for this track. */
 	hasCover: boolean;
-	isPlaying: boolean;
 	/** Playback position, which anchors Discord's progress bar. */
 	positionSec: number;
 	/** 0 while still unknown — Discord then shows elapsed time, not a bar. */

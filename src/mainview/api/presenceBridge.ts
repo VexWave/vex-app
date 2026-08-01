@@ -17,6 +17,11 @@ import { notifyBun } from "./rpc";
  * only changes Discord would actually render are forwarded — and because
  * logging out clears the queue, the idle card follows from that with nothing
  * here having to know about sessions.
+ *
+ * A track is forwarded only while it is *playing*. Paused is not a state the
+ * presence has: audio that isn't sounding is the same to a reader as audio that
+ * was never started, so a pause reads as idle and the track comes back when it
+ * resumes.
  */
 
 /**
@@ -54,13 +59,14 @@ function push(next: PresenceTrack | null): void {
 
 function presenceFor(state: PlayerState): PresenceTrack | null {
 	const track = state.currentTrack;
-	if (!track) return null;
+	// A track loaded but stopped — paused, or preloaded by `syncCollection` and
+	// never started — is idle as far as the presence is concerned.
+	if (!track || !state.isPlaying) return null;
 	return {
 		id: track.id,
 		title: track.title,
 		artist: track.artist,
 		hasCover: track.coverUrl !== undefined,
-		isPlaying: state.isPlaying,
 		// Whole seconds is all Discord renders, and it keeps the float noise of
 		// the audio element's clock out of the comparison below.
 		positionSec: Math.round(state.currentTimeSec),
@@ -73,7 +79,6 @@ function hasChanged(next: PresenceTrack | null): boolean {
 	if (!next || !sent) return next !== sent;
 	if (
 		next.id !== sent.id ||
-		next.isPlaying !== sent.isPlaying ||
 		next.title !== sent.title ||
 		next.artist !== sent.artist ||
 		next.hasCover !== sent.hasCover ||
@@ -83,9 +88,9 @@ function hasChanged(next: PresenceTrack | null): boolean {
 	) {
 		return true;
 	}
-	// Where Discord's bar has reached by now, given what it was last told. A
-	// paused bar doesn't move, so any position change there is a seek.
-	const advancedSec = sent.isPlaying ? (Date.now() - sentAt) / 1000 : 0;
-	const expectedSec = sent.positionSec + advancedSec;
+	// Where Discord's bar has reached by now, given what it was last told —
+	// anything sent is playing, so the bar has been running since. A position
+	// that no longer matches it is a seek.
+	const expectedSec = sent.positionSec + (Date.now() - sentAt) / 1000;
 	return Math.abs(next.positionSec - expectedSec) > DRIFT_TOLERANCE_SEC;
 }

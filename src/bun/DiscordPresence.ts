@@ -31,17 +31,16 @@ import type { PresenceTrack } from "../shared/rpcSchema";
  * packaged build has no shell to read an override out of, so the value that
  * ships is the only one that could ever apply.
  */
-const APPLICATION_ID = "";
+const APPLICATION_ID = "1533078418541908019";
 
 /**
- * Art asset keys, as uploaded under the application's Rich Presence → Art
- * Assets. They are optional: an asset that was never uploaded simply renders no
- * image, which is why nothing here has to check whether they exist. The logo
- * also stands in for the cover whenever `coverUrl` can't produce one.
+ * Art asset key, as uploaded under the application's Rich Presence → Art
+ * Assets. Optional: an asset that was never uploaded simply renders no image,
+ * which is why nothing here has to check whether it exists. It carries the idle
+ * card, badges a playing track in the corner, and stands in for the cover
+ * whenever `coverUrl` can't produce one.
  */
 const LOGO_ASSET = "vexwave";
-const PLAYING_ASSET = "playing";
-const PAUSED_ASSET = "paused";
 
 // --- Wire protocol -------------------------------------------------------
 
@@ -143,7 +142,8 @@ export class DiscordPresence {
 	}
 
 	/**
-	 * Points the presence at a track, or at the idle card with `null`. Callers
+	 * Points the presence at a playing track, or at the idle card with `null` —
+	 * which is where a pause lands, there being no paused state to show. Callers
 	 * are expected to have filtered out no-op updates already (the webview only
 	 * pushes on a real change), so this always schedules a send.
 	 */
@@ -331,30 +331,29 @@ export class DiscordPresence {
 			};
 		}
 
-		const activity: Activity = {
+		const cover = this.coverUrl(now);
+		// Discord derives the progress bar from wall-clock times, so anchoring the
+		// start to the current position keeps it honest with no further updates.
+		// Everything that reaches here is playing, so the bar always belongs.
+		const start = Date.now() - Math.round(now.positionSec * 1000);
+		return {
 			type: ACTIVITY_LISTENING,
 			details: clampText(now.title),
 			state: now.artist ? clampText(now.artist) : undefined,
-			assets: {
-				large_image: this.coverUrl(now) ?? LOGO_ASSET,
-				large_text: clampText(now.title),
-				small_image: now.isPlaying ? PLAYING_ASSET : PAUSED_ASSET,
-				small_text: now.isPlaying ? "Playing" : "Paused",
-			},
-		};
-
-		// Discord derives the progress bar from wall-clock times, so anchoring the
-		// start to the current position keeps it honest without further updates.
-		// A paused track gets none at all: a bar that kept advancing over stopped
-		// audio would be worse than no bar.
-		if (now.isPlaying) {
-			const start = Date.now() - Math.round(now.positionSec * 1000);
-			activity.timestamps =
+			timestamps:
 				now.durationSec > 0
 					? { start, end: start + Math.round(now.durationSec * 1000) }
-					: { start };
-		}
-		return activity;
+					: { start },
+			assets: {
+				large_image: cover ?? LOGO_ASSET,
+				large_text: clampText(now.title),
+				// The logo rides along as the corner badge, but only behind a real
+				// cover: standing in as the large image already, it would otherwise
+				// appear twice.
+				small_image: cover ? LOGO_ASSET : undefined,
+				small_text: cover ? "VexWave" : undefined,
+			},
+		};
 	}
 
 	/**
