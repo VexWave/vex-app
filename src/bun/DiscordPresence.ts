@@ -107,8 +107,6 @@ export class DiscordPresence {
 	/** True between Discord's READY dispatch and the socket closing. */
 	private ready = false;
 	private now: PresenceTrack | null = null;
-	/** Start of the current idle stretch, so its elapsed timer survives resends. */
-	private idleSince = Date.now();
 	private lastSentAt = 0;
 	private updateTimer: ReturnType<typeof setTimeout> | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -148,7 +146,6 @@ export class DiscordPresence {
 	 * pushes on a real change), so this always schedules a send.
 	 */
 	setNowPlaying(now: PresenceTrack | null): void {
-		if (!now && this.now) this.idleSince = Date.now();
 		this.now = now;
 		this.schedule();
 	}
@@ -322,11 +319,12 @@ export class DiscordPresence {
 	private buildActivity(): Activity {
 		const now = this.now;
 		if (!now) {
+			// No timestamps: idling is not an activity anyone is timing, and a
+			// counter ticking up next to "Nothing playing" only draws the eye to it.
 			return {
 				type: ACTIVITY_PLAYING,
 				details: "Idle",
 				state: "Nothing playing",
-				timestamps: { start: this.idleSince },
 				assets: { large_image: LOGO_ASSET, large_text: "VexWave" },
 			};
 		}
@@ -346,7 +344,8 @@ export class DiscordPresence {
 					: { start },
 			assets: {
 				large_image: cover ?? LOGO_ASSET,
-				large_text: clampText(now.title),
+				// No large_text: it is the cover's hover label, and the title is
+				// already the line directly beside it.
 				// The logo rides along as the corner badge, but only behind a real
 				// cover: standing in as the large image already, it would otherwise
 				// appear twice.
