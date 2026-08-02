@@ -19,6 +19,7 @@ type DetailViewName = (typeof DETAIL_VIEWS)[number];
 export type MainView =
 	| { name: "library" }
 	| { name: "discover" }
+	| { name: "settings" }
 	| { name: DetailViewName; openId: number | null };
 
 export type MainViewName = MainView["name"];
@@ -41,6 +42,7 @@ const SECTION_OF = {
 	playlists: "library",
 	artists: "library",
 	discover: "discover",
+	settings: "settings",
 } as const satisfies Record<MainViewName, MainViewName>;
 
 /**
@@ -74,9 +76,9 @@ function viewOf(name: MainViewName): MainView {
 
 /**
  * The item a list view is opened on (a playlist, an artist), or null when it is
- * showing its list — the library and Discover, having no detail view, are always
- * null. Reads the shape rather than the name, so it needs no edit when a view is
- * added either way.
+ * showing its list — a view with no detail view of its own is always null. Reads
+ * the shape rather than the name, so it needs no edit when a view is added
+ * either way.
  */
 export function openIdOf(view: MainView): number | null {
 	return "openId" in view ? view.openId : null;
