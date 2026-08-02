@@ -6,6 +6,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { LibraryTrackRow } from "@/components/LibraryTrackRow";
 import { PendingImportRow, PendingUploadRow } from "@/components/PendingRows";
 import { SearchInput } from "@/components/SearchInput";
+import { SECTIONS } from "@/components/Sections";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useArtists } from "@/hooks/useArtists";
@@ -101,10 +103,24 @@ export function TrackList() {
 			<Separator />
 
 			{isEmpty ? (
+				// An empty library is where Discover is most worth offering. The button
+				// takes its label and glyph from the section table, so it names the
+				// same place the switch's segment does.
 				<EmptyState
 					framed
 					icon={<Music className="h-9 w-9" />}
-					title="Your library is empty — add songs or drop audio files anywhere."
+					title="Your library is empty."
+					hint="Search YouTube or SoundCloud for something to add, paste a link, or drop audio files anywhere in the window."
+					action={
+						<Button
+							variant="secondary"
+							size="sm"
+							onClick={() => navigationService.showSection("discover")}
+						>
+							<SECTIONS.discover.Icon className="h-4 w-4" />
+							{SECTIONS.discover.label}
+						</Button>
+					}
 				/>
 			) : noMatches ? (
 				<EmptyState

@@ -9,7 +9,7 @@ import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
 import { PlaylistsView } from "@/components/PlaylistsView";
-import { Sidebar } from "@/components/Sidebar";
+import { SECTIONS } from "@/components/Sections";
 import { TrackList } from "@/components/TrackList";
 import { UploadReviewDialog } from "@/components/UploadReviewDialog";
 import { YtDlpUpdateBanner } from "@/components/YtDlpUpdateBanner";
@@ -42,8 +42,10 @@ function App() {
 	const { library } = useLibrary();
 	// Which view the main area shows, and which item it has opened — owned by
 	// NavigationService so any component can navigate (see useNavigation).
-	const { view } = useNavigation();
+	const { view, section } = useNavigation();
 	const MainViewComponent = VIEWS[view.name];
+	// The chrome the current section brings with it, if any (see Sections).
+	const { Aside } = SECTIONS[section];
 	const [isDragging, setIsDragging] = useState(false);
 
 	// Dropped files are uploaded to the server; they re-enter the queue as
@@ -88,15 +90,27 @@ function App() {
 			<AppHeader />
 			<YtDlpUpdateBanner />
 
-			{/* Always-visible sidebar: this is a fixed-size desktop window, and on
-			    HiDPI displays the CSS viewport can sit below Tailwind's `md`
-			    breakpoint — a responsive-hidden sidebar would be unreachable. */}
-			<main className="grid min-h-0 flex-1 grid-cols-[200px_1fr] gap-4 p-4">
-				<Sidebar />
-				{/* min-w-0: grid items default to min-width:auto, so one nowrap
-				    track title would widen the 1fr column past the window. */}
-				<div className="min-h-0 min-w-0 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
-					<MainViewComponent />
+			{/* Whether there is an aside at all is the section's to declare, never a
+			    breakpoint's: this is a fixed-size desktop window, and on HiDPI
+			    displays the CSS viewport can sit below Tailwind's `md`, where a
+			    responsively hidden sidebar would be unreachable. A section that
+			    brings none simply leaves the panel the whole window — nothing
+			    becomes unreachable, since the switch that got you there is still in
+			    the app bar. */}
+			<main className="flex min-h-0 flex-1 gap-4 p-4">
+				{Aside && <Aside />}
+				{/* min-w-0: a flex item's min-width is auto, so one nowrap track
+				    title would widen the panel past the window. */}
+				<div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
+					{/* Keyed by view so each one fades in as it arrives. The key costs
+					    no state: `MainViewComponent` changes with the same name, so
+					    React remounts the subtree at that point regardless. */}
+					<div
+						key={view.name}
+						className="h-full duration-200 animate-in fade-in motion-reduce:animate-none"
+					>
+						<MainViewComponent />
+					</div>
 				</div>
 			</main>
 

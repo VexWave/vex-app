@@ -37,4 +37,9 @@ Every service that holds server data clears it on logout and refetches on login,
 
 - **The whole queue is cleared on logout** — every track streams from the session's server and stream URLs are session-scoped. `LibraryService` is what does it, on the same status change that clears its own list.
 - **Log out is local only** (drops the stored token and the bun session); it does not revoke the token server-side.
+
+## Navigation
+
 - `NavigationService` holds the current view and the item opened in it, so any component can navigate (a track row jumps to one of its artists) and logging out can reset it — open ids belong to the session that issued them.
+- **Views are grouped into *sections*: the app's sides, which the switch in the app bar moves between.** `SECTION_OF` maps every view to one and is where a new view declares itself; a section is named after the view it opens on, so nothing states separately where entering one lands. Only structure lives here — labels, glyphs and chrome are `components/Sections`'.
+- **A section is switched to rather than navigated to, so each one resumes the view it was last on**, an open playlist included; logging out forgets all of them along with the current view.

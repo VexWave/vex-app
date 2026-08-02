@@ -37,6 +37,14 @@ interface ResultCard {
  * starts, so a finished download opens the upload-review dialog with title, cover
  * and creator prefilled — and shows up in the library's pending rows as well as
  * on the card it was started from.
+ *
+ * A section of its own rather than a view in the sidebar: it holds hits from a
+ * platform, not a collection you own. Its section declares no aside (see
+ * `components/Sections`), so the results take the whole window — and the switch
+ * that reached them is also the way back, which is why nothing here duplicates
+ * it. It can be left mid-download without consequence: the job belongs to
+ * `ImportService` and keeps reporting into the library's pending rows, and coming
+ * back finds the same results, since `DiscoverService` outlives the view.
  */
 export function DiscoverView() {
 	const { discover, service } = useDiscover();
@@ -71,6 +79,8 @@ export function DiscoverView() {
 	return (
 		<div className="flex h-full flex-col">
 			<div className="flex items-center gap-3 px-4 py-2.5">
+				{/* The same plain heading every view wears — the switch already names
+				    this one in the app bar, glyph and all. */}
 				<h2 className="shrink-0 text-sm font-semibold">Discover</h2>
 				{discover.results.length > 0 && (
 					<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -86,7 +96,7 @@ export function DiscoverView() {
 						onChange={setInput}
 						label={`Search ${sourceLabel}`}
 						placeholder={`Search ${sourceLabel}`}
-						className="w-48 min-w-0"
+						className="w-72 min-w-0"
 						autoFocus
 					/>
 					<Button

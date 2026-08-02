@@ -1,4 +1,4 @@
-import { Compass, ListMusic, LibraryBig, LogOut, Users } from "lucide-react";
+import { ListMusic, LibraryBig, Users } from "lucide-react";
 import { playlistQueueContext } from "@/api/PlaylistService";
 import { SidebarPlaylistItem } from "@/components/SidebarPlaylistItem";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,19 +7,23 @@ import { useLibrary } from "@/hooks/useLibrary";
 import { useNavigation } from "@/hooks/useNavigation";
 import { usePlayer } from "@/hooks/usePlayer";
 import { usePlaylists } from "@/hooks/usePlaylists";
-import { useSession } from "@/hooks/useSession";
 import { cn } from "@/lib/utils";
-import type { MainViewName } from "@/api/NavigationService";
 
+/**
+ * Where the library section can go: everything you own, and nothing else. It
+ * navigates within one section, so no entry here crosses to another — the switch
+ * in the app bar is what does that, and Discover, holding search results rather
+ * than a collection, is on its far side.
+ */
 const NAV_ITEMS = [
 	{ view: "library", label: "Library", icon: LibraryBig },
-	{ view: "discover", label: "Discover", icon: Compass },
 	{ view: "playlists", label: "Playlists", icon: ListMusic },
 	{ view: "artists", label: "Artists", icon: Users },
 ] as const;
 
+type NavView = (typeof NAV_ITEMS)[number]["view"];
+
 export function Sidebar() {
-	const { service } = useSession();
 	const { view, service: navigation } = useNavigation();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
@@ -29,12 +33,11 @@ export function Sidebar() {
 	const { state: playerState } = usePlayer();
 
 	// Badge counts come straight from the stores the views render, so the sidebar
-	// can never disagree with the list next to it. Exhaustive over the views so a
-	// new one has to say whether it counts: null is "nothing to count" (Discover
-	// holds search results, not a collection), which is not the same claim as 0.
-	const counts: Record<MainViewName, number | null> = {
+	// can never disagree with the list next to it. Keyed off NAV_ITEMS rather than
+	// off MainViewName, so an entry added to the nav has to bring its count with
+	// it — and a view in some other section never has to declare that it has none.
+	const counts: Record<NavView, number> = {
 		library: library.tracks.length,
-		discover: null,
 		playlists: playlists.playlists.length,
 		artists: artists.artists.length,
 	};
@@ -46,7 +49,10 @@ export function Sidebar() {
 	const openPlaylistId = view.name === "playlists" ? view.openId : null;
 
 	return (
-		<div className="flex h-full flex-col overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
+		// The width lives here rather than with whatever places it: this is one
+		// section's aside among however many there turn out to be, and the app
+		// shouldn't have to know how wide each of them wants to be.
+		<div className="flex h-full w-[200px] shrink-0 flex-col overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
 			<nav className="flex flex-col gap-1 p-2" aria-label="Main">
 				{NAV_ITEMS.map((item) => {
 					const active =
@@ -148,19 +154,6 @@ export function Sidebar() {
 					</ScrollArea>
 				</div>
 			)}
-
-			{/* Pinned to the bottom; logout just drops the local token and returns
-			    to the login screen (the server session isn't revoked). */}
-			<div className="mt-auto border-t p-2">
-				<button
-					type="button"
-					className="flex w-full items-center gap-3 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-					onClick={() => void service.logout()}
-				>
-					<LogOut className="h-4 w-4 shrink-0" />
-					Log out
-				</button>
-			</div>
 		</div>
 	);
 }
