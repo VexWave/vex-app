@@ -33,8 +33,9 @@ export type SuggestedArtist = ImportedArtist;
 /**
  * A picked/dropped file whose tags have been parsed and that is now awaiting
  * review in the upload dialog. Prefilled from the file's metadata; the user
- * can edit the title and cover before confirming the upload. `suggestedArtist`
- * is set for URL imports so the dialog can offer to link that artist.
+ * can edit the title and cover before confirming the upload. The last two
+ * fields are whatever the caller sent along with the file (`EnqueueOptions`) —
+ * only URL imports send anything.
  */
 export interface StagedUpload {
 	id: string;
@@ -49,6 +50,19 @@ export interface StagedUpload {
 	coverBlob: Blob | null;
 	/** Artist proposed by a URL import; null for picked/dropped files. */
 	suggestedArtist: SuggestedArtist | null;
+	/** Play this track once its upload has landed in the library. */
+	playWhenReady: boolean;
+}
+
+/** What a file can carry into the review flow beyond the file itself. */
+export interface EnqueueOptions {
+	/** Artist proposed by a URL import; the review dialog offers it as a link. */
+	suggestedArtist?: SuggestedArtist;
+	/**
+	 * Start the track as soon as the upload has landed. Set by URL imports: a
+	 * download the user went and asked for is one they asked to hear.
+	 */
+	playWhenReady?: boolean;
 }
 
 /** Immutable snapshot of the whole upload state, consumed by React. */
@@ -67,6 +81,7 @@ interface QueueEntry {
 	durationMs: number;
 	coverBlob: Blob | null;
 	artistIds: number[];
+	playWhenReady: boolean;
 }
 
 /** Edits confirmed for a staged file in the review dialog. */
@@ -83,8 +98,9 @@ export interface ConfirmEdits {
  * POSTed by the bun process; uploads run sequentially (one in flight) to bound
  * memory use. There is no local playback: a successful upload triggers a
  * library refresh, so the track re-enters the queue as a server track that
- * streams through the bun proxy. Failures stay in the snapshot so the list can
- * surface them.
+ * streams through the bun proxy — which is also the earliest a `playWhenReady`
+ * file can start (see `playLanded`). Failures stay in the snapshot so the list
+ * can surface them.
  */
 export class UploadService {
 	private subscribers = new Set<() => void>();
@@ -94,6 +110,7 @@ export class UploadService {
 	private snapshot: UploadState = { uploads: [], staged: [], reviewedCount: 0 };
 	private queue: QueueEntry[] = [];
 	private working = false;
+	private autoPlayed = false;
 
 	constructor() {
 		let previousStatus = sessionService.getSnapshot().status;
@@ -119,11 +136,12 @@ export class UploadService {
 	/**
 	 * Parse the picked/dropped audio files and stage them for review. Files are
 	 * parsed sequentially and appended as each one is ready, so the dialog opens
-	 * as soon as the first file has been parsed.
+	 * as soon as the first file has been parsed. Whatever `options` carries is
+	 * attached to every file of the call — an import enqueues one at a time.
 	 */
 	async enqueue(
 		files: Iterable<File>,
-		suggestedArtist: SuggestedArtist | null = null,
+		options: EnqueueOptions = {},
 	): Promise<void> {
 		const audioFiles = [...files].filter(
 			(file) => file.type.startsWith("audio/") || file.type === "video/mp4",
@@ -165,7 +183,8 @@ export class UploadService {
 					pic && pic.data.byteLength <= MAX_IMAGE_BYTES
 						? new Blob([new Uint8Array(pic.data)], { type: pic.format })
 						: null,
-				suggestedArtist,
+				suggestedArtist: options.suggestedArtist ?? null,
+				playWhenReady: options.playWhenReady ?? false,
 			});
 			this.emit();
 		}
@@ -189,6 +208,7 @@ export class UploadService {
 			durationMs: staged.durationMs,
 			coverBlob: edits.coverBlob,
 			artistIds: edits.artistIds,
+			playWhenReady: staged.playWhenReady,
 		});
 		this.settleReviewedCount();
 		this.emit();
@@ -254,6 +274,7 @@ export class UploadService {
 	private async work(): Promise<void> {
 		if (this.working) return;
 		this.working = true;
+		this.autoPlayed = false; // one auto-start per drain — see playLanded
 		try {
 			let entry: QueueEntry | undefined;
 			while ((entry = this.queue.shift())) {
@@ -265,7 +286,12 @@ export class UploadService {
 	}
 
 	private async upload(entry: QueueEntry): Promise<void> {
-		const { item, file, durationMs, coverBlob, artistIds } = entry;
+		const { item, file, durationMs, coverBlob, artistIds, playWhenReady } =
+			entry;
+		// Taken before the POST, not before the refresh below: the track has to be
+		// recognisable in whichever listing first carries it, and a refresh this
+		// upload didn't start can be the one that does.
+		const known = playWhenReady ? libraryService.trackIds() : null;
 		try {
 			const result = await bun.uploadTrack({
 				title: item.title,
@@ -281,6 +307,7 @@ export class UploadService {
 				// vanish from the UI if that refresh failed.
 				if (await libraryService.refresh()) {
 					this.items = this.items.filter((i) => i !== item);
+					if (known) this.playLanded(known);
 				} else {
 					item.status = "error";
 					item.error = "Uploaded, but refreshing the library failed.";
@@ -299,6 +326,24 @@ export class UploadService {
 			item.error = err instanceof Error ? err.message : "Upload failed";
 		}
 		this.emit();
+	}
+
+	/**
+	 * Start the track this upload just put in the library — the newest one the
+	 * library has gained since the upload began. A library that has gained
+	 * nothing plays nothing rather than something else: the refresh that carries
+	 * the track hasn't landed, so there is no track to name yet.
+	 *
+	 * At most one track starts per drain of the upload queue: a batch of imports
+	 * confirmed one after another would otherwise each cut off the one before it
+	 * seconds in, leaving whichever happened to upload last playing.
+	 */
+	private playLanded(known: ReadonlySet<string>): void {
+		if (this.autoPlayed) return;
+		const landed = libraryService.newestSince(known);
+		if (!landed) return;
+		this.autoPlayed = true;
+		libraryService.playTrack(landed.id);
 	}
 
 	private emit(): void {

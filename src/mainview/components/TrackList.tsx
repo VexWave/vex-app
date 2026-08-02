@@ -27,7 +27,7 @@ function matches(query: string, ...fields: (string | undefined)[]): boolean {
 }
 
 export function TrackList() {
-	const { state, controller } = usePlayer();
+	const { state } = usePlayer();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
 	// For the rows' "Go to artist" entry: the names a track carries have to be
@@ -44,9 +44,8 @@ export function TrackList() {
 	const tracks = library.tracks;
 	// Playing a library row makes the whole library the queue, in its order.
 	const playTrackAt = useCallback(
-		(index: number) =>
-			controller.playCollection(LIBRARY_QUEUE_CONTEXT, tracks, index),
-		[controller, tracks],
+		(index: number) => libraryService.play(index),
+		[],
 	);
 
 	const totalSec = useMemo(

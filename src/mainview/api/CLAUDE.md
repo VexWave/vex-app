@@ -13,10 +13,12 @@ Every service that holds server data clears it on logout and refetches on login,
 ## Track identity and ordering
 
 - **A track id is a uuid, so the library's "newest first" order comes from the server's listing, not from the id.** `getTracks` is contractually oldest-first and `LibraryService.refresh` reverses it; sorting by id would order the list arbitrarily. Artists and playlists still have serial ids — only tracks changed.
+- **No write route returns the id it assigned** — each answers with a bare string — so whatever a client just created it has to find in the listing afterwards: `LibraryService.newestSince` for a track, `ArtistService.resolveOrCreate` by name for an artist.
 - **A `Track` carries the server's id unchanged — it is not namespaced.** `LibraryService.toTrack` is the only place a `Track` is made (the artist and playlist views project from the library's), so there is no second kind of track id for a prefix to tell it apart from; pending uploads are `UploadItem`s in their own list, never `Track`s. Prefixing it would mean every playlist membership check, every `deleteTrack`, and the Discord cover URL had to launder the id back through `LibraryService` first — a lookup that can miss, in front of a value that was never actually missing. `getRemote` stays for what a `Track` genuinely lacks: the linked artist names.
 
 ## Collections
 
+- **A collection is played through its own service, never by a component reaching `playerController`.** Each of the three owns the entry points for its own, because the queue context id it plays under is the same one that service's later refreshes sync against.
 - **An artist's tracks are joined by name.** The track listing carries its artists' *names*, not their ids (`TrackResponse.artists`), so that is the link `ArtistService.tracksOf` matches on — exactly, where imports match fuzzily (`@/lib/artistMatch`). Two artists sharing a name therefore share a track list, and renaming or deleting an artist refetches the library, because every linked track embeds the name.
 - **An artist's collection is re-derived from the library; a playlist's membership is its own.** `PlaylistService` syncs the queue when it refetches; `ArtistService` subscribes to `LibraryService` and syncs from there. A rename holds that sync until both have refetched — in between they disagree about the name, and the projection would come back empty.
 
@@ -29,6 +31,7 @@ Every service that holds server data clears it on logout and refetches on login,
 ## Uploads and imports
 
 - **Uploads only drop their pending placeholder once the following library refresh confirms the track landed**, so a failed refresh doesn't lose it.
+- **An imported track starts playing once its upload lands, and it is the only upload that does** (`EnqueueOptions.playWhenReady`, set by `ImportService` alone) — a download the user went and asked for is one they asked to hear; a dropped file is not.
 - **At most one import job exists per URL** (`ImportService.start` drops a failed attempt at the same URL rather than keeping it beside the new one). That is what makes a URL enough to identify a download — a Discover hit shares no id with an import, so its card finds its own progress through `jobFor`.
 - **A Discover card finds its running download by URL.** A search hit has no id the import knows about, so the card matches `ImportJob.url` against the same `parseImportUrl` normalization it started the download with — which also means a download started from the header's URL dialog lights up its card.
 - Imports and Discover results are **not** session-scoped: nothing about a download touches the backend until the upload step, so both survive a logout.

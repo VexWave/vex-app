@@ -36,7 +36,8 @@ export type EditTrackChanges = Omit<EditTrackParams, "id">;
  * it while the library is what the user played from (queue context). When a
  * playlist or an artist owns the queue, refreshes still patch queued copies'
  * metadata and drop server-deleted tracks, but membership stays that
- * collection's.
+ * collection's. The library is a playable collection like those two, and `play`
+ * is where it becomes the queue outright.
  */
 export class LibraryService {
 	private subscribers = new Set<() => void>();
@@ -134,6 +135,27 @@ export class LibraryService {
 	}
 
 	/**
+	 * The ids the library holds right now, as a marker to hand back to
+	 * `newestSince` later. Taken before a write, it is what tells that write's
+	 * own track apart afterwards.
+	 */
+	trackIds(): ReadonlySet<string> {
+		return new Set(this.remoteById.keys());
+	}
+
+	/**
+	 * The newest library track absent from `known` — how a caller that added a
+	 * track finds the one it added, since the write routes answer with a bare
+	 * string and the id the server assigned first appears in this listing. The
+	 * list is newest first, so the first miss is the latest arrival; null when
+	 * nothing has arrived since (a refresh that hasn't landed yet, or one that
+	 * failed).
+	 */
+	newestSince(known: ReadonlySet<string>): Track | null {
+		return this.snapshot.tracks.find((track) => !known.has(track.id)) ?? null;
+	}
+
+	/**
 	 * Push a fresh library into the play queue. When the library owns the
 	 * queue (or nothing is queued yet — fresh login), the queue mirrors it
 	 * outright. When another collection owns it, only queued copies' metadata
@@ -155,6 +177,30 @@ export class LibraryService {
 			});
 		}
 		playerController.removeTracks((track) => !this.remoteById.has(track.id));
+	}
+
+	/**
+	 * Make the whole library the play queue and start at `index` (of the list as
+	 * it is rendered, newest first) — what clicking a library row does. Later
+	 * refreshes keep the queue in sync via `syncQueue`.
+	 */
+	play(index = 0): void {
+		playerController.playCollection(
+			LIBRARY_QUEUE_CONTEXT,
+			this.snapshot.tracks,
+			index,
+		);
+	}
+
+	/**
+	 * Play a library track named by id, for callers holding a track rather than
+	 * a place in the list. An id the library doesn't hold plays nothing.
+	 */
+	playTrack(trackId: string): void {
+		const index = this.snapshot.tracks.findIndex(
+			(track) => track.id === trackId,
+		);
+		if (index !== -1) this.play(index);
 	}
 
 	/**

@@ -103,8 +103,9 @@ export function importStatusLabel(job: ImportJob): string {
  * `urlImportProgress` messages. When a job finishes, the converted mp3 (title +
  * cover embedded as tags) is fetched from the loopback proxy and handed to
  * UploadService as a plain File — from there it's staged, reviewed and uploaded
- * exactly like a dropped local file. Jobs survive logout: nothing about a
- * download is session-scoped until the upload step.
+ * exactly like a dropped local file, except that it starts playing once the
+ * upload lands (`playWhenReady`). Jobs survive logout: nothing about a download
+ * is session-scoped until the upload step.
  */
 export class ImportService {
 	private subscribers = new Set<() => void>();
@@ -206,7 +207,10 @@ export class ImportService {
 			const blob = await res.blob();
 			const file = new File([blob], fileName, { type: "audio/mpeg" });
 			// yt-dlp resolved the creator → propose them in the review dialog.
-			await uploadService.enqueue([file], artist ?? null);
+			await uploadService.enqueue([file], {
+				suggestedArtist: artist,
+				playWhenReady: true,
+			});
 			this.dismiss(jobId);
 			// Discard only after a successful hand-off — a staging failure must
 			// not destroy the finished download (the next startup sweeps it).
