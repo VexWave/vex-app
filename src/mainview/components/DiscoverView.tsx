@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { AlertCircle, Compass, RotateCw, SearchX } from "lucide-react";
 import { importService, parseImportUrl } from "@/api/ImportService";
-import { DiscoverCard } from "@/components/DiscoverCard";
+import { DiscoverCard, DiscoverCardSkeleton } from "@/components/DiscoverCard";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { PLATFORM_ORDER, PLATFORMS } from "@/components/Platforms";
@@ -14,6 +14,15 @@ import { useImports } from "@/hooks/useImports";
 import { cn, countLabel } from "@/lib/utils";
 import type { ImportJob } from "@/api/ImportService";
 import type { MediaSearchResult, SearchSource } from "../../shared/rpcSchema";
+
+/**
+ * The results grid, shared with the placeholders that stand in it while a search
+ * runs — the two have to agree for the cards to land where the placeholders were.
+ * A wider minimum than the playlist and artist grids: a sleeve holds its own
+ * two-line title, which needs the room the label under a collection card takes
+ * from the grid for free.
+ */
+const RESULT_GRID = "grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-3 p-4";
 
 /** A result together with everything about it the search itself doesn't know. */
 interface ResultCard {
@@ -137,9 +146,7 @@ function ResultGrid({
 }) {
 	return (
 		<ScrollArea className="min-h-0 flex-1">
-			{/* Wider minimum than the playlist and artist grids: these cards carry a
-			    16:9 thumbnail and a two-line title. */}
-			<ul className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-1 p-3">
+			<ul className={RESULT_GRID}>
 				{cards.map(({ result, job, downloadable }) => (
 					<li key={result.id}>
 						<DiscoverCard
@@ -202,37 +209,18 @@ function SourceToggle({
 }
 
 /**
- * The grid's own loading state rather than a spinner: the cards land in the
- * layout they will keep, so nothing jumps when the results arrive.
+ * The grid's own loading state rather than a spinner: the placeholders land in
+ * the same grid the results will, so nothing jumps when they arrive.
  */
 function ResultSkeletons() {
 	return (
 		<div className="min-h-0 flex-1 overflow-hidden">
-			<ul
-				aria-hidden="true"
-				className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-1 p-3"
-			>
-				{Array.from({ length: 12 }, (_, i) => {
-					// Staggered so the grid breathes as one wave instead of flashing in
-					// lockstep; every bar of a card pulses with its artwork.
-					const stagger = { animationDelay: `${i * 80}ms` };
-					return (
-						<li key={i} className="flex flex-col gap-2 p-2">
-							<span
-								className="block aspect-video w-full animate-pulse rounded-lg bg-muted"
-								style={stagger}
-							/>
-							<span
-								className="block h-3 w-4/5 animate-pulse rounded bg-muted"
-								style={stagger}
-							/>
-							<span
-								className="block h-3 w-2/5 animate-pulse rounded bg-muted"
-								style={stagger}
-							/>
-						</li>
-					);
-				})}
+			<ul aria-hidden="true" className={RESULT_GRID}>
+				{Array.from({ length: 12 }, (_, i) => (
+					<li key={i}>
+						<DiscoverCardSkeleton index={i} />
+					</li>
+				))}
 			</ul>
 		</div>
 	);
