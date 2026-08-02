@@ -17,6 +17,8 @@ The queue always mirrors one *collection* — the whole library, a single playli
 
 ## Web Audio
 
-`AudioPlayer` also owns the Web Audio graph behind `PlayerController.analyser`, built on the first playback. `createMediaElementSource` captures an element's output permanently and accepts it only once, so anything wanting the spectrum reads that analyser instead of building its own — `useAudioGlow` drives `CoverBackdrop`'s glow from it. The build order in `ensureAnalyser` is load-bearing: the element is captured only once the context is confirmed running, because a suspended context swallows the audio with no way to hand it back.
+`AudioPlayer` also owns the Web Audio graph behind `PlayerController.analyser` — source → `Equalizer` → analyser → destination — built on the first playback. `createMediaElementSource` captures an element's output permanently and accepts it only once, so anything wanting the spectrum reads that analyser instead of building its own — `useAudioGlow` drives `CoverBackdrop`'s glow from it. The build order in `ensureAnalyser` is load-bearing: the element is captured only once the context is confirmed running, because a suspended context swallows the audio with no way to hand it back.
+
+- **The equalizer is a store of its own** (`PlayerController.equalizer`, read through `hooks/useEqualizer`), not part of the player's state snapshot, and `PlayerController` persists it by subscription rather than from a setter. Its settings stand before the graph exists — the settings view opens long before anything has played — and `attach` is what puts them on the nodes.
 
 The element is `crossOrigin = "anonymous"` (set before any `src`) so Web Audio will expose its samples — which is what makes the `access-control-allow-origin: *` on every `StreamProxy` response mandatory rather than cosmetic.
