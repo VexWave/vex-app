@@ -1,6 +1,7 @@
 import { storage } from "@/lib/storage";
 import { AudioPlayer } from "./AudioPlayer";
 import { PlaybackQueue } from "./PlaybackQueue";
+import type { Equalizer } from "./Equalizer";
 import type { PlayerState, RepeatMode, Track } from "./types";
 
 const REPEAT_CYCLE: RepeatMode[] = ["off", "all", "one"];
@@ -53,6 +54,10 @@ export class PlayerController {
 			this.error = message;
 			this.refresh();
 		});
+
+		// Subscribed after restoreSettings, so replaying the stored curve onto the
+		// equalizer doesn't immediately write it back out again.
+		this.player.equalizer.subscribe(() => this.persistEqualizer());
 	}
 
 	// --- useSyncExternalStore contract (arrow fns keep `this` bound) ---
@@ -71,6 +76,16 @@ export class PlayerController {
 	 */
 	get analyser(): AnalyserNode | null {
 		return this.player.analyser;
+	}
+
+	/**
+	 * The equalizer sitting in the playback graph. A store of its own rather than
+	 * part of the state snapshot: the settings view is the only thing that reads
+	 * it, and folding ten faders into the snapshot every view already subscribes
+	 * to would re-render the whole app on each drag frame.
+	 */
+	get equalizer(): Equalizer {
+		return this.player.equalizer;
 	}
 
 	// --- queue management ---
@@ -278,10 +293,10 @@ export class PlayerController {
 	}
 
 	/**
-	 * Load persisted volume/mute/repeat/shuffle from localStorage into the
-	 * player and queue. Runs before the first snapshot so the UI opens on the
-	 * last-used settings. Malformed or missing values fall back to the
-	 * constructor defaults.
+	 * Load persisted volume/mute/repeat/shuffle and the equalizer from
+	 * localStorage into the player and queue. Runs before the first snapshot so
+	 * the UI opens on the last-used settings. Malformed or missing values fall
+	 * back to the constructor defaults.
 	 */
 	private restoreSettings(): void {
 		const volume = storage.player.volume.get();
@@ -290,6 +305,14 @@ export class PlayerController {
 		const repeat = storage.player.repeat.get();
 		if (repeat !== null) this.queue.setRepeatMode(repeat);
 		if (storage.player.shuffle.get()) this.queue.setShuffled(true);
+
+		const equalizer = this.player.equalizer;
+		const enabled = storage.equalizer.enabled.get();
+		if (enabled !== null) equalizer.setEnabled(enabled);
+		const gains = storage.equalizer.gains.get();
+		if (gains !== null) equalizer.setGains(gains);
+		const preamp = storage.equalizer.preamp.get();
+		if (preamp !== null) equalizer.setPreamp(preamp);
 	}
 
 	/** Persist the current volume/mute/repeat/shuffle so they survive a restart. */
@@ -298,6 +321,18 @@ export class PlayerController {
 		storage.player.muted.set(this.player.muted);
 		storage.player.repeat.set(this.queue.repeatMode);
 		storage.player.shuffle.set(this.queue.shuffled);
+	}
+
+	/**
+	 * Persist the equalizer, on every change it reports — the faders are its own
+	 * control surface, so unlike volume or repeat there is no method here to hang
+	 * this off.
+	 */
+	private persistEqualizer(): void {
+		const { enabled, gains, preampDb } = this.player.equalizer.getSnapshot();
+		storage.equalizer.enabled.set(enabled);
+		storage.equalizer.gains.set(gains);
+		storage.equalizer.preamp.set(preampDb);
 	}
 
 	private buildSnapshot(): PlayerState {

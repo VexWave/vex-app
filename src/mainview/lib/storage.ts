@@ -1,3 +1,8 @@
+import {
+	EQ_BANDS,
+	EQ_GAIN_LIMIT_DB,
+	EQ_PREAMP_LIMIT_DB,
+} from "@/player/Equalizer";
 import type { SearchSource } from "../../shared/rpcSchema";
 import type { RepeatMode } from "@/player/types";
 
@@ -38,8 +43,12 @@ const stringValue = (key: string): StoredValue<string> =>
 		(raw) => raw,
 	);
 
+// Decodes only the two strings it encodes, so that a setting which defaults to
+// *on* can tell an explicit "off" from a key that was never written.
 const booleanValue = (key: string): StoredValue<boolean> =>
-	new StoredValue(key, String, (raw) => raw === "true");
+	new StoredValue(key, String, (raw) =>
+		raw === "true" || raw === "false" ? raw === "true" : null,
+	);
 
 const numberValue = (
 	key: string,
@@ -49,6 +58,29 @@ const numberValue = (
 		const value = Number(raw);
 		return Number.isFinite(value) && isValid(value) ? value : null;
 	});
+
+/**
+ * A fixed-length list of numbers. Validated as a whole — one bad entry or the
+ * wrong count decodes to null rather than to a partly restored list — because
+ * the entries are positional: what a number belongs to is its index and nothing
+ * else, so a list of unexpected length cannot be read at all.
+ */
+const numberListValue = (
+	key: string,
+	length: number,
+	isValid: (value: number) => boolean = () => true,
+): StoredValue<readonly number[]> =>
+	new StoredValue(
+		key,
+		(value) => value.join(","),
+		(raw) => {
+			const values = raw.split(",").map(Number);
+			return values.length === length &&
+				values.every((value) => Number.isFinite(value) && isValid(value))
+				? values
+				: null;
+		},
+	);
 
 const enumValue = <T extends string>(
 	key: string,
@@ -76,6 +108,23 @@ export const storage = {
 		muted: booleanValue("player.muted"),
 		repeat: enumValue<RepeatMode>("player.repeat", ["off", "all", "one"]),
 		shuffle: booleanValue("player.shuffle"),
+	},
+	equalizer: {
+		/**
+		 * Whether the bands are applied or bypassed. Unset means on — which is
+		 * what `booleanValue` has to tell apart from a stored "false".
+		 */
+		enabled: booleanValue("equalizer.enabled"),
+		/** One gain in dB per band, in `EQ_BANDS` order. */
+		gains: numberListValue(
+			"equalizer.gains",
+			EQ_BANDS.length,
+			(value) => Math.abs(value) <= EQ_GAIN_LIMIT_DB,
+		),
+		preamp: numberValue(
+			"equalizer.preamp",
+			(value) => Math.abs(value) <= EQ_PREAMP_LIMIT_DB,
+		),
 	},
 	discover: {
 		/** The platform the Discover view searches. */
