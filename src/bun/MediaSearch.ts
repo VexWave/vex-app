@@ -5,6 +5,7 @@ import type {
 	SearchSource,
 } from "../shared/rpcSchema";
 import { describeError, type BinaryManager } from "./BinaryManager";
+import { rankHits, type HitSignals } from "./searchRanking";
 import {
 	childEnv,
 	cleanArtistName,
@@ -58,44 +59,13 @@ interface SearchEntry {
 }
 
 /**
- * Titles of things a music library wants no track of. Grouped rather than listed
- * one word per entry because a group is also the unit the query lifts (below):
- * asking for a "reaction" shouldn't stop lifting the penalty on "review".
- *
- * "Mix" needs both guards it has: no word boundary sits inside "remix", and the
- * lookbehind spares the electronic-release wordings ("Original Mix", "Extended
- * Mix") where a mix is one version of one track rather than a run of many.
- */
-const NON_SONG_PATTERNS = [
-	/\b(?:dj[ -]?set|mega ?mix|mixtape|(?<!\b(?:original|extended|club|radio|vip|dub|instrumental|festival)\s)mix)\b/,
-	/\b(?:full album|compilation|playlist|medley|nonstop)\b/,
-	/\blive (?:at|in|from|on|session|performance)\b/,
-	/\b\d+\s*hours?\b/,
-	/\b(?:reaction|review|interview|tutorial|podcast|trailer|karaoke|documentary|type beat)\b/,
-];
-
-/** What the query left standing of NON_SONG_PATTERNS, and why it matters. */
-interface Ranking {
-	/** The patterns that may still count against a title. */
-	penalties: readonly RegExp[];
-	/** The query asked for one of them, so long running media is wanted too. */
-	queryWantsLongForm: boolean;
-}
-
-/** Shorter than this is a clip or a preview snippet, not the track. */
-const MIN_SONG_SEC = 45;
-/** Songs run past 9 minutes; almost nothing past 15 is one. */
-const LONG_SONG_SEC = 9 * 60;
-const NOT_A_SONG_SEC = 15 * 60;
-
-/**
  * Searches YouTube/SoundCloud through the managed yt-dlp for the Discover view.
  * `--flat-playlist` keeps it to the platform's own search endpoint — no entry is
  * resolved — so one process answers a whole page in a single round-trip, fast
  * enough to return from the RPC request instead of streaming progress the way
- * downloads have to. The page is then re-ranked towards actual songs
- * (`songAffinity`), since neither platform's search knows it is answering a
- * music player.
+ * downloads have to. The page is then re-ranked against the query and towards
+ * actual songs (`./searchRanking`), since neither platform's search knows it is
+ * answering a music player.
  *
  * One search runs at a time: a new query kills the one still running, whose
  * results the webview has already stopped waiting for. That also bounds how many
@@ -186,18 +156,7 @@ function parseResults(
 	source: SearchSource,
 	query: string,
 ): MediaSearchResult[] {
-	// Patterns the query itself asks for stop counting against a title: someone
-	// searching for a two-hour mix is looking for exactly what the ranking would
-	// otherwise bury. What's left is what may still be penalised.
-	const lowerQuery = query.toLowerCase();
-	const penalties = NON_SONG_PATTERNS.filter(
-		(pattern) => !pattern.test(lowerQuery),
-	);
-	const ranking: Ranking = {
-		penalties,
-		queryWantsLongForm: penalties.length < NON_SONG_PATTERNS.length,
-	};
-	const scored: { result: MediaSearchResult; score: number }[] = [];
+	const hits: { result: MediaSearchResult; signals: HitSignals }[] = [];
 	for (const line of stdout.split(/\r?\n/)) {
 		if (!line.startsWith(RESULT_MARK)) continue;
 		let entry: SearchEntry;
@@ -213,7 +172,10 @@ function parseResults(
 		const title = entry.title?.trim();
 		if (!url || !title) continue;
 		const durationSec = ytDlpNumber(entry.duration);
-		scored.push({
+		// SoundCloud names only an uploader; YouTube sets both, and `channel` is
+		// the display name of the two.
+		const artist = cleanArtistName(entry.channel ?? entry.uploader);
+		hits.push({
 			result: {
 				// Source-prefixed so the id is a React key that holds whatever the
 				// platform numbers its media by, and falls back to the page URL for
@@ -221,63 +183,25 @@ function parseResults(
 				id: `${source}:${entry.id ?? url}`,
 				title,
 				url,
-				// SoundCloud names only an uploader; YouTube sets both, and
-				// `channel` is the display name of the two.
-				artist: cleanArtistName(entry.channel ?? entry.uploader),
+				artist,
 				durationSec,
 				thumbnailUrl: pickThumbnailUrl(entry.thumbnails),
 			},
-			score: songAffinity(entry, title.toLowerCase(), durationSec, ranking),
+			signals: {
+				title,
+				// The cleaned name, so a Topic channel's creator matches a query
+				// naming the artist as plainly as any other channel's does; the
+				// suffix itself travels as `topicChannel`.
+				creator: artist ?? "",
+				durationSec,
+				topicChannel: /\s-\s*Topic$/i.test(entry.channel ?? ""),
+				verified: entry.channel_is_verified === true,
+			},
 		});
 	}
-	// Array#sort is stable, so hits the ranking can't tell apart keep the
-	// platform's own relevance order — this reorders by songiness, it doesn't
-	// replace the search's judgement of what the query meant.
-	return scored
-		.sort((a, b) => b.score - a.score)
-		.map((entry) => entry.result);
-}
-
-/**
- * How much a hit looks like a song rather than something else that happens to
- * contain music. A search for a track otherwise competes with live sets, hour
- * long mixes, reactions and 30-second clips, all of which a music library only
- * ever wants further down.
- *
- * Nothing is dropped — the ranking can be wrong, and a demoted result is still
- * two rows away.
- */
-function songAffinity(
-	entry: SearchEntry,
-	lowerTitle: string,
-	durationSec: number | undefined,
-	{ penalties, queryWantsLongForm }: Ranking,
-): number {
-	let score = 0;
-
-	// YouTube's auto-generated per-artist channels ("Artist - Topic") carry
-	// nothing but released tracks, which also makes them the cleanest source of
-	// title and artist. Read off the raw channel: the artist name has already
-	// had the suffix stripped for display.
-	if (/\s-\s*Topic$/i.test(entry.channel ?? "")) score += 3;
-	// An "official" anything from a music search is the release itself.
-	if (/\bofficial\b/.test(lowerTitle)) score += 2;
-	if (entry.channel_is_verified) score += 1;
-
-	if (durationSec === undefined) {
-		score -= 4; // a live stream: no length, and nothing to download
-	} else if (durationSec < MIN_SONG_SEC) {
-		score -= 4;
-	} else if (durationSec <= LONG_SONG_SEC) {
-		score += 2;
-	} else if (durationSec > NOT_A_SONG_SEC && !queryWantsLongForm) {
-		score -= 3;
-	}
-
-	for (const pattern of penalties) {
-		if (pattern.test(lowerTitle)) score -= 3;
-	}
-	return score;
+	// The hits arrive in the platform's own relevance order, which the ranking
+	// reads as a signal in its own right rather than as a starting point.
+	return rankHits(hits, query).map((hit) => hit.result);
 }
 
 /**

@@ -11,6 +11,7 @@ Everything that talks to the network, the filesystem or the OS. The webview reac
 | `BinaryManager.ts` | Downloads yt-dlp/ffmpeg/ffprobe/deno into a per-user bin dir. |
 | `UrlImporter.ts` | Runs yt-dlp, one job at a time. |
 | `MediaSearch.ts` | yt-dlp searches of YouTube/SoundCloud for the Discover view. |
+| `searchRanking.ts` | Pure re-ranking of one page of those hits. No I/O, no yt-dlp. |
 | `ytDlp.ts` | Plumbing both yt-dlp callers share: the args every run passes, the child env, output reading, field parsing, failures. |
 | `WindowChrome.ts` | Win32 FFI (`bun:ffi`) for the dark title bar and the window/taskbar icon. Windows-only, best-effort. |
 | `DiscordPresence.ts` | Discord Rich Presence, spoken straight to the client's local IPC socket (no library). Best-effort: no Discord running is the normal case, not a fault. |
@@ -34,7 +35,7 @@ Only Windows and macOS have a bin dir, so `BinaryManager.isSupported` is false e
 
 - **A Discover search answers from inside its RPC request; downloads still can't.** `--flat-playlist` keeps a search to the platform's own search endpoint — no entry is resolved, so a whole page comes back in one round-trip of a few seconds. One search runs at a time: a new query kills the one still running, which then fails as superseded rather than resolving with results nobody asked for.
 - **A search's exit code doesn't decide whether it succeeded.** yt-dlp reports one unavailable entry or a failed continuation page by exit code while the hits it did resolve are already on stdout, so `MediaSearch` returns whatever parsed and only reports the failure when nothing did.
-- **Discover re-ranks its results towards songs, and never filters them.** Neither platform's search knows it is answering a music player, so a page of hits mixes the track with hour-long mixes, live sets, reactions and 30-second preview snippets — `songAffinity` scores those down (and Topic channels, "official" titles and song-length durations up), then a *stable* sort keeps the platform's relevance order among hits it can't tell apart. Nothing is dropped: the ranking can be wrong, and a demoted hit is still two rows away. Patterns the query itself contains stop counting against a title — a search for "lofi hip hop mix" must not bury mixes.
+- **All re-ranking is `searchRanking.ts`, and it never filters.** A pure function of one page plus the query — no I/O, no yt-dlp — so it can be checked against captured pages without running a search. Nothing is dropped: the ranking can be wrong, and a demoted hit is still two rows away. Weights are only comparable to each other, so moving one means re-checking the rest against real pages rather than reasoning about it.
 - **YouTube Music is not a search source.** yt-dlp does reach `music.youtube.com/search?q=…#songs`, but its flat entries carry only an id and a title — no duration, creator or thumbnail, i.e. nothing a result card draws — and without `--playlist-items` it pages through hundreds of hits for ~20s. Filling those fields in would cost one extraction per result.
 
 ## Discord Rich Presence
