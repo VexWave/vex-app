@@ -194,19 +194,17 @@ export type RoutePolicy = {
   throttle?: readonly [limit: number, windowMs: number];
 };
 
-// The three image routes serve any caller, with no token and no ownership
-// check, so that a client can point an `<img>` at them directly. Two things
-// follow, and both are accepted rather than overlooked:
+// The three image routes are public so that a client can point an `<img>` at
+// them directly. The text below states the consequence for API consumers; two
+// more are accepted rather than overlooked:
 //
-//   - Artist and playlist ids are sequential integers, so anyone can walk the
-//     range and pull down every user's artist avatars and playlist covers.
-//     Track covers are addressed by uuid and are not enumerable this way.
 //   - A 404 distinguishes "no such id" from "id exists but has no image",
 //     which tells an anonymous caller how many artists and playlists exist.
+//   - Track covers are addressed by uuid, so unlike artist and playlist images
+//     they are not enumerable by walking a range.
 //
 // Nothing else is public: the listings that hand out these URLs, and the audio
-// itself, are all scoped to the requesting user. Treat image bytes uploaded
-// here as world-readable.
+// itself, are all scoped to the requesting user.
 const PUBLIC_IMAGE_DISCLAIMER =
   "Public and un-scoped: this route serves the stored bytes to any caller, " +
   "with no token and no ownership check, so anything uploaded as an image " +
