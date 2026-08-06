@@ -55,8 +55,8 @@ export class PlayerController {
 			this.refresh();
 		});
 
-		// Subscribed after restoreSettings, so replaying the stored curve onto the
-		// equalizer doesn't immediately write it back out again.
+		// Subscribed after restoreSettings, which lands as one commit: earlier and
+		// the settings just read would be written straight back out.
 		this.player.equalizer.subscribe(() => this.persistEqualizer());
 	}
 
@@ -306,13 +306,11 @@ export class PlayerController {
 		if (repeat !== null) this.queue.setRepeatMode(repeat);
 		if (storage.player.shuffle.get()) this.queue.setShuffled(true);
 
-		const equalizer = this.player.equalizer;
-		const enabled = storage.equalizer.enabled.get();
-		if (enabled !== null) equalizer.setEnabled(enabled);
-		const gains = storage.equalizer.gains.get();
-		if (gains !== null) equalizer.setGains(gains);
-		const preamp = storage.equalizer.preamp.get();
-		if (preamp !== null) equalizer.setPreamp(preamp);
+		this.player.equalizer.restore({
+			enabled: storage.equalizer.enabled.get(),
+			gains: storage.equalizer.gains.get(),
+			preampDb: storage.equalizer.preamp.get(),
+		});
 	}
 
 	/** Persist the current volume/mute/repeat/shuffle so they survive a restart. */

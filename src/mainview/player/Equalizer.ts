@@ -110,16 +110,33 @@ export class Equalizer {
 		this.commit();
 	}
 
-	/** Set the whole curve at once — what a restored one arrives as. */
-	setGains(gains: readonly number[]): void {
-		this.gains = this.gains.map((current, index) =>
-			clamp(gains[index] ?? current, EQ_GAIN_LIMIT_DB),
-		);
+	/**
+	 * Put stored settings back, as one commit rather than one per field: a
+	 * subscriber cannot catch the restore half applied, and cannot hand it back
+	 * to storage as three separate changes either. A null field is a key that was
+	 * never written or failed validation, and leaves the default standing.
+	 */
+	restore(stored: {
+		enabled: boolean | null;
+		gains: readonly number[] | null;
+		preampDb: number | null;
+	}): void {
+		if (stored.enabled !== null) this.enabled = stored.enabled;
+		if (stored.gains !== null) {
+			const gains = stored.gains;
+			this.gains = this.gains.map((current, index) =>
+				clamp(gains[index] ?? current, EQ_GAIN_LIMIT_DB),
+			);
+		}
+		if (stored.preampDb !== null) {
+			this.preampDb = clamp(stored.preampDb, EQ_PREAMP_LIMIT_DB);
+		}
 		this.commit();
 	}
 
 	/** Back to flat: every band and the preamp at 0 dB. */
 	reset(): void {
+		if (this.preampDb === 0 && this.gains.every((gain) => gain === 0)) return;
 		this.gains = this.gains.map(() => 0);
 		this.preampDb = 0;
 		this.commit();
