@@ -61,6 +61,22 @@
 		--input: 0 0% 14.9%;
 		--ring: 0 0% 83.1%;
 	}
+
+	/*
+	 * The mark navigation puts on its selection, at the three lightnesses the
+	 * job needs: a core for the section switch's glow, an edge for the line
+	 * under it and the sidebar's badge wash, and one light enough to hold a
+	 * glyph beside a near-white label. Violet and not `primary`, which in this
+	 * theme is the same 98% as `foreground` — a glyph taking it comes out the
+	 * exact colour of the label next to it, which is no mark at all. Outside
+	 * the theme blocks because the accent is chosen against the app bar rather
+	 * than against the page, and so is the same violet either way.
+	 */
+	:root {
+		--nav: 270 88% 58%;
+		--nav-edge: 270 85% 66%;
+		--nav-bright: 270 82% 78%;
+	}
 }
 
 @layer base {
@@ -107,7 +123,9 @@
  *
  * Deliberately purple, not the `primary` token: primary is near-white in
  * the dark theme, and a thin white ring around a cover reads as a focus
- * outline rather than as playback.
+ * outline rather than as playback. Its four violets are its own rather than
+ * the `--nav` ramp above — base, arc, glow and the reduced-motion fallback
+ * each sit behind a different amount of masking and blur.
  */
 
 /* CSS can't see the device pixel grid; lib/devicePixelRatio.ts publishes it

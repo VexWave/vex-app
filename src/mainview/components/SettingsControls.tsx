@@ -102,12 +102,11 @@ export function SettingRow({
 }
 
 /**
- * An on/off switch in the app bar's own language: the knob is the raised pill
- * from `ViewSwitch`, and off is the groove it slides in — a black wash and an
- * inset shadow, since nothing in the palette reads as *cut into* a surface but
- * low-alpha black darkens whatever it is over. On, the track lights `primary`
- * and the knob turns to `background`, so the two never approach each other's
- * colour in either theme.
+ * An on/off switch drawn as a raised pill in the groove it slides in. The groove
+ * is a black wash and an inset shadow rather than a darker token, since nothing
+ * in the palette reads as *cut into* a surface but low-alpha black darkens
+ * whatever it is over. On, the track lights `primary` and the knob turns to
+ * `background`, so the two never approach each other's colour in either theme.
  */
 export function Toggle({
 	checked,

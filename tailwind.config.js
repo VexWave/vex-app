@@ -44,6 +44,20 @@ export default {
 					DEFAULT: "hsl(var(--card))",
 					foreground: "hsl(var(--card-foreground))",
 				},
+				nav: {
+					DEFAULT: "hsl(var(--nav))",
+					edge: "hsl(var(--nav-edge))",
+					bright: "hsl(var(--nav-bright))",
+				},
+			},
+			transitionTimingFunction: {
+				// Named rather than written at the call site as
+				// `ease-[cubic-bezier(…)]`: tailwindcss-animate claims the same
+				// `ease-` prefix for `animation-timing-function`, which makes any
+				// *arbitrary* value under it ambiguous — Tailwind warns and emits
+				// nothing, so the class silently does nothing. A named key is fine;
+				// both plugins simply take it.
+				swift: "cubic-bezier(0.22, 0.7, 0.2, 1)",
 			},
 			borderRadius: {
 				lg: "var(--radius)",

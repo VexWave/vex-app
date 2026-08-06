@@ -87,7 +87,7 @@ export function Sidebar() {
 								className={cn(
 									"h-4 w-4 shrink-0 transition-colors",
 									active
-										? "text-primary"
+										? "text-nav-bright"
 										: "text-muted-foreground group-hover:text-foreground",
 								)}
 							/>
@@ -100,8 +100,10 @@ export function Sidebar() {
 								<span
 									className={cn(
 										"ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[11px] font-medium leading-none tabular-nums transition-colors",
+										// Tinted, not filled: violet numerals on a violet
+										// fill would read worse than the state is worth.
 										active
-											? "bg-primary/15 text-foreground"
+											? "bg-nav-edge/20 text-foreground"
 											: "bg-muted/70 text-muted-foreground",
 									)}
 								>
