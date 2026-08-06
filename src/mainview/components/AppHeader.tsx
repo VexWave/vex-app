@@ -80,12 +80,13 @@ export function AppHeader() {
 					<ImportUrlButton />
 					<AddTracksButton />
 					{/* Ends the session everything else here depends on, so it is last
-					    and answers hover in the destructive colour rather than the
-					    row's. */}
+					    and answers hover in red rather than the row's colour. The red is
+					    a literal, not the destructive token: that token is a deep red in
+					    the dark theme and reads as barely lit against the bar. */}
 					<HeaderAction
 						icon={<LogOut />}
 						label="Log out"
-						className="hover:bg-destructive/10 hover:text-destructive"
+						className="hover:bg-destructive/10 hover:text-red-400"
 						onClick={() => void session.logout()}
 					/>
 				</div>
