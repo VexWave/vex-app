@@ -147,7 +147,7 @@ const requestLog = new Map<string, number[]>();
 
 type Handler = (
 	req: Request,
-	server: Bun.Server,
+	server: Bun.Server<undefined>,
 ) => Response | Promise<Response>;
 
 function policyOf(path: string): RoutePolicy {
@@ -199,7 +199,7 @@ function withPolicy(policy: RoutePolicy, handler: Handler): Handler {
  */
 function rateLimit(
 	req: Request,
-	server: Bun.Server,
+	server: Bun.Server<undefined>,
 	throttle: NonNullable<RoutePolicy["throttle"]>,
 ): Response | null {
 	const [limit, windowMs] =
@@ -250,7 +250,7 @@ Bun.serve({
 	port: PORT,
 	routes: withPolicies({
 		"/login": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				const { username, password } = (await req.json()) as {
 					username?: string;
 					password?: string;
@@ -265,7 +265,7 @@ Bun.serve({
 			},
 		},
 		"/postTrack": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -298,7 +298,7 @@ Bun.serve({
 			},
 		},
 		"/editTrack": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -329,7 +329,7 @@ Bun.serve({
 			},
 		},
 		"/postArtist": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -352,7 +352,7 @@ Bun.serve({
 			},
 		},
 		"/editArtist": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -378,7 +378,7 @@ Bun.serve({
 			},
 		},
 		"/deleteTrack": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -398,7 +398,7 @@ Bun.serve({
 			},
 		},
 		"/postPlaylist": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -428,7 +428,7 @@ Bun.serve({
 			},
 		},
 		"/editPlaylist": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -459,7 +459,7 @@ Bun.serve({
 			},
 		},
 		"/deletePlaylist": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -472,7 +472,7 @@ Bun.serve({
 			},
 		},
 		"/playlists": {
-			GET: (req) => {
+			GET: (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -500,7 +500,7 @@ Bun.serve({
 			},
 		},
 		"/deleteArtist": {
-			POST: async (req) => {
+			POST: async (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -513,7 +513,7 @@ Bun.serve({
 			},
 		},
 		"/artists": {
-			GET: (req) => {
+			GET: (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}
@@ -551,7 +551,7 @@ Bun.serve({
 			},
 		},
 		"/tracks": {
-			GET: (req) => {
+			GET: (req: Request) => {
 				if (!authorized(req)) {
 					return new Response("Invalid or missing token", { status: 401 });
 				}

@@ -19,6 +19,6 @@
 		"noUnusedParameters": true,
 		"noFallthroughCasesInSwitch": true
 	},
-	"include": ["src"],
+	"include": ["src", "contract"],
 	"exclude": ["node_modules", "dist", "build", "../../package/dist"]
 }

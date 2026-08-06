@@ -24,7 +24,7 @@ The app is entirely server-backed: a blocking login screen asks for host/port of
 - **bun only** — npm and node are not installed on this machine (the shadcn CLI fails for that reason; shadcn components are vendored by hand into `src/mainview/components/ui/`).
 - `bun run dev:hmr` — the one to develop with: Vite HMR on 5173 alongside the app. `bun run start` runs from bundled assets instead.
 - **`dev` and `build:stable` skip the Vite build**, unlike `start` and `build:canary` — both ship whatever `dist/` already held, which is a stale UI if the webview changed since.
-- `bunx tsc --noEmit` — type-check (no test framework or linter exists yet).
+- `bunx tsc --noEmit` — type-check the app (no test framework or linter exists yet). **`scripts/` is a second project** (`bunx tsc --noEmit -p scripts`): it runs under bun alone, and the root config's `DOM` lib collides with bun's own globals over `Response`/`BodyInit`.
 - `bun run scripts/test-server.ts` — throwaway backend for manual end-to-end testing (`test`/`test` on port 8790).
 - The README is a showcase page for GitHub readers only — it documents no commands, so `package.json` is the sole reference here.
 
