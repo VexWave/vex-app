@@ -1,3 +1,4 @@
+import { Equalizer } from "./Equalizer";
 import { TypedEventEmitter } from "./TypedEventEmitter";
 import type { Track } from "./types";
 
@@ -19,6 +20,11 @@ interface AudioPlayerEvents extends Record<string, unknown> {
 export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 	private audio: HTMLAudioElement;
 	private track: Track | null = null;
+	/**
+	 * The band settings, whether or not the graph they belong to exists yet — it
+	 * is built on the first playback, and they can be changed before that.
+	 */
+	readonly equalizer = new Equalizer();
 	/** Web Audio graph feeding the backdrop glow; built on the first playback. */
 	private context: AudioContext | null = null;
 	private analyserNode: AnalyserNode | null = null;
@@ -124,8 +130,8 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 	 * a context that is merely suspended — no user gesture yet — swallows the
 	 * audio with no way to hand it back. Hence the element is only captured
 	 * once the context is confirmed running, and if anything later in the setup
-	 * throws, the source is wired straight to the destination so sound survives
-	 * without an analyser.
+	 * throws, the source is wired straight to the destination so sound survives —
+	 * with neither an analyser nor the equalizer left in the path.
 	 */
 	private async ensureAnalyser(): Promise<void> {
 		if (this.context) {
@@ -161,7 +167,10 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 			// round off the transients before it ever sees them.
 			analyser.fftSize = 2048;
 			analyser.smoothingTimeConstant = 0.2;
-			source.connect(analyser);
+			// The equalizer comes before the analyser, so the spectrum the glow
+			// runs on is the one that reaches the speakers — a bass boost is
+			// something you see as well as hear.
+			this.equalizer.attach(context, source).connect(analyser);
 			analyser.connect(context.destination);
 			// Last line of defence for the silent-playback case above.
 			context.addEventListener("statechange", () => {
@@ -173,6 +182,7 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 			this.analyserNode = analyser;
 		} catch {
 			this.analyserNode = null;
+			this.equalizer.release();
 			if (source && context) {
 				// The element is captured for good; wire it straight to the
 				// output and keep the context, which now has to stay alive.

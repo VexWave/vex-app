@@ -1,4 +1,4 @@
-import { Compass, LibraryBig } from "lucide-react";
+import { Compass, LibraryBig, Settings } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import type { ComponentType, ReactNode } from "react";
 import type { SectionName } from "@/api/NavigationService";
@@ -29,6 +29,7 @@ export const SECTIONS: Record<
 > = {
 	library: { label: "Library", Icon: LibraryBig, Aside: Sidebar },
 	discover: { label: "Discover", Icon: Compass },
+	settings: { label: "Settings", Icon: Settings },
 };
 
 /**

@@ -1,0 +1,36 @@
+import { EqualizerPanel } from "@/components/EqualizerPanel";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+
+/**
+ * The app's preferences, which so far are the equalizer's. It stands in its own
+ * section rather than in a dialog because settings are a place to be, not an
+ * interruption — and like Discover it declares no aside (see
+ * `components/Sections`), so its column is centred in the window it takes rather
+ * than pushed against a sidebar.
+ *
+ * A setting added here is a `Group` of `SettingRow`s from `SettingsControls`,
+ * with its key declared in `lib/storage` and its state kept beside whatever it
+ * configures — a service under `api/` for most things, the playback core for the
+ * equalizer.
+ */
+export function SettingsView() {
+	return (
+		<div className="flex h-full flex-col">
+			{/* The same plain heading every view wears — the switch already names
+			    this one in the app bar, glyph and all. */}
+			<div className="flex items-center gap-3 px-4 py-2.5">
+				<h2 className="shrink-0 text-sm font-semibold">Settings</h2>
+			</div>
+			<Separator />
+
+			<ScrollArea className="min-h-0 flex-1">
+				{/* A measure rather than the full width: this is a column of prose and
+				    controls, and the section brings no aside to take the rest. */}
+				<div className="mx-auto flex max-w-2xl flex-col gap-5 p-5">
+					<EqualizerPanel />
+				</div>
+			</ScrollArea>
+		</div>
+	);
+}

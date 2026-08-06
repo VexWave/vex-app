@@ -10,6 +10,7 @@ import { Logo } from "@/components/Logo";
 import { PlayerBar } from "@/components/PlayerBar";
 import { PlaylistsView } from "@/components/PlaylistsView";
 import { SECTIONS } from "@/components/Sections";
+import { SettingsView } from "@/components/SettingsView";
 import { TrackList } from "@/components/TrackList";
 import { UploadReviewDialog } from "@/components/UploadReviewDialog";
 import { YtDlpUpdateBanner } from "@/components/YtDlpUpdateBanner";
@@ -31,6 +32,7 @@ const VIEWS: Record<MainViewName, ComponentType> = {
 	discover: DiscoverView,
 	playlists: PlaylistsView,
 	artists: ArtistsView,
+	settings: SettingsView,
 };
 
 function App() {
