@@ -1,6 +1,6 @@
 import { connect, type Socket } from "node:net";
 import { trackImagePath } from "../../contract/contract";
-import type { PresenceTrack } from "../shared/rpcSchema";
+import type { PresenceStatus, PresenceTrack } from "../shared/rpcSchema";
 
 /**
  * Discord Rich Presence, spoken directly to the desktop client's local IPC
@@ -17,6 +17,13 @@ import type { PresenceTrack } from "../shared/rpcSchema";
  * is no card at all rather than an idle one, and nothing is published until the
  * first track starts.
  *
+ * Whether it runs at all is the user's, through the switch in the webview's
+ * settings — nothing here connects until that switch is announced. Switched off
+ * is off rather than merely silent: the socket is dropped and the sweeps stop,
+ * so a user who has said no to the integration has no connection to Discord
+ * left open. Nothing has to be sent to clear the card, because Discord takes an
+ * activity down with the socket that set it.
+ *
  * The whole integration is best-effort and quiet by design. Discord not being
  * installed or not running is the ordinary case rather than a fault, so a
  * failed connection only schedules another attempt — nothing surfaces to the
@@ -28,7 +35,7 @@ import type { PresenceTrack } from "../shared/rpcSchema";
  * Presence is always attributed to an application, so this has to be a real id
  * from https://discord.com/developers/applications: its name is what Discord
  * prints as "Listening to …", and its uploaded art assets are what the keys
- * below resolve against. Empty disables the integration outright.
+ * below resolve against.
  *
  * Checked in rather than configured. The id is not a secret — it rides in every
  * presence payload and names the app to every client that renders one — and a
@@ -111,6 +118,14 @@ interface Activity {
 }
 
 export class DiscordPresence {
+	/** What the webview's switch last said. Off until one says otherwise. */
+	private enabled = false;
+	/**
+	 * Whether a pass over the sockets is already walking them. Two passes would
+	 * each connect, and the one that didn't end up in `socket` would keep feeding
+	 * `inbox` from a second Discord, desyncing the frames of the one that did.
+	 */
+	private sweeping = false;
 	private socket: Socket | null = null;
 	/** Carries the partial tail of a frame split across reads. */
 	private inbox: Buffer = Buffer.alloc(0);
@@ -138,22 +153,28 @@ export class DiscordPresence {
 		 * logged out — the origin cover URLs are built against.
 		 */
 		private readonly resolveBaseUrl: () => string | null,
-		private readonly applicationId: string = APPLICATION_ID,
+		/**
+		 * Announces a change in the connection nobody asked for — Discord
+		 * answering, or going away. What a switch does is answered by
+		 * `setEnabled` itself.
+		 */
+		private readonly onStatus: (status: PresenceStatus) => void,
 	) {}
 
 	/**
-	 * Begins connecting, and keeps trying for as long as the app runs. Safe to
-	 * call before anything is playing: a connection with nothing to advertise
-	 * publishes nothing.
+	 * Turns the integration on or off, as the webview's setting says, and hands
+	 * back where that left the connection. On, it begins connecting and keeps
+	 * trying for as long as it stays on — safe before anything is playing, a
+	 * connection with nothing to advertise publishing nothing. Off, the
+	 * connection goes and no more are attempted.
 	 */
-	start(): void {
-		if (!this.applicationId) {
-			console.log(
-				"Discord Rich Presence: disabled (no application id — fill in APPLICATION_ID in src/bun/DiscordPresence.ts).",
-			);
-			return;
+	setEnabled(enabled: boolean): PresenceStatus {
+		if (enabled !== this.enabled) {
+			this.enabled = enabled;
+			if (enabled) void this.sweep();
+			else this.disconnect();
 		}
-		void this.sweep();
+		return this.status();
 	}
 
 	/**
@@ -174,20 +195,35 @@ export class DiscordPresence {
 	 * accepts. A sweep that finds nothing schedules the next one.
 	 */
 	private async sweep(): Promise<void> {
-		for (const path of socketPaths()) {
-			const socket = await openSocket(path);
-			if (socket) {
-				this.attach(socket);
-				return;
+		// Switching off and on again during a pass would otherwise start a second
+		// one beside it; the pass already running answers for both, since it reads
+		// `enabled` as it goes.
+		if (this.sweeping) return;
+		this.sweeping = true;
+		try {
+			for (const path of socketPaths()) {
+				const socket = await openSocket(path);
+				// A pass walks every socket Discord might be on, one connect attempt
+				// at a time, so the switch can go off in the middle of one.
+				if (!this.enabled) {
+					socket?.destroy();
+					return;
+				}
+				if (socket) {
+					this.attach(socket);
+					return;
+				}
 			}
+			if (!this.loggedOffline) {
+				console.log(
+					"Discord Rich Presence: no Discord client found — retrying in the background.",
+				);
+				this.loggedOffline = true;
+			}
+			this.scheduleSweep();
+		} finally {
+			this.sweeping = false;
 		}
-		if (!this.loggedOffline) {
-			console.log(
-				"Discord Rich Presence: no Discord client found — retrying in the background.",
-			);
-			this.loggedOffline = true;
-		}
-		this.scheduleSweep();
 	}
 
 	private scheduleSweep(): void {
@@ -209,8 +245,8 @@ export class DiscordPresence {
 		this.shown = false;
 		this.loggedError = false;
 		socket.on("data", (chunk: Buffer) => this.receive(chunk));
-		socket.on("close", () => this.detach());
-		this.writeJson(OP_HANDSHAKE, { v: 1, client_id: this.applicationId });
+		socket.on("close", () => this.detach(socket));
+		this.writeJson(OP_HANDSHAKE, { v: 1, client_id: APPLICATION_ID });
 		// Something is listening on a Discord socket but not answering as one.
 		this.handshakeTimer = setTimeout(() => {
 			this.handshakeTimer = null;
@@ -219,7 +255,15 @@ export class DiscordPresence {
 		this.handshakeTimer.unref?.();
 	}
 
-	private detach(): void {
+	private detach(socket: Socket): void {
+		// A close always arrives after the fact, and by then this may not be the
+		// connection any more: `disconnect` lets go of the socket it destroys, so a
+		// deliberate switch-off lands here holding one nobody is keeping — and by
+		// then the switch may be back on with another already in its place, which
+		// tearing down on this one would take with it. What gets past this guard is
+		// therefore always a connection lost rather than dropped, and always worth
+		// reaching for the next one.
+		if (this.socket !== socket) return;
 		const wasReady = this.ready;
 		this.socket = null;
 		this.ready = false;
@@ -227,6 +271,7 @@ export class DiscordPresence {
 		this.clearTimer("handshakeTimer");
 		this.clearTimer("updateTimer");
 		if (wasReady) {
+			this.reportStatus();
 			console.log("Discord Rich Presence: Discord went away, reconnecting.");
 			// That line covers the outage; the sweeps it is about to start would
 			// otherwise announce the same thing again. A later READY clears this,
@@ -234,6 +279,29 @@ export class DiscordPresence {
 			this.loggedOffline = true;
 		}
 		this.scheduleSweep();
+	}
+
+	/**
+	 * Lets go of Discord for as long as the switch stays off. Closing the socket
+	 * is also what takes the card down, so nothing is sent on the way out — and
+	 * the close lands in `detach`, which stops at the check above rather than
+	 * reaching for the next connection.
+	 */
+	private disconnect(): void {
+		const socket = this.socket;
+		// Let go of it here rather than waiting for its close: the status that goes
+		// out with the switch is then already the right one, and a close arriving
+		// after the switch is back on can't reach past `detach`'s guard.
+		this.socket = null;
+		this.ready = false;
+		// What was playing is no longer anything this end knows. The webview
+		// states it again on the way back on, and until it does there is nothing
+		// here old enough to be wrong.
+		this.now = null;
+		this.clearTimer("reconnectTimer");
+		this.clearTimer("handshakeTimer");
+		this.clearTimer("updateTimer");
+		socket?.destroy();
 	}
 
 	// --- receiving ---
@@ -286,6 +354,7 @@ export class DiscordPresence {
 			console.log(
 				`Discord Rich Presence: connected${user?.username ? ` as ${user.username}` : ""}.`,
 			);
+			this.reportStatus();
 			this.schedule();
 			return;
 		}
@@ -412,7 +481,22 @@ export class DiscordPresence {
 		socket.write(frame);
 	}
 
-	private clearTimer(name: "handshakeTimer" | "updateTimer"): void {
+	/**
+	 * States where the connection stands. Connected means the socket is up, not
+	 * that a card is showing — that depends on something playing.
+	 */
+	private status(): PresenceStatus {
+		return { connected: this.ready };
+	}
+
+	/** For a change the webview didn't cause and so isn't waiting on. */
+	private reportStatus(): void {
+		this.onStatus(this.status());
+	}
+
+	private clearTimer(
+		name: "handshakeTimer" | "updateTimer" | "reconnectTimer",
+	): void {
 		const timer = this[name];
 		if (!timer) return;
 		clearTimeout(timer);

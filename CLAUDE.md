@@ -45,7 +45,7 @@ Schema in `src/shared/rpcSchema.ts`, webview singleton in `src/mainview/api/rpc.
 - Long-running work (binary installs, URL imports) returns from its RPC immediately and streams progress as **pushed messages** (`binaryProgress`, `urlImportProgress`) — those downloads outlive even the 120 s timeout.
 - A 401 returns to the login screen. RPC results carry the status; a 401 on the stream path has no RPC to ride, so bun pushes a `sessionExpired` message instead.
 - **A 429 is waited out, never retried into.** `Retry-After` rides the failure as `RpcFailure.retryAfterSec`; the login screen counts it down on a disabled button, since login is the one route with a throttle tight enough to hit by hand. Nothing retries itself — a background refresh that was told to back off shows its error instead of quietly continuing to knock.
-- Presence is the one thing pushed *to* bun as a message rather than a request (`presenceChanged`) — nothing is returned and nothing waits on it, and a dropped update is corrected by the next one.
+- Presence is the one thing pushed *to* bun as a message rather than a request (`presenceChanged`) — nothing is returned and nothing waits on it, and a dropped update is corrected by the next one. **State that can't correct itself that way is a request**: the presence switch is `setPresenceEnabled`, answered with the connection it left behind.
 
 ### Payload ceilings
 

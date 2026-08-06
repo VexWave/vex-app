@@ -1,18 +1,19 @@
+import { DiscordPanel } from "@/components/DiscordPanel";
 import { EqualizerPanel } from "@/components/EqualizerPanel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
 /**
- * The app's preferences, which so far are the equalizer's. It stands in its own
- * section rather than in a dialog because settings are a place to be, not an
- * interruption — and like Discover it declares no aside (see
+ * The app's preferences: the equalizer, and the Discord presence. It stands in
+ * its own section rather than in a dialog because settings are a place to be,
+ * not an interruption — and like Discover it declares no aside (see
  * `components/Sections`), so its column is centred in the window it takes rather
  * than pushed against a sidebar.
  *
- * A setting added here is a `Group` of `SettingRow`s from `SettingsControls`,
- * with its key declared in `lib/storage` and its state kept beside whatever it
- * configures — a service under `api/` for most things, the playback core for the
- * equalizer.
+ * A setting added here is a `Group` from `SettingsControls` — of `SettingRow`s
+ * where it has more to say than the switch in its header — with its key declared
+ * in `lib/storage` and its state kept beside whatever it configures: a service
+ * under `api/` for most things, the playback core for the equalizer.
  */
 export function SettingsView() {
 	return (
@@ -29,6 +30,7 @@ export function SettingsView() {
 				    controls, and the section brings no aside to take the rest. */}
 				<div className="mx-auto flex max-w-2xl flex-col gap-5 p-5">
 					<EqualizerPanel />
+					<DiscordPanel />
 				</div>
 			</ScrollArea>
 		</div>

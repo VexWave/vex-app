@@ -126,6 +126,10 @@ export const storage = {
 			(value) => Math.abs(value) <= EQ_PREAMP_LIMIT_DB,
 		),
 	},
+	discord: {
+		/** Whether the Rich Presence runs at all. Unset means on. */
+		presenceEnabled: booleanValue("discord.presenceEnabled"),
+	},
 	discover: {
 		/** The platform the Discover view searches. */
 		source: enumValue<SearchSource>("discover.source", [

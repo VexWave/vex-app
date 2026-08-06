@@ -1,12 +1,13 @@
 # src/mainview/api — the webview's services
 
-`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. **Add new state here, not in component-local state.**
+`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. **Add new state here, not in component-local state.**
 
-Three modules here are not services:
+Two modules here are not services:
 
 - `rpc.ts` — the Electroview singleton. `bun.…` for requests, `onBunMessage` for pushed messages, `notifyBun.…` for fire-and-forget.
 - `idListEdit.ts` — see below.
-- `presenceBridge.ts` — no rendered state, no hook, just a player subscription that forwards to bun. It narrows the player's several-times-a-second notifications down to the changes Discord would actually render, and sends `null` for a pause (there is no paused presence — see `src/bun/CLAUDE.md`).
+
+`PresenceService` is the odd one: the only service whose state is mostly *outbound*. It narrows the player's several-times-a-second notifications down to the changes Discord would actually render and sends `null` for a pause (there is no paused presence — see `src/bun/CLAUDE.md`); what it renders is only the Settings panel's switch and the connection bun reports back. **The switch is the app's, not bun's** — a user preference, so it is persisted here and announced to a bun process that keeps no copy. That announcement is a request, not a push: a track update that goes missing is corrected by the next one, a switch that goes missing is not.
 
 Every service that holds server data clears it on logout and refetches on login, keyed off `SessionService`'s status. A mutation refetches rather than patching locally, because the server assigns ids. That refetch is also the whole of how a replaced cover or avatar reaches the screen: an image URL names the version of the bytes behind it, so new bytes arrive under a new URL and nothing here has to force the webview to let go of the old one.
 

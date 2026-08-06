@@ -377,6 +377,28 @@ export interface PresenceMessage {
 	track: PresenceTrack | null;
 }
 
+/**
+ * Whether the integration runs at all. The setting is the webview's — it is a
+ * user preference, and localStorage is the app's only persistence — so bun holds
+ * no default and no copy of its own, and is told where it stands by every
+ * webview that starts.
+ */
+export interface SetPresenceEnabledParams {
+	enabled: boolean;
+}
+
+/**
+ * Whether a Discord client is answering right now, which is what the settings
+ * panel reports. Connected says the IPC socket is up, not that a card is
+ * showing: there is no card unless something is playing.
+ *
+ * Both the answer to `setPresenceEnabled` and what bun pushes when this changes
+ * without being asked — they are the same fact, so they are the same shape.
+ */
+export interface PresenceStatus {
+	connected: boolean;
+}
+
 export type PlayerRPC = {
 	bun: RPCSchema<{
 		requests: {
@@ -425,6 +447,19 @@ export type PlayerRPC = {
 			 * then fails rather than resolving with results nobody asked for.
 			 */
 			searchMedia: { params: SearchMediaParams; response: SearchMediaResult };
+			/**
+			 * Switches the Discord presence on or off, and answers with where the
+			 * connection stands. A request rather than a message because this is
+			 * the one thing about the presence that can't put itself right later:
+			 * a track update that goes missing is corrected by the next one, while
+			 * a setting that goes missing leaves bun disagreeing with the switch
+			 * until the user touches it again. Nothing can fail here, so the answer
+			 * carries no failure shape — only the state it left behind.
+			 */
+			setPresenceEnabled: {
+				params: SetPresenceEnabledParams;
+				response: PresenceStatus;
+			};
 		};
 		messages: {
 			/**
@@ -451,6 +486,12 @@ export type PlayerRPC = {
 			binaryProgress: BinaryProgressMessage;
 			/** Progress/completion stream of running URL imports. */
 			urlImportProgress: UrlImportProgressMessage;
+			/**
+			 * Discord answering, or going away, with nobody having asked — the
+			 * changes that happen on Discord's schedule rather than the user's.
+			 * What a switch does is answered by `setPresenceEnabled` itself.
+			 */
+			presenceStatus: PresenceStatus;
 		};
 	}>;
 };
