@@ -1,4 +1,8 @@
-import { initContract, insertParamsIntoPath } from "@ts-rest/core";
+import {
+  convertQueryParamsToUrlString,
+  initContract,
+  insertParamsIntoPath,
+} from "@ts-rest/core";
 import { z } from "zod";
 
 const c = initContract();
@@ -181,11 +185,17 @@ export type RoutePolicy = {
 
   /**
    * How the response may be cached. The default forbids storing it at all.
-   * `"private"` keeps a per-user body out of shared caches while still
-   * letting the browser reuse it; `"shared"` is for bodies any caller may
-   * read, and leaves caching to the client and any CDN in front.
+   *
+   * `"versioned"` is for public bytes whose URL carries a content version
+   * (`?v=<hash>`, see `artistImagePath` and friends): a request that pins one
+   * has named the exact bytes it wants, so the answer can be kept forever —
+   * an edit publishes new bytes under a new URL rather than hiding behind the
+   * cached old ones. A request that pins nothing revalidates every time.
+   *
+   * `"private-immutable"` is for per-user bytes that never change for a given
+   * URL: the caller may keep them forever, shared caches may not store them.
    */
-  cache?: "private" | "shared";
+  cache?: "versioned" | "private-immutable";
 
   /**
    * A stricter per-address request budget than the blanket one, as
@@ -210,6 +220,22 @@ const PUBLIC_IMAGE_DISCLAIMER =
   "with no token and no ownership check, so anything uploaded as an image " +
   "is world-readable. Artist and playlist ids are sequential, so their " +
   "images are enumerable by anyone.";
+
+// The content version of the bytes a listing pointed at, carried by the URLs
+// in `imageUrl` / `coverUrl`. It is a cache key rather than an argument: the
+// route answers with the image it holds now whatever the caller pins, and a
+// version it doesn't recognise costs that caller nothing but a revalidation.
+// Unparseable values are therefore ignored rather than rejected — an `<img>`
+// pointed at a hand-written URL has to keep working.
+const ImageVersionQuery = z.object({
+  v: z.string().max(64).optional().catch(undefined),
+});
+
+const IMAGE_CACHING_NOTE =
+  " Responses carry an `ETag` and answer a conditional request with `304`. A " +
+  "URL that pins the current version (`?v=…`, as handed out by the listings) " +
+  "may be cached indefinitely — new bytes always arrive under a new URL; " +
+  "without one the client revalidates on every use.";
 
 export const ApiContract = c.router(
   {
@@ -328,6 +354,7 @@ export const ApiContract = c.router(
       method: "GET",
       path: "/artist/:id/image",
       pathParams: z.object({ id: z.coerce.number() }),
+      query: ImageVersionQuery,
       responses: {
         // Raw stored image bytes. The declared contentType is a fallback;
         // servers should send the real image MIME when they know it.
@@ -335,17 +362,20 @@ export const ApiContract = c.router(
           contentType: "application/octet-stream",
           body: c.type<Uint8Array>(),
         }),
+        // The caller's copy is current (`If-None-Match` matched the ETag).
+        304: c.noBody(),
         404: z.string(),
         ...RateLimited,
       },
       summary: "Get an artist's raw image bytes (public, no auth required)",
-      description: PUBLIC_IMAGE_DISCLAIMER,
-      metadata: { public: true, cache: "shared" } satisfies RoutePolicy,
+      description: PUBLIC_IMAGE_DISCLAIMER + IMAGE_CACHING_NOTE,
+      metadata: { public: true, cache: "versioned" } satisfies RoutePolicy,
     },
     getTrackImage: {
       method: "GET",
       path: "/track/:id/image",
       pathParams: z.object({ id: z.uuid() }),
+      query: ImageVersionQuery,
       responses: {
         // Raw stored image bytes. The declared contentType is a fallback;
         // servers should send the real image MIME when they know it.
@@ -353,12 +383,14 @@ export const ApiContract = c.router(
           contentType: "application/octet-stream",
           body: c.type<Uint8Array>(),
         }),
+        // The caller's copy is current (`If-None-Match` matched the ETag).
+        304: c.noBody(),
         404: z.string(),
         ...RateLimited,
       },
       summary: "Get a track's raw cover image bytes (public, no auth required)",
-      description: PUBLIC_IMAGE_DISCLAIMER,
-      metadata: { public: true, cache: "shared" } satisfies RoutePolicy,
+      description: PUBLIC_IMAGE_DISCLAIMER + IMAGE_CACHING_NOTE,
+      metadata: { public: true, cache: "versioned" } satisfies RoutePolicy,
     },
     editArtist: {
       method: "POST",
@@ -395,6 +427,8 @@ export const ApiContract = c.router(
           contentType: "application/octet-stream",
           body: c.type<Uint8Array>(),
         }),
+        // The caller's copy is current (`If-None-Match` matched the ETag).
+        304: c.noBody(),
         401: z.string(),
         404: z.string(),
         416: z.string(),
@@ -409,10 +443,13 @@ export const ApiContract = c.router(
         "verbatim and un-encoded. Clients that need progressive bytes (the " +
         "app's bun-side stream proxy) fetch this route directly via " +
         "`trackAudioPath` — the ts-rest fetch client buffers response " +
-        "bodies, which would defeat streaming.",
-      // Per-user bytes, but whole tracks: refusing to cache them would cost
-      // more than it protects, so they stay out of shared caches only.
-      metadata: { cache: "private" } satisfies RoutePolicy,
+        "bodies, which would defeat streaming. A track's audio never " +
+        "changes once uploaded, so a client may keep a downloaded copy for " +
+        "as long as the track exists.",
+      // A track's stored audio is write-once — no route replaces it — so its
+      // id addresses those bytes for good and the caller can hold on to them
+      // indefinitely. Per-user, so no shared cache may keep a copy.
+      metadata: { cache: "private-immutable" } satisfies RoutePolicy,
     },
     editTrack: {
       method: "POST",
@@ -497,6 +534,7 @@ export const ApiContract = c.router(
       method: "GET",
       path: "/playlist/:id/image",
       pathParams: z.object({ id: z.coerce.number() }),
+      query: ImageVersionQuery,
       responses: {
         // Raw stored image bytes. The declared contentType is a fallback;
         // servers should send the real image MIME when they know it.
@@ -504,13 +542,15 @@ export const ApiContract = c.router(
           contentType: "application/octet-stream",
           body: c.type<Uint8Array>(),
         }),
+        // The caller's copy is current (`If-None-Match` matched the ETag).
+        304: c.noBody(),
         404: z.string(),
         ...RateLimited,
       },
       summary:
         "Get a playlist's raw cover-image bytes (public, no auth required)",
-      description: PUBLIC_IMAGE_DISCLAIMER,
-      metadata: { public: true, cache: "shared" } satisfies RoutePolicy,
+      description: PUBLIC_IMAGE_DISCLAIMER + IMAGE_CACHING_NOTE,
+      metadata: { public: true, cache: "versioned" } satisfies RoutePolicy,
     },
   },
   {
@@ -531,31 +571,35 @@ export const trackAudioPath = (trackId: string) =>
   });
 
 /**
+ * Concrete request path for one of the image routes, pinned to the version of
+ * the bytes the caller was told about so that the answer can be cached for
+ * good: editing the image changes the hash, and the client learns the new URL
+ * from its next listing instead of holding a copy that has quietly gone stale.
+ *
+ * The three routes below differ only in which path they fill in and how their
+ * id is spelled, so each is one line over this.
+ */
+const imagePath = (path: string, id: string | number, version?: string) =>
+  insertParamsIntoPath({ path, params: { id: String(id) } }) +
+  convertQueryParamsToUrlString({ v: version });
+
+/**
  * Concrete request path for `getArtistImage`. Returned as `imageUrl` on artist
  * listings so clients know where to fetch the raw image bytes.
  */
-export const artistImagePath = (artistId: number) =>
-  insertParamsIntoPath({
-    path: ApiContract.getArtistImage.path,
-    params: { id: String(artistId) },
-  });
+export const artistImagePath = (artistId: number, version?: string) =>
+  imagePath(ApiContract.getArtistImage.path, artistId, version);
 
 /**
  * Concrete request path for `getTrackImage`. Returned as `coverUrl` on track
  * listings so clients know where to fetch the raw cover-image bytes.
  */
-export const trackImagePath = (trackId: string) =>
-  insertParamsIntoPath({
-    path: ApiContract.getTrackImage.path,
-    params: { id: trackId },
-  });
+export const trackImagePath = (trackId: string, version?: string) =>
+  imagePath(ApiContract.getTrackImage.path, trackId, version);
 
 /**
  * Concrete request path for `getPlaylistImage`. Returned as `imageUrl` on
  * playlist listings so clients know where to fetch the raw cover-image bytes.
  */
-export const playlistImagePath = (playlistId: number) =>
-  insertParamsIntoPath({
-    path: ApiContract.getPlaylistImage.path,
-    params: { id: String(playlistId) },
-  });
+export const playlistImagePath = (playlistId: number, version?: string) =>
+  imagePath(ApiContract.getPlaylistImage.path, playlistId, version);

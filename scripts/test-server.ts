@@ -175,7 +175,11 @@ function withPolicy(policy: RoutePolicy, handler: Handler): Handler {
 			: policy.body === "image"
 				? MAX_IMAGE_BASE64 + BODY_SLACK
 				: BODY_SLACK;
-	return async (req, server) => {
+	// Everything that can answer this route, so the caching rule below covers a
+	// throttled or oversized request as much as a served one — those are
+	// answered here rather than by the handler, and are exactly the replies
+	// nothing should be holding on to.
+	const respond: Handler = async (req, server) => {
 		const limited = policy.throttle
 			? rateLimit(req, server, policy.throttle)
 			: null;
@@ -184,10 +188,23 @@ function withPolicy(policy: RoutePolicy, handler: Handler): Handler {
 			console.log(`413 ${new URL(req.url).pathname} (over ${bodyLimit}B)`);
 			return new Response("request body too large", { status: 413 });
 		}
-		const res = await handler(req, server);
-		// Only what the route actually served is cacheable — a 404 answered with
-		// `public, max-age=…` would have every client hold on to the miss.
-		if (res.ok) res.headers.set("cache-control", cacheControl(policy.cache));
+		return handler(req, server);
+	};
+	return async (req, server) => {
+		const res = await respond(req, server);
+		// A 304 is not a failure: it is how a caller revalidates a copy it holds,
+		// and it carries the freshness headers that copy is updated with. A
+		// handler that stated its own answer keeps it — on a versioned route only
+		// `serveImage` knows whether the URL pinned the version it served.
+		if (res.status !== 304 && !res.headers.has("cache-control")) {
+			// A route's promise about its bytes must not be inherited by its
+			// failures — a 404 or a 429 answered with `max-age=…` would have
+			// every client go on holding what caused it.
+			res.headers.set(
+				"cache-control",
+				res.ok ? cacheControl(policy.cache) : "no-store",
+			);
+		}
 		return res;
 	};
 }
@@ -221,11 +238,80 @@ function rateLimit(
 	return null;
 }
 
-/** The contract's default is that a response is never stored at all. */
+/**
+ * The contract's default is that a response is never stored at all, which is
+ * also what a `"versioned"` route falls back to: there is no blanket answer for
+ * one, since only the handler knows whether the URL pinned the version it ended
+ * up serving, so `serveImage` states it per response and this catches the case
+ * where something forgot to.
+ */
 function cacheControl(cache: RoutePolicy["cache"]): string {
-	if (cache === "shared") return "public, max-age=3600";
-	if (cache === "private") return "private, max-age=3600";
+	if (cache === "private-immutable") {
+		return "private, max-age=31536000, immutable";
+	}
 	return "no-store";
+}
+
+/**
+ * Hashes already computed, keyed by the stored array itself. A listing hashes
+ * every image it lists, and at the contract's ceiling that would be megabytes
+ * of md5 per refresh — and every refresh after every edit. Stored bytes are
+ * replaced wholesale rather than written into, so array identity is a sound
+ * key; this is what stands in for the column the real backend generates.
+ */
+const imageHashes = new WeakMap<Uint8Array, string>();
+
+/**
+ * The content version of an image, as the contract's image URLs carry it. The
+ * real backend has Postgres generate `md5(<image>)` into a column beside the
+ * bytes; hashing them here makes the same promise — a version that changes
+ * exactly when the bytes do — with no database to generate it.
+ */
+function imageHash(bytes: Uint8Array): string {
+	const known = imageHashes.get(bytes);
+	if (known !== undefined) return known;
+	const hash = new Bun.CryptoHasher("md5").update(bytes).digest("hex");
+	imageHashes.set(bytes, hash);
+	return hash;
+}
+
+/**
+ * Whether the caller's `If-None-Match` names `etag`, accepting `*`, a list, and
+ * the weak prefix as the real backend does. Exact string equality would answer
+ * a perfectly legal revalidation with the whole image.
+ */
+function etagMatches(header: string | null, etag: string): boolean {
+	if (header === null) return false;
+	if (header.trim() === "*") return true;
+	return header
+		.split(",")
+		.some((candidate) => candidate.trim().replace(/^W\//, "") === etag);
+}
+
+/**
+ * Answers one of the three image routes the way the real backend does, so the
+ * app's stream proxy gets exercised on the path it actually takes: bytes tagged
+ * with the version their URL may pin, keepable for good only when the caller
+ * named the version being served, and a bare 304 when the caller already holds
+ * it. The 404 is left bare — `withPolicy` marks every failure `no-store`.
+ */
+function serveImage(req: Request, bytes: Uint8Array | undefined): Response {
+	if (!bytes) return new Response("not found", { status: 404 });
+	const hash = imageHash(bytes);
+	const etag = `"${hash}"`;
+	const headers: Record<string, string> = {
+		etag,
+		"cache-control":
+			new URL(req.url).searchParams.get("v") === hash
+				? "public, max-age=31536000, immutable"
+				: "public, no-cache",
+	};
+	if (etagMatches(req.headers.get("if-none-match"), etag)) {
+		return new Response(null, { status: 304, headers });
+	}
+	return new Response(bytes, {
+		headers: { ...headers, "content-type": "application/octet-stream" },
+	});
 }
 
 /** Applies each route's policy to every method it serves. */
@@ -483,7 +569,9 @@ Bun.serve({
 						id,
 						name,
 						trackIds,
-						imageUrl: image ? playlistImagePath(id) : undefined,
+						imageUrl: image
+							? playlistImagePath(id, imageHash(image))
+							: undefined,
 					})),
 				);
 			},
@@ -491,13 +579,8 @@ Bun.serve({
 		// ApiContract.getPlaylistImage ("/playlist/:id/image"): raw stored
 		// cover-image bytes, public (no auth) per the contract.
 		[ApiContract.getPlaylistImage.path]: {
-			GET: (req: Bun.BunRequest<typeof ApiContract.getPlaylistImage.path>) => {
-				const playlist = playlists.get(Number(req.params.id));
-				if (!playlist?.image) return new Response("not found", { status: 404 });
-				return new Response(playlist.image, {
-					headers: { "content-type": "application/octet-stream" },
-				});
-			},
+			GET: (req: Bun.BunRequest<typeof ApiContract.getPlaylistImage.path>) =>
+				serveImage(req, playlists.get(Number(req.params.id))?.image),
 		},
 		"/deleteArtist": {
 			POST: async (req: Request) => {
@@ -523,7 +606,9 @@ Bun.serve({
 					[...artists.values()].map(({ id, name, image }) => ({
 						id,
 						name,
-						imageUrl: image ? artistImagePath(id) : undefined,
+						imageUrl: image
+							? artistImagePath(id, imageHash(image))
+							: undefined,
 					})),
 				);
 			},
@@ -531,24 +616,14 @@ Bun.serve({
 		// ApiContract.getArtistImage ("/artist/:id/image"): raw stored image
 		// bytes, public (no auth) per the contract.
 		[ApiContract.getArtistImage.path]: {
-			GET: (req: Bun.BunRequest<typeof ApiContract.getArtistImage.path>) => {
-				const artist = artists.get(Number(req.params.id));
-				if (!artist?.image) return new Response("not found", { status: 404 });
-				return new Response(artist.image, {
-					headers: { "content-type": "application/octet-stream" },
-				});
-			},
+			GET: (req: Bun.BunRequest<typeof ApiContract.getArtistImage.path>) =>
+				serveImage(req, artists.get(Number(req.params.id))?.image),
 		},
 		// ApiContract.getTrackImage ("/track/:id/image"): raw stored cover-image
 		// bytes, public (no auth) per the contract.
 		[ApiContract.getTrackImage.path]: {
-			GET: (req: Bun.BunRequest<typeof ApiContract.getTrackImage.path>) => {
-				const track = tracks.get(req.params.id);
-				if (!track?.cover) return new Response("not found", { status: 404 });
-				return new Response(track.cover, {
-					headers: { "content-type": "application/octet-stream" },
-				});
-			},
+			GET: (req: Bun.BunRequest<typeof ApiContract.getTrackImage.path>) =>
+				serveImage(req, tracks.get(req.params.id)?.cover),
 		},
 		"/tracks": {
 			GET: (req: Request) => {
@@ -562,7 +637,9 @@ Bun.serve({
 							title,
 							duration,
 							artists,
-							coverUrl: cover ? trackImagePath(id) : undefined,
+							coverUrl: cover
+								? trackImagePath(id, imageHash(cover))
+								: undefined,
 						}),
 					),
 				);
