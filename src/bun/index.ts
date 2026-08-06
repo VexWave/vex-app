@@ -112,7 +112,8 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			listTracks: () =>
 				api.listTracks(
 					(serverId) => streamProxy.urlForTrack(serverId),
-					(serverId) => streamProxy.urlForTrackImage(serverId),
+					(serverId, version) =>
+						streamProxy.urlForTrackImage(serverId, version),
 				),
 			deleteTrack: async (params) => {
 				const result = await api.deleteTrack(params);
@@ -121,13 +122,15 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			},
 			editTrack: (params) => api.editTrack(params),
 			listArtists: () =>
-				api.listArtists((artistId) => streamProxy.urlForArtistImage(artistId)),
+				api.listArtists((artistId, version) =>
+					streamProxy.urlForArtistImage(artistId, version),
+				),
 			createArtist: (params) => api.createArtist(params),
 			editArtist: (params) => api.editArtist(params),
 			deleteArtist: (params) => api.deleteArtist(params),
 			listPlaylists: () =>
-				api.listPlaylists((playlistId) =>
-					streamProxy.urlForPlaylistImage(playlistId),
+				api.listPlaylists((playlistId, version) =>
+					streamProxy.urlForPlaylistImage(playlistId, version),
 				),
 			createPlaylist: (params) => api.createPlaylist(params),
 			editPlaylist: (params) => api.editPlaylist(params),

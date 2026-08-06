@@ -5,6 +5,7 @@ import {
 	trackImagePath,
 } from "../../contract/contract";
 import type { ApiClient } from "./ApiClient";
+import { imageVersion, versionQuery } from "./imageVersion";
 import { TrackCache, respondFromCache } from "./TrackCache";
 
 /**
@@ -20,6 +21,29 @@ const PASSTHROUGH_HEADERS = [
 	"content-range",
 	"accept-ranges",
 ] as const;
+
+/**
+ * An image also gets the validator it can revalidate with, which turns a
+ * re-fetch of a cover the webview still holds into a bodiless 304. Audio does
+ * not: whole tracks already sit in this proxy's LRU, and a bare validator is
+ * enough for Chromium to keep a second copy to revalidate against.
+ */
+const IMAGE_HEADERS = [...PASSTHROUGH_HEADERS, "etag"] as const;
+
+/**
+ * An image whose URL pinned a version also gets the backend's answer about how
+ * long the bytes may be reused, because only then does that answer belong to
+ * this URL: the version names the bytes, an edit publishes new ones under a new
+ * URL, and the old one is simply never asked for again.
+ *
+ * An unpinned image is answered `no-cache` by this proxy instead, whatever the
+ * backend said. The version in the URL is the whole of how a replaced image
+ * reaches the webview, so on a URL carrying none there is nothing left to
+ * invalidate a stale copy with: a server that promised a lifetime there would
+ * put an edited image out of reach for exactly that long. The validator goes
+ * out either way, so an unpinned image revalidates rather than re-transferring.
+ */
+const PINNED_IMAGE_HEADERS = [...IMAGE_HEADERS, "cache-control"] as const;
 
 /**
  * Loopback HTTP server that lets the webview load backend binary payloads it
@@ -87,34 +111,51 @@ export class StreamProxy {
 		return this.server;
 	}
 
+	/**
+	 * Loopback URL for one of this proxy's own routes. The port is settled by
+	 * starting the server, and the secret prefix is what keeps other local
+	 * processes from guessing these URLs, so nothing builds one by hand.
+	 */
+	private urlFor(path: string): string {
+		const { port } = this.ensureServer();
+		return `http://127.0.0.1:${port}/${this.secret}${path}`;
+	}
+
 	/** Stable stream URL for a server track. */
 	urlForTrack(trackId: string): string {
-		const { port } = this.ensureServer();
-		return `http://127.0.0.1:${port}/${this.secret}/track/${trackId}`;
+		return this.urlFor(`/track/${trackId}`);
 	}
 
-	/** Stable avatar URL for a server artist. */
-	urlForArtistImage(artistId: number): string {
-		const { port } = this.ensureServer();
-		return `http://127.0.0.1:${port}/${this.secret}/artist/${artistId}/image`;
+	/**
+	 * Avatar URL for a server artist, pinned to the content version the listing
+	 * named. The backend answers a pinned request from memory and marks those
+	 * bytes cacheable indefinitely, so within a run an avatar is fetched once
+	 * per version rather than once per use; replacing it publishes a new URL,
+	 * which is what makes the change show through without anything having to
+	 * invalidate the old one. Unversioned (a listing that carried no hash) still
+	 * works, at the cost of a full backend read every time.
+	 *
+	 * Only within a run: the port and the secret are both new on every start, so
+	 * no proxy URL — and hence nothing the webview cached under one — outlives
+	 * the process that handed it out.
+	 */
+	urlForArtistImage(artistId: number, version?: string): string {
+		return this.urlFor(`/artist/${artistId}/image${versionQuery(version)}`);
 	}
 
-	/** Stable cover-image URL for a server track. */
-	urlForTrackImage(trackId: string): string {
-		const { port } = this.ensureServer();
-		return `http://127.0.0.1:${port}/${this.secret}/track/${trackId}/image`;
+	/** Cover-image URL for a server track. Versioned as `urlForArtistImage`. */
+	urlForTrackImage(trackId: string, version?: string): string {
+		return this.urlFor(`/track/${trackId}/image${versionQuery(version)}`);
 	}
 
-	/** Stable cover-image URL for a server playlist. */
-	urlForPlaylistImage(playlistId: number): string {
-		const { port } = this.ensureServer();
-		return `http://127.0.0.1:${port}/${this.secret}/playlist/${playlistId}/image`;
+	/** Cover-image URL for a server playlist. Versioned as `urlForArtistImage`. */
+	urlForPlaylistImage(playlistId: number, version?: string): string {
+		return this.urlFor(`/playlist/${playlistId}/image${versionQuery(version)}`);
 	}
 
 	/** URL of a finished URL-import's local mp3 (valid until discarded). */
 	urlForImportFile(importId: string): string {
-		const { port } = this.ensureServer();
-		return `http://127.0.0.1:${port}/${this.secret}/import/${importId}`;
+		return this.urlFor(`/import/${importId}`);
 	}
 
 	/** Drops a track's cached audio, e.g. after it was deleted on the server. */
@@ -213,16 +254,26 @@ export class StreamProxy {
 			if (cached) return respondFromCache(cached, range);
 		}
 
+		// Carried straight back through to the backend: dropping it here would
+		// leave every cover on the route's slow path, which re-reads the bytes
+		// out of the database because it can't know which ones the caller meant.
+		const version = imageVersion(req.url);
 		const backendPath = isTrack
 			? trackAudioPath(match[2])
 			: trackImageMatch
-				? trackImagePath(match[2])
+				? trackImagePath(match[2], version)
 				: playlistImageMatch
-					? playlistImagePath(Number(match[2]))
-					: artistImagePath(Number(match[2]));
+					? playlistImagePath(Number(match[2]), version)
+					: artistImagePath(Number(match[2]), version);
 
 		const headers: Record<string, string> = { authorization: auth.token };
 		if (range) headers.range = range;
+		// Only an image can produce one — audio reaches the webview without a
+		// validator, so it has nothing to revalidate with (see IMAGE_HEADERS) —
+		// and relaying it is what turns a re-fetch of a cover the webview still
+		// holds into a bodiless 304.
+		const ifNoneMatch = req.headers.get("if-none-match");
+		if (!isTrack && ifNoneMatch) headers["if-none-match"] = ifNoneMatch;
 
 		let upstream: Response;
 		try {
@@ -234,25 +285,35 @@ export class StreamProxy {
 		// Only track audio is token-gated; a 401 there means the session died.
 		if (isTrack && upstream.status === 401) this.onUnauthorized?.();
 
+		// A 304 says only "the copy you hold is current", so it carries no body
+		// — bun answers one with an empty stream rather than null, and passing
+		// that on relies on the Response constructor tolerating a body on a
+		// status the spec gives none. Cancelled rather than dropped on the floor,
+		// so the upstream connection is released now and not at the next GC.
 		let body = upstream.body;
+		if (upstream.status === 304) {
+			void body?.cancel();
+			body = null;
+		}
 		if (isTrack && body) {
 			body = this.teeIntoCache(match[2], range, upstream, body);
 		}
 
 		const responseHeaders = new Headers();
-		for (const name of PASSTHROUGH_HEADERS) {
+		const forwarded = isTrack
+			? PASSTHROUGH_HEADERS
+			: version === undefined
+				? IMAGE_HEADERS
+				: PINNED_IMAGE_HEADERS;
+		for (const name of forwarded) {
 			const value = upstream.headers.get(name);
 			if (value) responseHeaders.set(name, value);
 		}
-		// Images state how long their bytes may be reused (the contract's
-		// `cache: "shared"`), and a proxy URL is stable per resource id — so
-		// forwarding that lets the webview reuse a cover it already has, with
-		// `lib/cacheBuster.ts` still the only thing that invalidates one. Audio
-		// is deliberately left out: whole tracks already sit in this proxy's LRU,
-		// and a second copy in the webview's HTTP cache would store each twice.
-		if (!isTrack) {
-			const cacheControl = upstream.headers.get("cache-control");
-			if (cacheControl) responseHeaders.set("cache-control", cacheControl);
+		if (!isTrack && version === undefined) {
+			// Stated outright rather than left to the absence of a header: this
+			// URL doesn't name the bytes behind it, so an edit would arrive under
+			// the same one, and nothing may be reused without asking first.
+			responseHeaders.set("cache-control", "no-cache");
 		}
 		return new Response(body, {
 			status: upstream.status,

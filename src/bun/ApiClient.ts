@@ -9,6 +9,7 @@ import {
 	MAX_IMAGE_BYTES,
 	base64Length,
 } from "../shared/limits";
+import { imageVersion } from "./imageVersion";
 import type {
 	CreateArtistParams,
 	CreatePlaylistParams,
@@ -182,14 +183,15 @@ export class ApiClient {
 	 * Server track listing. `urlForTrack` maps a server track id to its
 	 * stream-proxy URL, and `urlForTrackImage` to its cover-image proxy URL, so
 	 * complete RemoteTracks are assembled in one place. Like `listArtists`'
-	 * imageUrl rewrite, `coverUrl` stays undefined unless the server sent one.
+	 * imageUrl rewrite, `coverUrl` stays undefined unless the server sent one —
+	 * and where it did, the version it named comes along (see `imageVersion`).
 	 *
 	 * The server's order (oldest first) is passed through untouched — it is
 	 * what tells the webview which tracks are the recent uploads.
 	 */
 	async listTracks(
 		urlForTrack: (serverId: string) => string,
-		urlForTrackImage: (serverId: string) => string,
+		urlForTrackImage: (serverId: string, version?: string) => string,
 	): Promise<ListTracksResult> {
 		const client = this.session?.client;
 		if (!client) {
@@ -207,7 +209,9 @@ export class ApiClient {
 						artists: track.artists,
 						durationMs: track.duration,
 						streamUrl: urlForTrack(track.id),
-						coverUrl: track.coverUrl ? urlForTrackImage(track.id) : undefined,
+						coverUrl: track.coverUrl
+							? urlForTrackImage(track.id, imageVersion(track.coverUrl))
+							: undefined,
 					})),
 				};
 			}
@@ -222,10 +226,12 @@ export class ApiClient {
 	 * Server artist listing. `urlForArtistImage` maps an artist id to its
 	 * stream-proxy avatar URL; the server only sends `imageUrl` (its own image
 	 * route) for artists that actually have an image, so it stays undefined for
-	 * the rest — the webview never reaches the backend directly.
+	 * the rest — the webview never reaches the backend directly. What that URL
+	 * is good for here besides its presence is the version on it, which rides
+	 * along to the proxy URL (see `imageVersion`).
 	 */
 	async listArtists(
-		urlForArtistImage: (artistId: number) => string,
+		urlForArtistImage: (artistId: number, version?: string) => string,
 	): Promise<ListArtistsResult> {
 		const client = this.session?.client;
 		if (!client) {
@@ -239,7 +245,9 @@ export class ApiClient {
 					artists: res.body.map(({ id, name, imageUrl }) => ({
 						id,
 						name,
-						imageUrl: imageUrl ? urlForArtistImage(id) : undefined,
+						imageUrl: imageUrl
+							? urlForArtistImage(id, imageVersion(imageUrl))
+							: undefined,
 					})),
 				};
 			}
@@ -324,7 +332,7 @@ export class ApiClient {
 	 * unless the server sent one — the webview never reaches the backend.
 	 */
 	async listPlaylists(
-		urlForPlaylistImage: (playlistId: number) => string,
+		urlForPlaylistImage: (playlistId: number, version?: string) => string,
 	): Promise<ListPlaylistsResult> {
 		const client = this.session?.client;
 		if (!client) {
@@ -339,7 +347,9 @@ export class ApiClient {
 						id,
 						name,
 						trackIds,
-						imageUrl: imageUrl ? urlForPlaylistImage(id) : undefined,
+						imageUrl: imageUrl
+							? urlForPlaylistImage(id, imageVersion(imageUrl))
+							: undefined,
 					})),
 				};
 			}

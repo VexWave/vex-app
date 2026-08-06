@@ -19,6 +19,7 @@ Everything that talks to the network, the filesystem or the OS. The webview reac
 ## Server I/O
 
 - **Track audio is fetched with plain `fetch`, not the ts-rest client** — the client buffers response bodies, which defeats progressive streaming and Range requests.
+- **An image's content version travels from the listing to the backend untouched.** The server puts a `?v=<hash>` on the `imageUrl`/`coverUrl` it hands out; `ApiClient` lifts it onto the `StreamProxy` URL, and the proxy puts it back on the backend path. A layer that drops it still serves the right bytes — which is why nothing visibly breaks — it just returns every cover to the route's uncached path, where the server re-reads the image out of Postgres because it can't know which bytes the caller meant.
 - **The track cache is invisible to the webview** — nothing reports which tracks it holds, and no row is marked as cached. A hit is the same bytes arriving faster, so all a badge could tell the user is which tracks the LRU has not evicted yet, which is not a distinction they have any decision to make on.
 - **A 413 defers to the server's own message.** The webview already refuses anything over the contract's ceilings before encoding it (see the root file), so a 413 that still arrives means this server holds a tighter line than the contract — quoting our own ceiling as *its* limit would be wrong at exactly the moment it appears.
 
