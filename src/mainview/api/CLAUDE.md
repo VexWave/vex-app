@@ -8,7 +8,7 @@ Three modules here are not services:
 - `idListEdit.ts` — see below.
 - `presenceBridge.ts` — no rendered state, no hook, just a player subscription that forwards to bun. It narrows the player's several-times-a-second notifications down to the changes Discord would actually render, and sends `null` for a pause (there is no paused presence — see `src/bun/CLAUDE.md`).
 
-Every service that holds server data clears it on logout and refetches on login, keyed off `SessionService`'s status. A mutation refetches rather than patching locally, because the server assigns ids.
+Every service that holds server data clears it on logout and refetches on login, keyed off `SessionService`'s status. A mutation refetches rather than patching locally, because the server assigns ids. That refetch is also the whole of how a replaced cover or avatar reaches the screen: an image URL names the version of the bytes behind it, so new bytes arrive under a new URL and nothing here has to force the webview to let go of the old one.
 
 ## Track identity and ordering
 

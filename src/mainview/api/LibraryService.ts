@@ -1,5 +1,4 @@
 import { playerController } from "@/hooks/usePlayer";
-import { CacheBuster } from "@/lib/cacheBuster";
 import type { Track } from "@/player/types";
 import type { EditTrackParams, RemoteTrack } from "../../shared/rpcSchema";
 import { bun } from "./rpc";
@@ -47,10 +46,6 @@ export class LibraryService {
 	// the queue and the rows use. Holds what a Track has no field for, chiefly
 	// the currently-linked artist names.
 	private remoteById = new Map<string, RemoteTrack>();
-	// The StreamProxy cover URL for a track never changes and forwards no cache
-	// headers, so after a cover is replaced we bust it (keyed by track id) to
-	// force Chromium to re-fetch. See CacheBuster.
-	private coverCache = new CacheBuster();
 
 	constructor() {
 		let previousStatus = sessionService.getSnapshot().status;
@@ -63,7 +58,6 @@ export class LibraryService {
 			} else if (status === "loggedOut") {
 				this.fetchSeq += 1; // drop in-flight results from the old session
 				this.remoteById.clear();
-				this.coverCache.clear();
 				// Every queued track streams from this session's server, so the
 				// whole queue is invalidated when the session ends.
 				playerController.clearQueue();
@@ -116,17 +110,10 @@ export class LibraryService {
 			this.update({ loading: false, error: result.error });
 			return false;
 		}
-		// Apply the cover cache-buster once so getRemote (dialog preview) and
-		// the list rows all see the same busted URL. A track id is a uuid and
-		// sorts arbitrarily, so upload order is the server's listing order
-		// (oldest first, per the contract) — reversed here to put the newest
-		// uploads on top.
-		const remotes = result.tracks
-			.map((remote) => ({
-				...remote,
-				coverUrl: this.coverCache.apply(remote.id, remote.coverUrl),
-			}))
-			.reverse();
+		// A track id is a uuid and sorts arbitrarily, so upload order is the
+		// server's listing order (oldest first, per the contract) — reversed
+		// here to put the newest uploads on top.
+		const remotes = [...result.tracks].reverse();
 		this.remoteById = new Map(remotes.map((remote) => [remote.id, remote]));
 		const tracks = remotes.map(toTrack);
 		this.update({ tracks, loading: false, error: null });
@@ -266,9 +253,6 @@ export class LibraryService {
 			}
 			return { ok: false, error: result.error };
 		}
-		// The cover URL is stable, so bust it to force a re-fetch before the
-		// refresh maps it onto the list and dialog preview.
-		if (changes.coverBase64 !== undefined) this.coverCache.bump(trackId);
 		void this.refresh();
 		return { ok: true };
 	}

@@ -16,7 +16,6 @@ The UI, and nothing that reaches the network itself: every server payload arrive
 ## lib/
 
 - `storage.ts` — **all** localStorage access goes through this typed registry; declare each persisted key there once rather than touching `localStorage` directly.
-- `cacheBuster.ts` — a stream-proxy URL is keyed by its resource's stable id, so replacing a cover or an avatar server-side leaves Chromium serving the cached bytes from an identical URL. Bump the key's version and append it to force the refetch.
 - `devicePixelRatio.ts` — publishes the webview's device pixel ratio as `--dpr` on `<html>`, and keeps it current through a media query re-armed on every change plus a `resize` listener (the bun-side startup nudge is why the second one is needed).
 - `coverFit.ts` — decides whether a Discover thumbnail fills its square frame or is contained in it, by reading the loaded image's pixels. Cropping a real 16:9 still would destroy part of it, so the measurement only says yes where it is certain, and everything else falls back to contained.
 

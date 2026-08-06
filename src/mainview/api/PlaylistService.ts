@@ -1,5 +1,4 @@
 import { playerController } from "@/hooks/usePlayer";
-import { CacheBuster } from "@/lib/cacheBuster";
 import type { Track } from "@/player/types";
 import { MAX_TRACKS_PER_PLAYLIST } from "../../shared/limits";
 import type {
@@ -43,10 +42,6 @@ export class PlaylistService {
 		error: null,
 	};
 	private fetchSeq = 0;
-	// The StreamProxy cover URL for a playlist never changes and forwards no
-	// cache headers, so after a cover is replaced we bust it (keyed by playlist
-	// id) to force Chromium to re-fetch. See CacheBuster.
-	private imageCache = new CacheBuster();
 	// Locally held track order for playlists with a reorder in flight, keyed by
 	// playlist id (see applyOrder). Keyed rather than a single value because a
 	// reorder outlives the view it was made in — dragging in one playlist and
@@ -63,7 +58,6 @@ export class PlaylistService {
 				void this.refresh();
 			} else if (status === "loggedOut") {
 				this.fetchSeq += 1; // drop in-flight results from the old session
-				this.imageCache.clear();
 				this.pendingOrders.clear();
 				this.update({ playlists: [], loading: false, error: null });
 			}
@@ -163,14 +157,12 @@ export class PlaylistService {
 			this.update({ loading: false, error: result.error });
 			return;
 		}
-		// Bust replaced covers: their imageUrl is stable, so map the fresh list
-		// through the cache-buster before it reaches the UI. trackIds are
-		// deduped defensively — playlists predating the no-duplicates rule may
-		// still carry copies; the next membership edit persists the deduped list.
+		// trackIds are deduped defensively — playlists predating the
+		// no-duplicates rule may still carry copies; the next membership edit
+		// persists the deduped list.
 		const playlists = result.playlists.map((playlist) => ({
 			...playlist,
 			trackIds: this.orderOf(playlist.id, [...new Set(playlist.trackIds)]),
-			imageUrl: this.imageCache.apply(String(playlist.id), playlist.imageUrl),
 		}));
 		this.update({ playlists, loading: false, error: null });
 		this.syncQueue();
@@ -291,9 +283,6 @@ export class PlaylistService {
 			}
 			return { ok: false, error: result.error };
 		}
-		// The cover URL is stable, so bust it when the image changed (new bytes
-		// or removal) before the refresh maps it onto the list.
-		if (input.imageBase64 !== undefined) this.imageCache.bump(String(input.id));
 		await this.refresh();
 		return { ok: true };
 	}

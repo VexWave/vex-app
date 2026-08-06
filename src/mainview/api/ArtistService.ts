@@ -5,7 +5,6 @@ import type {
 } from "../../shared/rpcSchema";
 import { playerController } from "@/hooks/usePlayer";
 import { findMatchingArtist } from "@/lib/artistMatch";
-import { CacheBuster } from "@/lib/cacheBuster";
 import type { Track } from "@/player/types";
 import { submitIdList } from "./idListEdit";
 import type { IdListDraft } from "./idListEdit";
@@ -44,10 +43,6 @@ export class ArtistService {
 		error: null,
 	};
 	private fetchSeq = 0;
-	// The StreamProxy avatar URL for an artist never changes and forwards no
-	// cache headers, so after an avatar is replaced we bust it (keyed by artist
-	// id) to force Chromium to re-fetch. See CacheBuster.
-	private imageCache = new CacheBuster();
 	// Renames in flight; while any is, the queue projection is untrustworthy
 	// (see `edit` and `syncQueue`). A counter, not a flag: two renames can
 	// overlap, and the second must not release the first one's hold.
@@ -63,7 +58,6 @@ export class ArtistService {
 				void this.refresh();
 			} else if (status === "loggedOut") {
 				this.fetchSeq += 1; // drop in-flight results from the old session
-				this.imageCache.clear();
 				this.update({ artists: [], loading: false, error: null });
 			}
 		});
@@ -171,16 +165,12 @@ export class ArtistService {
 			this.update({ loading: false, error: result.error });
 			return;
 		}
-		// Bust replaced avatars: their imageUrl is stable, so map the fresh list
-		// through the cache-buster before it reaches the UI. Sorted by name so
-		// every artist list in the app (the grid, the track dialog's picker) is
-		// in the same findable order; the server returns insertion order.
-		const artists = result.artists
-			.map((artist) => ({
-				...artist,
-				imageUrl: this.imageCache.apply(String(artist.id), artist.imageUrl),
-			}))
-			.sort((a, b) => a.name.localeCompare(b.name));
+		// Sorted by name so every artist list in the app (the grid, the track
+		// dialog's picker) is in the same findable order; the server returns
+		// insertion order.
+		const artists = [...result.artists].sort((a, b) =>
+			a.name.localeCompare(b.name),
+		);
 		this.update({ artists, loading: false, error: null });
 		this.syncQueue();
 	}
@@ -295,9 +285,6 @@ export class ArtistService {
 			}
 			return { ok: false, error: result.error };
 		}
-		// The avatar URL is stable, so bust it when the image changed (new bytes
-		// or removal) before the refresh maps it onto the list.
-		if (input.imageBase64 !== undefined) this.imageCache.bump(String(input.id));
 		if (!renamed) {
 			void this.refresh();
 			return { ok: true };
