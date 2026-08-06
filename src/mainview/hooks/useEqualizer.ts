@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { playerController } from "./usePlayer";
+import { playerController } from "@/hooks/usePlayer";
 import type { Equalizer, EqualizerState } from "@/player/Equalizer";
 
 /**
