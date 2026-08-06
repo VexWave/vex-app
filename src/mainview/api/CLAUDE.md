@@ -1,48 +1,38 @@
 # src/mainview/api — the webview's services
 
-`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. **Add new state here, not in component-local state.**
+`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. **Add new state here, not in component-local state.**
 
-Three modules here are not services:
+Two modules here are not services: `rpc.ts`, the Electroview singleton (`bun.…` for requests, `onBunMessage` for pushed messages, `notifyBun.…` for fire-and-forget), and `idListEdit.ts` (below).
 
-- `rpc.ts` — the Electroview singleton. `bun.…` for requests, `onBunMessage` for pushed messages, `notifyBun.…` for fire-and-forget.
-- `idListEdit.ts` — see below.
-- `presenceBridge.ts` — no rendered state, no hook, just a player subscription that forwards to bun. It narrows the player's several-times-a-second notifications down to the changes Discord would actually render, and sends `null` for a pause (there is no paused presence — see `src/bun/CLAUDE.md`).
-
-Every service that holds server data clears it on logout and refetches on login, keyed off `SessionService`'s status. A mutation refetches rather than patching locally, because the server assigns ids. That refetch is also the whole of how a replaced cover or avatar reaches the screen: an image URL names the version of the bytes behind it, so new bytes arrive under a new URL and nothing here has to force the webview to let go of the old one.
+Every service that holds server data clears it on logout and refetches on login, keyed off `SessionService`'s status. **A mutation refetches rather than patching locally**, because the server assigns ids — and because an image URL names the version of the bytes behind it, that refetch is also the whole of how a replaced cover or avatar reaches the screen.
 
 ## Track identity and ordering
 
-- **A track id is a uuid, so the library's "newest first" order comes from the server's listing, not from the id.** `getTracks` is contractually oldest-first and `LibraryService.refresh` reverses it; sorting by id would order the list arbitrarily. Artists and playlists still have serial ids — only tracks changed.
-- **No write route returns the id it assigned** — each answers with a bare string — so whatever a client just created it has to find in the listing afterwards: `LibraryService.newestSince` for a track, `ArtistService.resolveOrCreate` by name for an artist.
-- **A `Track` carries the server's id unchanged — it is not namespaced.** `LibraryService.toTrack` is the only place a `Track` is made (the artist and playlist views project from the library's), so there is no second kind of track id for a prefix to tell it apart from; pending uploads are `UploadItem`s in their own list, never `Track`s. Prefixing it would mean every playlist membership check, every `deleteTrack`, and the Discord cover URL had to launder the id back through `LibraryService` first — a lookup that can miss, in front of a value that was never actually missing. `getRemote` stays for what a `Track` genuinely lacks: the linked artist names.
+- **A track id is a uuid, so the library's "newest first" order comes from the server's listing, not from the id.** `getTracks` is contractually oldest-first and `LibraryService.refresh` reverses it. Artists and playlists still have serial ids.
+- **No write route returns the id it assigned**, so whatever a client just created it has to find in the listing afterwards: `LibraryService.newestSince` for a track, `ArtistService.resolveOrCreate` by name for an artist.
+- **A `Track` carries the server's id unchanged — it is not namespaced.** `LibraryService.toTrack` is the only place a `Track` is made, so there is no second kind of track id for a prefix to tell it apart from.
 
 ## Collections
 
-- **A collection is played through its own service, never by a component reaching `playerController`.** Each of the three owns the entry points for its own, because the queue context id it plays under is the same one that service's later refreshes sync against.
-- **An artist's tracks are joined by name.** The track listing carries its artists' *names*, not their ids (`TrackResponse.artists`), so that is the link `ArtistService.tracksOf` matches on — exactly, where imports match fuzzily (`@/lib/artistMatch`). Two artists sharing a name therefore share a track list, and renaming or deleting an artist refetches the library, because every linked track embeds the name.
-- **An artist's collection is re-derived from the library; a playlist's membership is its own.** `PlaylistService` syncs the queue when it refetches; `ArtistService` subscribes to `LibraryService` and syncs from there. A rename holds that sync until both have refetched — in between they disagree about the name, and the projection would come back empty.
+- **A collection is played through its own service, never by a component reaching `playerController`** — the queue context id it plays under is the one that service's later refreshes sync against.
+- **An artist's tracks are joined by name**: the track listing carries its artists' names, not their ids. Two artists sharing a name therefore share a track list, and renaming or deleting one refetches the library.
+- **An artist's collection is re-derived from the library; a playlist's membership is its own.** A rename holds that sync until both have refetched — in between they disagree about the name, and the projection would come back empty.
 
 ## Writes that replace a whole list of ids
 
-- **A write that replaces a whole list of server ids is submitted as an intent, not as a list** — `submitIdList` (`idListEdit.ts`), used by playlist membership edits and by unlinking a track from an artist. The server validates such a list as a unit, so one id it no longer knows rejects the whole edit, and ids die behind the client's back: deleting a track drops it from every playlist, deleting an artist unlinks it from every track. Handing over a `build` that recomputes the list from current state is what lets a rejection be answered by refetching and rebuilding rather than by failing at the user; `PlaylistService` also watches the library for vanished ids, so the common case never reaches a rejected request. **A new collection's membership edits take the same shape.**
-- **Dialog writes and playlist reordering stay off that path deliberately.** A dialog (`PlaylistDialog`'s seed tracks, `EditTrackDialog`'s artists) reports its failure inline for the user to resubmit — silently re-sending a selection they authored, minus whatever died under it, would change what they asked for. Reordering keeps `applyOrder`, whose in-flight order is identified by array identity that a rebuilt array would break.
-- **Reordering a playlist is applied locally before the server confirms it** (`PlaylistService.applyOrder`) — the only membership edit that is. A drag has to land where it was dropped; every other edit has no position to spring back to. Because each reorder sends a full `trackIds` replacement and refetches, the refetch of an *earlier* reorder would undo a later one still in flight, so `refresh` shows the locally held order until the last one settles.
+- **Submitted as an intent, not as a list** — `submitIdList` (`idListEdit.ts`), used by playlist membership edits and by unlinking a track from an artist. The server validates such a list as a unit, and ids die behind the client's back (deleting a track drops it from every playlist), so handing over a `build` that recomputes the list from current state is what lets a rejection be answered by refetching rather than by failing at the user. **A new collection's membership edits take the same shape.**
+- **Dialog writes and playlist reordering stay off that path deliberately.** A dialog reports its failure inline for the user to resubmit — silently re-sending a selection they authored, minus whatever died under it, would change what they asked for. Reordering keeps `applyOrder`, whose in-flight order is identified by array identity that a rebuilt array would break.
+- **Reordering is applied locally before the server confirms it** (`PlaylistService.applyOrder`), the only membership edit that is: a drag has to land where it was dropped. `refresh` shows the locally held order until the last reorder settles, or an earlier one's refetch would undo a later one still in flight.
 
-## Uploads and imports
+## Uploads, imports, session
 
-- **Uploads only drop their pending placeholder once the following library refresh confirms the track landed**, so a failed refresh doesn't lose it.
-- **An imported track starts playing once its upload lands, and it is the only upload that does** (`EnqueueOptions.playWhenReady`, set by `ImportService` alone) — a download the user went and asked for is one they asked to hear; a dropped file is not.
-- **At most one import job exists per URL** (`ImportService.start` drops a failed attempt at the same URL rather than keeping it beside the new one). That is what makes a URL enough to identify a download — a Discover hit shares no id with an import, so its card finds its own progress through `jobFor`.
-- **A Discover card finds its running download by URL.** A search hit has no id the import knows about, so the card matches `ImportJob.url` against the same `parseImportUrl` normalization it started the download with — which also means a download started from the header's URL dialog lights up its card.
-- Imports and Discover results are **not** session-scoped: nothing about a download touches the backend until the upload step, so both survive a logout.
+- **An upload drops its pending placeholder only once the following library refresh confirms the track landed**, so a failed refresh doesn't lose it.
+- **An imported track starts playing once its upload lands, and it is the only upload that does** (`EnqueueOptions.playWhenReady`) — a download the user went and asked for is one they asked to hear.
+- **At most one import job exists per URL**, which is what makes a URL enough to identify a download: a Discover card finds its own by matching `ImportJob.url` through the same `parseImportUrl` normalization.
+- Imports and Discover results are **not** session-scoped — nothing about a download touches the backend until the upload step, so both survive a logout.
+- **The whole queue is cleared on logout** (`LibraryService` does it, on the status change that clears its own list) — every stream URL is session-scoped. **Log out is local only**: it drops the stored token and the bun session without revoking anything server-side.
 
-## Session
+## Navigation and presence
 
-- **The whole queue is cleared on logout** — every track streams from the session's server and stream URLs are session-scoped. `LibraryService` is what does it, on the same status change that clears its own list.
-- **Log out is local only** (drops the stored token and the bun session); it does not revoke the token server-side.
-
-## Navigation
-
-- `NavigationService` holds the current view and the item opened in it, so any component can navigate (a track row jumps to one of its artists) and logging out can reset it — open ids belong to the session that issued them.
-- **Views are grouped into *sections*: the app's sides, which the switch in the app bar moves between.** `SECTION_OF` maps every view to one and is where a new view declares itself; a section is named after the view it opens on, so nothing states separately where entering one lands. Only structure lives here — labels, glyphs and chrome are `components/Sections`'.
-- **A section is switched to rather than navigated to, so each one resumes the view it was last on**, an open playlist included; logging out forgets all of them along with the current view.
+- `NavigationService` holds the current view and the item opened in it, so any component can navigate and logging out can reset it. **Views are grouped into sections**, and `SECTION_OF` is where a new view declares itself; only structure lives there, labels and glyphs being `components/Sections`'. **A section is switched to rather than navigated to**, so each resumes the view it was last on.
+- `PresenceService` is the odd one: the only service whose state is mostly *outbound*. It narrows the player's several-times-a-second notifications down to the changes Discord would render and sends `null` for a pause (there is no paused presence — see `src/bun/CLAUDE.md`). **The on/off switch is the app's, not bun's** — a user preference, so it is persisted here and announced to a bun process that keeps no copy. That announcement is a request, not a push: a track update that goes missing is corrected by the next one, a switch that goes missing is not.

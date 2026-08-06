@@ -59,8 +59,14 @@ binaryManager.startUpdateCheckIfInstalled();
 // Cover URLs are built against the live backend address: Discord fetches
 // activity images from its own servers, so it needs the backend's real
 // (public) URL rather than the loopback proxy one the webview uses.
-const discordPresence = new DiscordPresence(() => api.auth?.baseUrl ?? null);
-discordPresence.start();
+//
+// Nothing starts it here: the webview owns the setting and switches it on. The
+// forward reference to `rpc` is the same pattern as elsewhere — an unasked-for
+// status can only follow a connection the webview asked for.
+const discordPresence = new DiscordPresence(
+	() => api.auth?.baseUrl ?? null,
+	(status) => rpc.send.presenceStatus(status),
+);
 
 const importer: UrlImporter = new UrlImporter(
 	binaryManager,
@@ -147,6 +153,7 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			importFromUrl: (params) => unlessInstalling(() => importer.start(params)),
 			discardImport: (params) => importer.discard(params),
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
+			setPresenceEnabled: ({ enabled }) => discordPresence.setEnabled(enabled),
 		},
 		messages: {
 			presenceChanged: ({ track }) => discordPresence.setNowPlaying(track),

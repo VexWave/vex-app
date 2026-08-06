@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
  * `action` is a control governing the whole group, sitting in its header — the
  * one place a switch can go when what it switches is the panel rather than any
  * row in it. It takes the heading and its description as its labelling, the same
- * shape a row hands its own control.
+ * shape a row hands its own control. A panel whose whole setting is that switch
+ * has no rows to draw, and draws none rather than an empty strip under itself.
  */
 export function Group({
 	title,
@@ -21,7 +22,7 @@ export function Group({
 	title: string;
 	description: string;
 	action?: (labelling: Labelling) => ReactNode;
-	children: ReactNode;
+	children?: ReactNode;
 }) {
 	const id = useId();
 	const titleId = `${id}-title`;
@@ -47,7 +48,7 @@ export function Group({
 					</div>
 				)}
 			</div>
-			<div className="divide-y border-t">{children}</div>
+			{children && <div className="divide-y border-t">{children}</div>}
 		</section>
 	);
 }
