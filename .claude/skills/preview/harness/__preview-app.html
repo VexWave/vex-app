@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <title>VexWave</title>
+    <!-- A classic script, so it runs before the deferred module below: anything
+         importing a service pulls in api/rpc.ts → Electrobun's view bridge,
+         which writes `receiveMessageFromBun` onto this object and otherwise
+         throws before the first render, leaving a blank page. -->
+    <script>
+      window.__electrobun = {};
+    </script>
+    <style>
+      /* A preview wants the settled state, and a transition is by definition not
+         it. The player bar's cover backdrop cross-fades for 700ms behind a
+         two-frame gate, and whether the capture landed before or after it was
+         the difference between a shot with the glow and one without — a coin
+         toss, run to run. Keyframe animations are deliberately left alone: the
+         now-playing bars are part of how the app looks. */
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0s !important;
+        transition-delay: 0s !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/__preview-app.tsx"></script>
+  </body>
+</html>

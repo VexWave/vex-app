@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>VexWave — preview frame</title>
+    <style>
+      /* Nothing behind the window: the viewport is the window's exact size and
+         Edge is run with --default-background-color=00000000, so everything the
+         rounded corners cut away comes out transparent. */
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      body {
+        font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+      }
+      /* The window: the app's 1200x760 client area under a Windows title bar.
+         Changing either number means changing WINDOW in render.ts. */
+      .window {
+        width: 1200px;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .titlebar {
+        display: flex;
+        align-items: center;
+        height: 32px;
+        background: #1b1b1f;
+        color: #f2f2f3;
+        user-select: none;
+      }
+      .titlebar .icon {
+        width: 16px;
+        height: 16px;
+        margin: 0 8px 0 12px;
+      }
+      .titlebar .title {
+        font-size: 12px;
+        letter-spacing: 0.01em;
+      }
+      .caption {
+        margin-left: auto;
+        display: flex;
+      }
+      /* Segoe Fluent Icons is the Windows 11 caption face; the MDL2 fallback
+         carries the same three glyphs on older builds. */
+      .caption span {
+        width: 46px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+        font-size: 10px;
+        color: #f2f2f3;
+      }
+      /* An iframe, because the app is `h-screen`: inside one it resolves against
+         the iframe's own viewport, which is the only thing that lets the app be
+         framed at all rather than taking the whole page. */
+      iframe {
+        display: block;
+        width: 1200px;
+        height: 760px;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="window">
+      <div class="titlebar">
+        <img class="icon" src="/assets/vex-logo.svg" alt="" />
+        <span class="title">VexWave</span>
+        <span class="caption">
+          <span>&#xE921;</span>
+          <span>&#xE922;</span>
+          <span>&#xE8BB;</span>
+        </span>
+      </div>
+      <iframe id="app" title="VexWave"></iframe>
+    </div>
+    <script>
+      // Forwarded whole, so one frame serves every view:
+      // __preview.html?view=playlists&open=1.
+      document.getElementById("app").src = `/__preview-app.html${location.search}`;
+    </script>
+  </body>
+</html>
