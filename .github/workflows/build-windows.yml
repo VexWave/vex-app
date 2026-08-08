@@ -1,8 +1,9 @@
 name: Build (Windows)
 
+# A tag is the only thing that ships, so it is the only thing that builds by
+# itself. Pushing to main costs nothing; a canary build is there for the asking.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -57,9 +58,9 @@ jobs:
           bunx tsc --noEmit
           bunx tsc --noEmit -p scripts
 
-      # A tag is a release and builds stable; everything else builds canary,
-      # which carries its own identifier and installs beside a stable copy
-      # rather than over it. One channel per run, never both.
+      # A tag is a release and builds stable. A manual run builds canary, which
+      # carries its own identifier and installs beside a stable copy rather than
+      # over it. One channel per run, never both.
       - name: Pick channel
         shell: pwsh
         run: |
