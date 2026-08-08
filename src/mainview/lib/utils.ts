@@ -5,6 +5,21 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
 
+/**
+ * Into range, and anything that is not a number to `fallback` — which callers
+ * pass as the value that means no change at all, the one thing safe to land on
+ * without being asked for.
+ */
+export function clamp(
+	value: number,
+	min: number,
+	max: number,
+	fallback: number,
+): number {
+	if (!Number.isFinite(value)) return fallback;
+	return Math.min(Math.max(value, min), max);
+}
+
 /** 75 → "1:15"; 3675 → "1:01:15". Unknown/invalid durations → "–:––". */
 export function formatTime(totalSeconds: number): string {
 	if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return "–:––";

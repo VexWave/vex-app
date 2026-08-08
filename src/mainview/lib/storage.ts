@@ -1,3 +1,4 @@
+import { RATE_MAX, RATE_MIN } from "@/player/Effects";
 import {
 	EQ_BANDS,
 	EQ_GAIN_LIMIT_DB,
@@ -124,6 +125,24 @@ export const storage = {
 		preamp: numberValue(
 			"equalizer.preamp",
 			(value) => Math.abs(value) <= EQ_PREAMP_LIMIT_DB,
+		),
+	},
+	effects: {
+		/** Playback speed as a multiple of the recording's own. */
+		rate: numberValue(
+			"effects.rate",
+			(value) => value >= RATE_MIN && value <= RATE_MAX,
+		),
+		/**
+		 * Whether the pitch is held while the speed changes. Unset means off: the
+		 * point of the control is the tape effect, where the two move together,
+		 * and holding the pitch is what you opt into.
+		 */
+		preservePitch: booleanValue("effects.preservePitch"),
+		/** 0 fully dry, 1 fully wet. */
+		reverbMix: numberValue(
+			"effects.reverbMix",
+			(value) => value >= 0 && value <= 1,
 		),
 	},
 	discord: {

@@ -17,7 +17,10 @@ The queue always mirrors one *collection* — the whole library, a single playli
 
 ## Web Audio
 
-`AudioPlayer` owns the graph behind `PlayerController.analyser` — source → `Equalizer` → analyser → destination — built on the first playback. `createMediaElementSource` captures an element's output permanently and accepts it only once, so anything wanting the spectrum reads that analyser instead of building its own (`useAudioGlow` drives `CoverBackdrop`'s glow from it). **The build order in `ensureAnalyser` is load-bearing**: the element is captured only once the context is confirmed running, because a suspended context swallows the audio with no way to hand it back.
+`AudioPlayer` owns the graph behind `PlayerController.analyser` — source → `Equalizer` → `Effects` → analyser → destination — built on the first playback. `createMediaElementSource` captures an element's output permanently and accepts it only once, so anything wanting the spectrum reads that analyser instead of building its own (`useAudioGlow` drives `CoverBackdrop`'s glow from it). **The build order in `ensureAnalyser` is load-bearing**: the element is captured only once the context is confirmed running, because a suspended context swallows the audio with no way to hand it back.
+
+Each stage in that chain is a `GraphStage` (`audioGraph.ts`) — a stage added to the chain implements it or doesn't compile.
 
 - **The equalizer is a store of its own** (`PlayerController.equalizer`, read through `hooks/useEqualizer`), not part of the player's state snapshot, and is persisted by subscription rather than from a setter. Its settings stand before the graph exists — the settings view opens long before anything has played — and `attach` is what puts them on the nodes.
+- **`Effects` is a second store of the same kind** (`PlayerController.effects`, read through `hooks/useEffects`), holding playback speed and the reverb. Only the reverb is nodes: **speed is an element property, so it sits upstream of the capture** — the equalizer, the analyser and the glow all follow a speed change without being told.
 - The element is `crossOrigin = "anonymous"` (set before any `src`) so Web Audio will expose its samples, which is what makes the `access-control-allow-origin: *` on every `StreamProxy` response mandatory rather than cosmetic.

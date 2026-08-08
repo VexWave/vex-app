@@ -168,6 +168,13 @@ const EQUALIZER = {
 	preampDb: -1.5,
 };
 
+/** Slowed and wet, so the player bar's effects button reads as engaged. */
+const EFFECTS = {
+	rate: 0.9,
+	preservePitch: false,
+	reverbMix: 0.35,
+} as const;
+
 const PRESENCE: PresenceState = { enabled: true, connected: true };
 
 // ===========================================================================
@@ -277,6 +284,7 @@ importService.jobFor = (url: string) =>
 // library through `tracksOf` / `trackCountsByName`, which read the two above.
 
 playerController.equalizer.restore(EQUALIZER);
+playerController.effects.restore(EFFECTS);
 
 // Where to land: ?view=<MainViewName>[&open=<id>].
 const params = new URLSearchParams(location.search);

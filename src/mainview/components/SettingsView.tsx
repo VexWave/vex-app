@@ -14,6 +14,10 @@ import { Separator } from "@/components/ui/separator";
  * where it has more to say than the switch in its header — with its key declared
  * in `lib/storage` and its state kept beside whatever it configures: a service
  * under `api/` for most things, the playback core for the equalizer.
+ *
+ * Not every persisted setting belongs here. What is reached for while listening,
+ * because it belongs to the track playing rather than to the app, is in the
+ * player bar instead (`PlaybackEffects`).
  */
 export function SettingsView() {
 	return (
