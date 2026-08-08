@@ -65,7 +65,7 @@ const head = (await run($`git rev-parse --short HEAD`)).trim();
 const subject = (await run($`git log -1 --format=%s`)).trim();
 
 console.log(`\n  main       ${head}  ${subject}`);
-console.log(`  ${CONFIG.padEnd(10)} ${configVersion}`);
+console.log(`  config     ${configVersion}`);
 console.log(`  latest tag ${latest ?? "none"}\n`);
 if (latest) {
 	console.log(`    patch  ${bumps.patch}   (recommended)`);
@@ -95,8 +95,11 @@ if (ahead || bumpsConfig) {
 }
 console.log(`    - tag ${tag} and push it, which builds and publishes a release`);
 
+// Declining is an answer, not a failure — exit clean so the shell doesn't
+// report an error for someone who simply changed their mind.
 if ((prompt(`\n  Release ${tag}? [y/N]:`) ?? "").trim().toLowerCase() !== "y") {
-	fail("Nothing was pushed.");
+	console.log("\n  Nothing was pushed.\n");
+	process.exit(0);
 }
 
 if (bumpsConfig) {
