@@ -137,8 +137,8 @@ export class Effects implements GraphStage {
 
 	/**
 	 * Back to the recording as it was made: its own speed, and no room. One
-	 * commit rather than two setters, so the pair cannot be caught half reset or
-	 * handed to storage as two changes.
+	 * commit rather than two setters, so a subscriber cannot catch the pair half
+	 * reset.
 	 *
 	 * `preservePitch` stands, the way the equalizer's switch does through its own
 	 * reset: it says how the speed control behaves, not how far it was pushed.
@@ -163,27 +163,6 @@ export class Effects implements GraphStage {
 		this.commit();
 	}
 
-	/**
-	 * Put stored settings back, as one commit rather than one per field: a
-	 * subscriber cannot catch the restore half applied, and cannot hand it back
-	 * to storage as three separate changes either. A null field is a key that was
-	 * never written or failed validation, and leaves the default standing.
-	 */
-	restore(stored: {
-		rate: number | null;
-		preservePitch: boolean | null;
-		reverbMix: number | null;
-	}): void {
-		if (stored.rate !== null) {
-			this.rate = clamp(stored.rate, RATE_MIN, RATE_MAX, 1);
-		}
-		if (stored.preservePitch !== null) this.preservePitch = stored.preservePitch;
-		if (stored.reverbMix !== null) {
-			this.reverbMix = clamp(stored.reverbMix, 0, 1, 0);
-		}
-		this.commit();
-	}
-
 	// --- the audio graph ---
 
 	/**
@@ -204,9 +183,10 @@ export class Effects implements GraphStage {
 		this.dryGain = context.createGain();
 		this.wetGain = context.createGain();
 		// Born at their values rather than eased into them. A GainNode comes up at
-		// 1, which on the wet branch is *fully wet*, so a stored mix would open the
-		// first track of a session on a burst of reverb while the ramp pulled it
-		// back down.
+		// 1, which on the wet branch is *fully wet*, so a mix raised before the
+		// graph existed — the panel is in the player bar, and the graph waits for
+		// the first playback — would open that track on a burst of reverb while the
+		// ramp pulled it back down.
 		const { dry, wet } = this.crossfade();
 		this.dryGain.gain.value = dry;
 		this.wetGain.gain.value = wet;

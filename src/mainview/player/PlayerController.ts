@@ -56,10 +56,9 @@ export class PlayerController {
 			this.refresh();
 		});
 
-		// Subscribed after restoreSettings, which lands as one commit each: earlier
-		// and the settings just read would be written straight back out.
+		// Subscribed after restoreSettings, which lands as one commit: earlier and
+		// the settings just read would be written straight back out.
 		this.player.equalizer.subscribe(() => this.persistEqualizer());
-		this.player.effects.subscribe(() => this.persistEffects());
 	}
 
 	// --- useSyncExternalStore contract (arrow fns keep `this` bound) ---
@@ -305,8 +304,8 @@ export class PlayerController {
 	}
 
 	/**
-	 * Load persisted volume/mute/repeat/shuffle, the equalizer and the effects
-	 * from localStorage into the player and queue. Runs before the first snapshot so
+	 * Load persisted volume/mute/repeat/shuffle and the equalizer from
+	 * localStorage into the player and queue. Runs before the first snapshot so
 	 * the UI opens on the last-used settings. Malformed or missing values fall
 	 * back to the constructor defaults.
 	 */
@@ -322,12 +321,6 @@ export class PlayerController {
 			enabled: storage.equalizer.enabled.get(),
 			gains: storage.equalizer.gains.get(),
 			preampDb: storage.equalizer.preamp.get(),
-		});
-
-		this.player.effects.restore({
-			rate: storage.effects.rate.get(),
-			preservePitch: storage.effects.preservePitch.get(),
-			reverbMix: storage.effects.reverbMix.get(),
 		});
 	}
 
@@ -349,14 +342,6 @@ export class PlayerController {
 		storage.equalizer.enabled.set(enabled);
 		storage.equalizer.gains.set(gains);
 		storage.equalizer.preamp.set(preampDb);
-	}
-
-	/** Persist the effects, on every change they report — as the equalizer is. */
-	private persistEffects(): void {
-		const { rate, preservePitch, reverbMix } = this.player.effects.getSnapshot();
-		storage.effects.rate.set(rate);
-		storage.effects.preservePitch.set(preservePitch);
-		storage.effects.reverbMix.set(reverbMix);
 	}
 
 	private buildSnapshot(): PlayerState {
