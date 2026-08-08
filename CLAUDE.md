@@ -23,6 +23,7 @@ Entirely server-backed: a blocking login screen asks for host/port of a backend 
 
 - **bun only** — npm and node are not installed on this machine, which is why the shadcn CLI can't run; its components are vendored by hand into `src/mainview/components/ui/`.
 - `bun run dev:hmr` — the one to develop with: Vite HMR on 5173 alongside the app. `bun run start` runs from bundled assets instead.
+- `bun run build:installer:stable` / `build:installer:canary` — what CI runs: a channel's build plus `scripts/fuse-installer.ts`, which folds electrobun's Windows installer set into one self-contained exe in `installers/`. Both build the UI first, and the two channels' names differ, so they coexist.
 - **`dev` and `build:stable` skip the Vite build**, unlike `start` and `build:canary` — they ship whatever `dist/` already held, which is a stale UI if the webview changed since.
 - `bunx tsc --noEmit` — type-check (no test framework or linter exists yet). **`scripts/` is a second project** (`bunx tsc --noEmit -p scripts`): the root config's `DOM` lib collides with bun's own globals over `Response`/`BodyInit`.
 - `bun run scripts/test-server.ts` — throwaway backend for manual end-to-end testing (`test`/`test` on port 8790).

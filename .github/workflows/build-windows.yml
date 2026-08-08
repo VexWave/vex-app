@@ -57,10 +57,20 @@ jobs:
           bunx tsc --noEmit
           bunx tsc --noEmit -p scripts
 
+      # A tag is a release and builds stable; everything else builds canary,
+      # which carries its own identifier and installs beside a stable copy
+      # rather than over it. One channel per run, never both.
+      - name: Pick channel
+        shell: pwsh
+        run: |
+          $channel = if ("${{ github.ref }}".StartsWith("refs/tags/v")) { "stable" } else { "canary" }
+          "CHANNEL=$channel" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Building the $channel channel"
+
       # electrobun.config.ts is the only place the packaged version comes from —
       # the CLI reads no env override and never looks at package.json.
       - name: Set version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.CHANNEL == 'stable'
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
@@ -69,25 +79,28 @@ jobs:
           Set-Content electrobun.config.ts -Value $config -Encoding utf8 -NoNewline
           Write-Host "Building version $version"
 
-      # `build:stable` does not run vite itself; without this it packages a stale dist/.
-      - run: bun run vite:build
+      # Builds the UI, then the installer set — a 0.4 MB extractor stub plus the
+      # archive it reads from beside itself — and folds that set into one
+      # executable carrying its own payload, in installers/.
+      - run: bun run build:installer:${{ env.CHANNEL }}
 
-      - run: bun run build:stable
-
-      # The installer is a set, not a file: Setup.exe is a 0.4 MB extractor stub
-      # that reads the archive beside it. The zip electrobun leaves in artifacts/
-      # is that set, and the only shape of it worth handing anyone.
+      # upload-artifact always zips what it is given, so the Actions download is
+      # one zip holding the exe. The release asset below is not wrapped and hands
+      # over the exe directly.
       - name: Upload installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: VexWave-Setup-win-x64
-          path: artifacts/stable-win-x64-VexWave-Setup.zip
+          name: VexWave-Setup-${{ env.CHANNEL }}-win-x64
+          path: installers/*.exe
           if-no-files-found: error
-          # Already compressed; re-zipping it buys nothing and costs minutes.
+          # The payload inside is already zstd-compressed; squeezing it again
+          # buys nothing and costs minutes.
           compression-level: 0
 
+      # Only the stable channel reaches the releases page; canary stays a
+      # download on the run that produced it.
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.CHANNEL == 'stable'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          files: artifacts/stable-win-x64-VexWave-Setup.zip
+          files: installers/VexWave-Setup.exe

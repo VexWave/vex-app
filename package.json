@@ -9,7 +9,9 @@
 		"hmr": "vite --port 5173",
 		"vite:build": "vite build",
 		"build:canary": "vite build && electrobun build --env=canary",
-		"build:stable": "electrobun build --env=stable"
+		"build:stable": "electrobun build --env=stable",
+		"build:installer:stable": "bun run vite:build && bun run build:stable && bun run scripts/fuse-installer.ts stable",
+		"build:installer:canary": "bun run build:canary && bun run scripts/fuse-installer.ts canary"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "6.3.1",
