@@ -11,28 +11,12 @@ import {
 	VolumeX,
 } from "lucide-react";
 import { CoverBackdrop } from "@/components/CoverBackdrop";
+import { PlaybackEffects } from "@/components/PlaybackEffects";
+import { BAR_GHOST, modeToggle } from "@/components/playerBarChrome";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { usePlayer } from "@/hooks/usePlayer";
-import { cn, formatTime } from "@/lib/utils";
-
-/**
- * Hover treatment for the bar's ghost buttons. The stock ghost variant fills
- * with an opaque `bg-accent`, which lands as a flat grey patch on top of the
- * cover backdrop. A translucent tint of the foreground colour lifts the button
- * out of whatever is behind it instead, and stays theme-correct: near-white on
- * the dark theme, near-black on the light one.
- */
-const BAR_GHOST =
-	"hover:bg-foreground/10 hover:text-foreground active:bg-foreground/15";
-
-/**
- * Shuffle and repeat flank the transport as one pair of mode toggles, so they
- * state themselves the same way: lit in the accent colour while engaged, dimmed
- * back into the bar while off.
- */
-const modeToggle = (engaged: boolean): string =>
-	cn(BAR_GHOST, engaged ? "text-primary" : "text-muted-foreground");
+import { formatTime } from "@/lib/utils";
 
 export function PlayerBar() {
 	const { state, controller } = usePlayer();
@@ -151,8 +135,9 @@ export function PlayerBar() {
 				</div>
 			</div>
 
-			{/* Volume */}
+			{/* Effects + volume */}
 			<div className="flex items-center justify-end gap-2">
+				<PlaybackEffects />
 				<Button
 					variant="ghost"
 					size="icon"

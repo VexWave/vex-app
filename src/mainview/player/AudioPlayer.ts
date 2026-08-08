@@ -1,3 +1,4 @@
+import { Effects } from "./Effects";
 import { Equalizer } from "./Equalizer";
 import { TypedEventEmitter } from "./TypedEventEmitter";
 import type { Track } from "./types";
@@ -25,6 +26,12 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 	 * is built on the first playback, and they can be changed before that.
 	 */
 	readonly equalizer = new Equalizer();
+	/**
+	 * Speed and reverb. Assigned in the constructor rather than here because it
+	 * needs the element: field initializers run before the constructor body, so an
+	 * initializer would hand it `this.audio` while that is still undefined.
+	 */
+	readonly effects: Effects;
 	/** Web Audio graph feeding the backdrop glow; built on the first playback. */
 	private context: AudioContext | null = null;
 	private analyserNode: AnalyserNode | null = null;
@@ -40,6 +47,7 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 		// fetched CORS-clean. StreamProxy answers every request with
 		// `access-control-allow-origin: *` to match.
 		this.audio.crossOrigin = "anonymous";
+		this.effects = new Effects(this.audio);
 
 		this.audio.addEventListener("play", () => this.emit("play", undefined));
 		this.audio.addEventListener("pause", () => this.emit("pause", undefined));
@@ -169,8 +177,11 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 			analyser.smoothingTimeConstant = 0.2;
 			// The equalizer comes before the analyser, so the spectrum the glow
 			// runs on is the one that reaches the speakers — a bass boost is
-			// something you see as well as hear.
-			this.equalizer.attach(context, source).connect(analyser);
+			// something you see as well as hear. The reverb sits between them for
+			// the same reason, and after the equalizer because the bands should
+			// shape what goes into the room rather than what comes back out.
+			const equalized = this.equalizer.attach(context, source);
+			this.effects.attach(context, equalized).connect(analyser);
 			analyser.connect(context.destination);
 			// Last line of defence for the silent-playback case above.
 			context.addEventListener("statechange", () => {
@@ -183,6 +194,7 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 		} catch {
 			this.analyserNode = null;
 			this.equalizer.release();
+			this.effects.release();
 			if (source && context) {
 				// The element is captured for good; wire it straight to the
 				// output and keep the context, which now has to stay alive.

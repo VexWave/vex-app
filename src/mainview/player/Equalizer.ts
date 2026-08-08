@@ -1,3 +1,6 @@
+import { clamp } from "@/lib/utils";
+import { easeParam, type GraphStage } from "./audioGraph";
+
 /**
  * Centre frequencies of the bands, an octave apart from 31 Hz up — the ten-band
  * layout a graphic equalizer wears everywhere. It is also the order a curve is
@@ -23,14 +26,6 @@ export const EQ_GAIN_STEP_DB = 0.5;
  */
 const BAND_Q = Math.SQRT2;
 
-/**
- * Time constant of every parameter move, in seconds. A gain written straight
- * onto a running graph steps, and a step in a filter coefficient is a click; an
- * exponential approach this short has arrived within about 50 ms, soon enough to
- * belong to the fader that asked for it and gradual enough to stay silent.
- */
-const RAMP_TAU = 0.01;
-
 export interface EqualizerState {
 	enabled: boolean;
 	/** One gain per entry of `EQ_BANDS`, in dB. */
@@ -39,13 +34,11 @@ export interface EqualizerState {
 }
 
 /**
- * Into range, and anything that is not a number to 0 dB — which is no change at
- * all, the one value that is safe to land on without being asked for.
+ * Into range either way, and anything that is not a number to 0 dB — which is no
+ * change at all, the one value that is safe to land on without being asked for.
  */
-function clamp(value: number, limit: number): number {
-	if (!Number.isFinite(value)) return 0;
-	return Math.min(Math.max(value, -limit), limit);
-}
+const clampDb = (db: number, limit: number): number =>
+	clamp(db, -limit, limit, 0);
 
 /**
  * The ten-band equalizer sitting in the playback graph, and the settings that
@@ -62,7 +55,7 @@ function clamp(value: number, limit: number): number {
  * own, so dragging a fader doesn't churn the player's snapshot and re-render
  * every track row in the app.
  */
-export class Equalizer {
+export class Equalizer implements GraphStage {
 	private subscribers = new Set<() => void>();
 	private enabled = true;
 	private gains: number[] = EQ_BANDS.map(() => 0);
@@ -102,7 +95,7 @@ export class Equalizer {
 
 	setBandGain(index: number, db: number): void {
 		if (index < 0 || index >= this.gains.length) return;
-		const gain = clamp(db, EQ_GAIN_LIMIT_DB);
+		const gain = clampDb(db, EQ_GAIN_LIMIT_DB);
 		if (this.gains[index] === gain) return;
 		// Replaced rather than written into: the snapshot hands this array
 		// straight to React, which compares it by identity.
@@ -125,11 +118,11 @@ export class Equalizer {
 		if (stored.gains !== null) {
 			const gains = stored.gains;
 			this.gains = this.gains.map((current, index) =>
-				clamp(gains[index] ?? current, EQ_GAIN_LIMIT_DB),
+				clampDb(gains[index] ?? current, EQ_GAIN_LIMIT_DB),
 			);
 		}
 		if (stored.preampDb !== null) {
-			this.preampDb = clamp(stored.preampDb, EQ_PREAMP_LIMIT_DB);
+			this.preampDb = clampDb(stored.preampDb, EQ_PREAMP_LIMIT_DB);
 		}
 		this.commit();
 	}
@@ -143,7 +136,7 @@ export class Equalizer {
 	}
 
 	setPreamp(db: number): void {
-		const preampDb = clamp(db, EQ_PREAMP_LIMIT_DB);
+		const preampDb = clampDb(db, EQ_PREAMP_LIMIT_DB);
 		if (preampDb === this.preampDb) return;
 		this.preampDb = preampDb;
 		this.commit();
@@ -220,18 +213,15 @@ export class Equalizer {
 	private apply(): void {
 		const context = this.context;
 		if (!context || !this.preampNode) return;
+		// One reference time for all eleven parameters, so they move together.
 		const at = context.currentTime;
-		this.preampNode.gain.setTargetAtTime(
+		easeParam(
+			this.preampNode.gain,
 			this.enabled ? 10 ** (this.preampDb / 20) : 1,
 			at,
-			RAMP_TAU,
 		);
 		this.filters.forEach((filter, index) => {
-			filter.gain.setTargetAtTime(
-				this.enabled ? this.gains[index] : 0,
-				at,
-				RAMP_TAU,
-			);
+			easeParam(filter.gain, this.enabled ? this.gains[index] : 0, at);
 		});
 	}
 
