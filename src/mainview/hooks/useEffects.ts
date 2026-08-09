@@ -3,10 +3,10 @@ import { playerController } from "@/hooks/usePlayer";
 import type { Effects, EffectsState } from "@/player/Effects";
 
 /**
- * Playback speed and reverb. Like the equalizer these belong to the player
- * singleton rather than standing beside it — the settings and what they drive,
- * an element property and a pair of audio nodes, are one thing — so this hook
- * reaches them through the controller instead of owning them.
+ * Playback speed and reverb. These belong to the player singleton, as the
+ * equalizer does — the settings and what they drive, an element property and a
+ * branch of the audio graph, are one thing — so this hook reaches them through
+ * the controller.
  */
 export function useEffects(): {
 	state: EffectsState;

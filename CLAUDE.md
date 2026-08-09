@@ -54,8 +54,8 @@ Schema in `src/shared/rpcSchema.ts`, webview singleton in `src/mainview/api/rpc.
 
 ## Conventions
 
-- **Comments carry what the code can't**: what a piece of code does, and why it exists in the form it does. A comment restating the line below it is noise.
-- **Write comments in the present tense, about what is there** — not what a thing replaced, no longer does, or was tried first. History belongs in commit messages. The same goes for these files. (Contrast with a live constraint is fine and often the point.)
+- **Comments carry what the code can't**: why a piece of code exists in the form it does — a constant's reasoning, a spec behaviour, a constraint from somewhere else in the app. What it *does* is already on the line below, and repeating that is noise.
+- **Write comments in the present tense, about what is there.** State the reason directly rather than through what a thing replaced, no longer does, was tried first, or would do if written another way. History belongs in commit messages. The same goes for these files.
 - `@/` path alias → `src/mainview/` (defined in both `tsconfig.json` and `vite.config.ts`; keep them in sync).
 - Tabs for indentation.
 - `@types/three` is a required devDependency only because electrobun's own source imports `three`; without it `tsc` fails inside `node_modules/electrobun`.
