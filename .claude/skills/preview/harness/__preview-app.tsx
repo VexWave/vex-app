@@ -165,7 +165,6 @@ const PLAYING = { index: 0, atSec: 83 } as const;
 const EQUALIZER = {
 	enabled: true,
 	gains: [4.5, 3.5, 1.5, -1, -2.5, -1.5, 0.5, 2.5, 4, 3],
-	preampDb: -1.5,
 };
 
 /** Slowed and wet, so the player bar's effects button reads as engaged. */

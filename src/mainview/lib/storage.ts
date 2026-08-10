@@ -1,8 +1,4 @@
-import {
-	EQ_BANDS,
-	EQ_GAIN_LIMIT_DB,
-	EQ_PREAMP_LIMIT_DB,
-} from "@/player/Equalizer";
+import { EQ_BANDS, EQ_GAIN_LIMIT_DB } from "@/player/Equalizer";
 import type { SearchSource } from "../../shared/rpcSchema";
 import type { RepeatMode } from "@/player/types";
 
@@ -120,10 +116,6 @@ export const storage = {
 			"equalizer.gains",
 			EQ_BANDS.length,
 			(value) => Math.abs(value) <= EQ_GAIN_LIMIT_DB,
-		),
-		preamp: numberValue(
-			"equalizer.preamp",
-			(value) => Math.abs(value) <= EQ_PREAMP_LIMIT_DB,
 		),
 	},
 	discord: {

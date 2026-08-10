@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
-import { Group, SettingRow, Toggle } from "@/components/SettingsControls";
+import { Group, Toggle } from "@/components/SettingsControls";
 import { Button } from "@/components/ui/button";
 import { useEqualizer } from "@/hooks/useEqualizer";
 import { cn } from "@/lib/utils";
@@ -8,7 +8,6 @@ import {
 	EQ_BANDS,
 	EQ_GAIN_LIMIT_DB,
 	EQ_GAIN_STEP_DB,
-	EQ_PREAMP_LIMIT_DB,
 } from "@/player/Equalizer";
 
 /**
@@ -23,9 +22,9 @@ const THUMB_PX = 16;
  * The equalizer, as a bank of ten faders with the curve they describe drawn
  * behind them.
  *
- * It wears the settings view's own panel and rows (`SettingsControls`) and
- * borrows the shared slider's thumb, so it reads as a settings group rather than
- * as an instrument bolted into one. What it moves is live: the faders are the
+ * It wears the settings view's own panel (`SettingsControls`) and borrows the
+ * shared slider's thumb, so it reads as a settings group rather than as an
+ * instrument bolted into one. What it moves is live: the faders are the
  * gains on the filters in the playback graph, and a change is heard on the track
  * already playing.
  *
@@ -37,7 +36,7 @@ const THUMB_PX = 16;
 export function EqualizerPanel() {
 	const { state, equalizer } = useEqualizer();
 	const off = !state.enabled;
-	const flat = state.preampDb === 0 && state.gains.every((gain) => gain === 0);
+	const flat = state.gains.every((gain) => gain === 0);
 
 	return (
 		<Group
@@ -68,35 +67,6 @@ export function EqualizerPanel() {
 				gains={state.gains}
 				disabled={off}
 				onChange={(index, db) => equalizer.setBandGain(index, db)}
-			/>
-
-			<SettingRow
-				label="Preamp"
-				hint="The level going into the bands. Pull it down when boosted bass starts to break up."
-				// The same fader as a band, lying on its side, because it is the same
-				// kind of number: nothing at the middle, and as much of a cut below it
-				// as a boost above. It names itself the way the bands do, so the row's
-				// ids go unused here (see SettingRow).
-				control={() => (
-					<div
-						className={cn(
-							"flex w-52 items-center gap-3 transition-opacity",
-							off && "opacity-40",
-						)}
-					>
-						<Fader
-							orientation="horizontal"
-							value={state.preampDb}
-							limitDb={EQ_PREAMP_LIMIT_DB}
-							label="Preamp"
-							disabled={off}
-							onChange={(db) => equalizer.setPreamp(db)}
-						/>
-						<span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-							{formatDb(state.preampDb)} dB
-						</span>
-					</div>
-				)}
 			/>
 		</Group>
 	);
@@ -155,9 +125,7 @@ function Bank({
 					{EQ_BANDS.map((hz, index) => (
 						<Fader
 							key={hz}
-							orientation="vertical"
 							value={gains[index]}
-							limitDb={EQ_GAIN_LIMIT_DB}
 							label={`${hz} Hz band`}
 							disabled={disabled}
 							onChange={(db) => onChange(index, db)}
@@ -181,30 +149,25 @@ function Bank({
 }
 
 /**
- * A fader reading zero at its middle: the ten bands, and the preamp lying on its
- * side. Radix drives it, for the pointer and keyboard handling and the slider
- * semantics, and it borrows `ui/slider`'s thumb — but it draws its own fill,
- * because a gain is a cut as readily as a boost and so the fill runs from the
- * 0 dB line out to the thumb, where the shared one's runs from the minimum.
+ * One band's fader, reading zero at its middle. Radix drives it, for the pointer
+ * and keyboard handling and the slider semantics, and it borrows `ui/slider`'s
+ * thumb — but it draws its own fill, because a gain is a cut as readily as a
+ * boost and so the fill runs from the 0 dB line out to the thumb, where the
+ * shared one's runs from the minimum.
  */
 function Fader({
-	orientation,
 	value,
-	limitDb,
 	label,
 	disabled,
 	onChange,
 }: {
-	orientation: "horizontal" | "vertical";
 	value: number;
-	limitDb: number;
 	label: string;
 	disabled: boolean;
 	onChange: (db: number) => void;
 }) {
-	const vertical = orientation === "vertical";
 	// Where the thumb's centre sits, as a fraction of its travel from the low end.
-	const fraction = (value + limitDb) / (limitDb * 2);
+	const fraction = (value + EQ_GAIN_LIMIT_DB) / (EQ_GAIN_LIMIT_DB * 2);
 	// The distance from an end of the track to the thumb's centre. The track
 	// spans the whole control while the centre only crosses the half-thumb inset
 	// at each end, which is the offset the fill has to carry too if it is to meet
@@ -214,45 +177,30 @@ function Fader({
 		`calc(${THUMB_PX / 2}px + ${travelled.toFixed(4)} * (100% - ${THUMB_PX}px))`;
 	const fromLow = toThumb(fraction);
 	const fromHigh = toThumb(1 - fraction);
-	// Out of the middle towards whichever end the thumb is on, so a boost fills
-	// up (or right) and a cut fills the other way.
-	const fill = vertical
-		? value >= 0
+	// Out of the middle towards the thumb: a boost fills up, a cut fills down.
+	const fill =
+		value >= 0
 			? { top: fromHigh, bottom: "50%" }
-			: { top: "50%", bottom: fromLow }
-		: value >= 0
-			? { left: "50%", right: fromHigh }
-			: { left: fromLow, right: "50%" };
+			: { top: "50%", bottom: fromLow };
 
 	return (
 		<SliderPrimitive.Root
-			orientation={orientation}
+			orientation="vertical"
 			value={[value]}
-			min={-limitDb}
-			max={limitDb}
+			min={-EQ_GAIN_LIMIT_DB}
+			max={EQ_GAIN_LIMIT_DB}
 			step={EQ_GAIN_STEP_DB}
 			disabled={disabled}
 			onValueChange={([next]) => onChange(next)}
-			className={cn(
-				"relative flex touch-none select-none items-center",
-				vertical ? "h-full flex-col" : "w-full",
-			)}
+			className="relative flex h-full touch-none select-none flex-col items-center"
 		>
 			{/* `ui/slider`'s track, a shade quieter: ten of them stood on end carry
 			    far more of it than the one horizontal bar that styling was drawn
 			    for, and the fill is what should be read, not the groove. */}
-			<SliderPrimitive.Track
-				className={cn(
-					"relative overflow-hidden rounded-full bg-primary/15",
-					vertical ? "h-full w-1" : "h-1.5 w-full",
-				)}
-			>
+			<SliderPrimitive.Track className="relative h-full w-1 overflow-hidden rounded-full bg-primary/15">
 				<span
 					aria-hidden="true"
-					className={cn(
-						"absolute bg-primary",
-						vertical ? "inset-x-0" : "inset-y-0",
-					)}
+					className="absolute inset-x-0 bg-primary"
 					style={fill}
 				/>
 			</SliderPrimitive.Track>

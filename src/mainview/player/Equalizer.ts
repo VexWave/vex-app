@@ -13,8 +13,6 @@ export const EQ_BANDS = [
 
 /** How far a band may be pushed either way, in dB. */
 export const EQ_GAIN_LIMIT_DB = 12;
-/** How far the preamp may be pushed either way, in dB. */
-export const EQ_PREAMP_LIMIT_DB = 12;
 /** Resolution of a fader, in dB — what one arrow key moves. */
 export const EQ_GAIN_STEP_DB = 0.5;
 
@@ -30,15 +28,14 @@ export interface EqualizerState {
 	enabled: boolean;
 	/** One gain per entry of `EQ_BANDS`, in dB. */
 	gains: readonly number[];
-	preampDb: number;
 }
 
 /**
  * Into range either way, and anything that is not a number to 0 dB — which is no
  * change at all, the one value that is safe to land on without being asked for.
  */
-const clampDb = (db: number, limit: number): number =>
-	clamp(db, -limit, limit, 0);
+const clampDb = (db: number): number =>
+	clamp(db, -EQ_GAIN_LIMIT_DB, EQ_GAIN_LIMIT_DB, 0);
 
 /**
  * The ten-band equalizer sitting in the playback graph, and the settings that
@@ -59,12 +56,10 @@ export class Equalizer implements GraphStage {
 	private subscribers = new Set<() => void>();
 	private enabled = true;
 	private gains: number[] = EQ_BANDS.map(() => 0);
-	private preampDb = 0;
 	private snapshot: EqualizerState;
 
 	/** Null until the playback graph is built; the settings stand without it. */
 	private context: AudioContext | null = null;
-	private preampNode: GainNode | null = null;
 	private filters: BiquadFilterNode[] = [];
 
 	constructor() {
@@ -95,7 +90,7 @@ export class Equalizer implements GraphStage {
 
 	setBandGain(index: number, db: number): void {
 		if (index < 0 || index >= this.gains.length) return;
-		const gain = clampDb(db, EQ_GAIN_LIMIT_DB);
+		const gain = clampDb(db);
 		if (this.gains[index] === gain) return;
 		// Replaced rather than written into: the snapshot hands this array
 		// straight to React, which compares it by identity.
@@ -106,39 +101,27 @@ export class Equalizer implements GraphStage {
 	/**
 	 * Put stored settings back, as one commit rather than one per field: a
 	 * subscriber cannot catch the restore half applied, and cannot hand it back
-	 * to storage as three separate changes either. A null field is a key that was
+	 * to storage as two separate changes either. A null field is a key that was
 	 * never written or failed validation, and leaves the default standing.
 	 */
 	restore(stored: {
 		enabled: boolean | null;
 		gains: readonly number[] | null;
-		preampDb: number | null;
 	}): void {
 		if (stored.enabled !== null) this.enabled = stored.enabled;
 		if (stored.gains !== null) {
 			const gains = stored.gains;
 			this.gains = this.gains.map((current, index) =>
-				clampDb(gains[index] ?? current, EQ_GAIN_LIMIT_DB),
+				clampDb(gains[index] ?? current),
 			);
 		}
-		if (stored.preampDb !== null) {
-			this.preampDb = clampDb(stored.preampDb, EQ_PREAMP_LIMIT_DB);
-		}
 		this.commit();
 	}
 
-	/** Back to flat: every band and the preamp at 0 dB. */
+	/** Back to flat: every band at 0 dB. */
 	reset(): void {
-		if (this.preampDb === 0 && this.gains.every((gain) => gain === 0)) return;
+		if (this.gains.every((gain) => gain === 0)) return;
 		this.gains = this.gains.map(() => 0);
-		this.preampDb = 0;
-		this.commit();
-	}
-
-	setPreamp(db: number): void {
-		const preampDb = clampDb(db, EQ_PREAMP_LIMIT_DB);
-		if (preampDb === this.preampDb) return;
-		this.preampDb = preampDb;
 		this.commit();
 	}
 
@@ -152,7 +135,6 @@ export class Equalizer implements GraphStage {
 	 */
 	attach(context: AudioContext, input: AudioNode): AudioNode {
 		this.context = context;
-		this.preampNode = context.createGain();
 		this.filters = EQ_BANDS.map((hz, index) => {
 			const filter = context.createBiquadFilter();
 			// Shelves at the two ends, so the outermost faders lift or drop
@@ -171,11 +153,10 @@ export class Equalizer implements GraphStage {
 			return filter;
 		});
 
-		input.connect(this.preampNode);
 		const output = this.filters.reduce<AudioNode>((previous, filter) => {
 			previous.connect(filter);
 			return filter;
-		}, this.preampNode);
+		}, input);
 		this.apply();
 		return output;
 	}
@@ -186,7 +167,6 @@ export class Equalizer implements GraphStage {
 	 */
 	release(): void {
 		this.context = null;
-		this.preampNode = null;
 		this.filters = [];
 	}
 
@@ -206,20 +186,15 @@ export class Equalizer implements GraphStage {
 	/**
 	 * Push the settings onto the nodes, or onto nothing while there are none.
 	 *
-	 * Bypass is a flat curve at unity gain rather than a chain lifted out of the
-	 * graph: a peaking filter at 0 dB is transparent, so the two are the same
-	 * sound, and re-routing a live graph clicks where a ramped parameter doesn't.
+	 * Bypass is a flat curve rather than a chain lifted out of the graph: a
+	 * peaking filter at 0 dB is transparent, so the two are the same sound, and
+	 * re-routing a live graph clicks where a ramped parameter doesn't.
 	 */
 	private apply(): void {
 		const context = this.context;
-		if (!context || !this.preampNode) return;
-		// One reference time for all eleven parameters, so they move together.
+		if (!context) return;
+		// One reference time for all ten gains, so they move together.
 		const at = context.currentTime;
-		easeParam(
-			this.preampNode.gain,
-			this.enabled ? 10 ** (this.preampDb / 20) : 1,
-			at,
-		);
 		this.filters.forEach((filter, index) => {
 			easeParam(filter.gain, this.enabled ? this.gains[index] : 0, at);
 		});
@@ -229,7 +204,6 @@ export class Equalizer implements GraphStage {
 		return {
 			enabled: this.enabled,
 			gains: this.gains,
-			preampDb: this.preampDb,
 		};
 	}
 }

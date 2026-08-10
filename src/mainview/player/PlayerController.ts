@@ -320,7 +320,6 @@ export class PlayerController {
 		this.player.equalizer.restore({
 			enabled: storage.equalizer.enabled.get(),
 			gains: storage.equalizer.gains.get(),
-			preampDb: storage.equalizer.preamp.get(),
 		});
 	}
 
@@ -338,10 +337,9 @@ export class PlayerController {
 	 * this off.
 	 */
 	private persistEqualizer(): void {
-		const { enabled, gains, preampDb } = this.player.equalizer.getSnapshot();
+		const { enabled, gains } = this.player.equalizer.getSnapshot();
 		storage.equalizer.enabled.set(enabled);
 		storage.equalizer.gains.set(gains);
-		storage.equalizer.preamp.set(preampDb);
 	}
 
 	private buildSnapshot(): PlayerState {
