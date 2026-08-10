@@ -12,6 +12,7 @@
 // nothing beside it.
 import { createHash } from "node:crypto";
 import { mkdirSync, rmSync, statSync } from "node:fs";
+import { stampWinIcon } from "./stamp-win-icons";
 
 // Both markers must match the extractor's own (package/src/extractor/main.zig).
 // It scans itself for the *second* metadata marker: the first is this literal
@@ -39,6 +40,12 @@ if (setupExes.length !== 1) {
 }
 
 const stem = setupExes[0]!.replace(/\.exe$/, "");
+
+// The fused installer's icon is the stub's, and it is stamped before the bytes
+// are read: what is appended below is a trailing overlay, which Windows never
+// looks in for an icon.
+await stampWinIcon(`${buildFolder}/${stem}.exe`);
+
 const stubBytes = await Bun.file(`${buildFolder}/${stem}.exe`).bytes();
 const metadataBytes = await Bun.file(
 	`${buildFolder}/${stem}.metadata.json`,

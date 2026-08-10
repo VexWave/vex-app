@@ -25,4 +25,10 @@ export default {
 			icon: "assets/vex-logo.ico",
 		},
 	},
+	scripts: {
+		// electrobun's own attempt at stamping the icon onto the bundle's exes is
+		// dead code in its compiled CLI, and the failure is swallowed. The hook
+		// redoes it at the same point, before the bundle is tarred.
+		postBuild: "scripts/stamp-win-icons.ts",
+	},
 } satisfies ElectrobunConfig;
