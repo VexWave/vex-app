@@ -167,10 +167,11 @@ const EQUALIZER = {
 	gains: [4.5, 3.5, 1.5, -1, -2.5, -1.5, 0.5, 2.5, 4, 3],
 };
 
-/** Slowed and wet, so the player bar's effects button reads as engaged. */
+/** Slowed, driven and wet, so the player bar's effects button reads as engaged. */
 const EFFECTS = {
 	rate: 0.9,
 	preservePitch: false,
+	drive: 0.4,
 	reverbMix: 0.35,
 } as const;
 
@@ -283,7 +284,12 @@ importService.jobFor = (url: string) =>
 // library through `tracksOf` / `trackCountsByName`, which read the two above.
 
 playerController.equalizer.restore(EQUALIZER);
-playerController.effects.restore(EFFECTS);
+// Through the setters, because `Effects` is session-only and so has no `restore`
+// for stored settings to come back through the way the equalizer's does.
+playerController.effects.setRate(EFFECTS.rate);
+playerController.effects.setPreservePitch(EFFECTS.preservePitch);
+playerController.effects.setDrive(EFFECTS.drive);
+playerController.effects.setReverbMix(EFFECTS.reverbMix);
 
 // Where to land: ?view=<MainViewName>[&open=<id>].
 const params = new URLSearchParams(location.search);
@@ -307,3 +313,16 @@ createRoot(document.getElementById("root")!).render(
 		<App />
 	</StrictMode>,
 );
+
+// The effects panel only exists while its popover is open, so the trigger is
+// pressed once it has rendered — retried rather than timed, because StrictMode
+// renders twice and nothing here is told when the second one lands. Delete this
+// for a preview that isn't of the panel.
+const openEffects = (): void => {
+	const trigger = document.querySelector<HTMLElement>(
+		'[aria-label="Playback effects"]',
+	);
+	if (trigger) trigger.click();
+	else setTimeout(openEffects, 16);
+};
+setTimeout(openEffects, 16);

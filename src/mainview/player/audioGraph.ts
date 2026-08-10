@@ -33,11 +33,28 @@ const RAMP_TAU = 0.01;
  * It is an approach and not an arrival: `setTargetAtTime` closes on its target
  * asymptotically, so a bypassed band settles to 0 dB without ever being exactly
  * 0 dB. Nothing here reads a parameter back, which is what makes that fine.
- *
- * `at` is a parameter because a caller ramping several parameters at once has to
- * give them all one reference time, and because an `AudioParam` cannot name the
- * context it belongs to.
  */
 export function easeParam(param: AudioParam, value: number, at: number): void {
 	param.setTargetAtTime(value, at, RAMP_TAU);
 }
+
+/**
+ * How a stage's levels reach its parameters. A stage maps its setting onto its
+ * gains in one place and takes this, so the graph it builds and the graph it
+ * later adjusts cannot disagree about what a setting means.
+ */
+export type ParamWriter = (param: AudioParam, value: number) => void;
+
+/** For a graph being built, which has nothing to glide from. */
+export const writeValue: ParamWriter = (param, value) => {
+	param.value = value;
+};
+
+/**
+ * For a graph already running. `at` is bound once so every parameter in the move
+ * shares one reference time — an `AudioParam` cannot name its own context.
+ */
+export const writeRamp =
+	(at: number): ParamWriter =>
+	(param, value) =>
+		easeParam(param, value, at);
