@@ -14,14 +14,9 @@ import { useEffects } from "@/hooks/useEffects";
 import { RATE_MAX, RATE_MIN, RATE_STEP } from "@/player/Effects";
 
 /**
- * One setting in the panel: a name, what it currently reads, something to press
- * beside it, and the control it spans. Borrows `SettingsControls`' shape — the
- * label is handed to the control as `Labelling` rather than wrapped around it —
- * at the density a popover wants, where `SettingRow`'s is built for the settings
- * column.
- *
- * Every row goes through it, including the one that is only a switch, so none of
- * them can drift away from the others.
+ * One setting in the panel. Borrows `SettingsControls`' shape — the label is
+ * handed to the control as `Labelling` rather than wrapped around it — at the
+ * density a popover wants, where `SettingRow` is built for the settings column.
  */
 function EffectRow({
 	label,
@@ -57,7 +52,7 @@ function EffectRow({
 }
 
 /**
- * The speed and reverb panel behind the player bar's gauge button.
+ * The speed, drive and reverb panel behind the player bar's gauge button.
  *
  * `memo` over no props at all, deliberately: `App` subscribes to the player, so
  * `PlayerBar` re-renders several times a second while a track runs. Taking
@@ -66,10 +61,10 @@ function EffectRow({
  */
 export const PlaybackEffects = memo(function PlaybackEffects() {
 	const { state, effects } = useEffects();
+	const drivePercent = Math.round(state.drive * 100);
 	const reverbPercent = Math.round(state.reverbMix * 100);
-	// One expression for both: the trigger lights when something is doing
-	// something, and that is exactly when there is something to undo.
-	const engaged = state.rate !== 1 || state.reverbMix > 0;
+	// Lights the trigger and enables Reset: something to hear is something to undo.
+	const engaged = state.rate !== 1 || state.drive > 0 || state.reverbMix > 0;
 
 	return (
 		<Popover>
@@ -77,17 +72,15 @@ export const PlaybackEffects = memo(function PlaybackEffects() {
 				<Button
 					variant="ghost"
 					size="icon"
-					aria-label="Speed and reverb"
+					aria-label="Playback effects"
 					className={modeToggle(engaged)}
 				>
 					<Gauge className="h-5 w-5" />
 				</Button>
 			</PopoverTrigger>
-			{/* Above the bar and flush with its right edge, where the trigger is. */}
 			<PopoverContent side="top" align="end" className="space-y-4">
-				{/* A header carrying the one way back, as the settings panels do:
-				    the button undoes the whole panel, so it belongs to none of the
-				    rows in it. */}
+				{/* Reset undoes the whole panel, so it sits in the header rather than
+				    belonging to any one row — as the settings panels do it. */}
 				<div className="flex items-center justify-between gap-2">
 					<span className="text-sm font-semibold">Effects</span>
 					<Button
@@ -128,6 +121,20 @@ export const PlaybackEffects = memo(function PlaybackEffects() {
 				/>
 
 				<Separator />
+
+				{/* Ahead of the reverb, as it is in the graph. */}
+				<EffectRow label="Drive" readout={`${drivePercent}%`}>
+					{(labelling) => (
+						<Slider
+							value={[state.drive]}
+							max={1}
+							step={0.01}
+							onValueChange={([value]) => effects.setDrive(value)}
+							valueText={`${drivePercent} percent`}
+							{...labelling}
+						/>
+					)}
+				</EffectRow>
 
 				<EffectRow label="Reverb" readout={`${reverbPercent}%`}>
 					{(labelling) => (
