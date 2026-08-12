@@ -159,12 +159,20 @@ const RUNNING_IMPORT: ImportJob | null = {
 	error: null,
 };
 
-/** Mid-track and playing, so the row highlight and the player bar are alive. */
-const PLAYING = { index: 0, atSec: 83 } as const;
+/**
+ * Playing, and a short way in: the seek fill ends well clear of the middle,
+ * which is the one place an off-centre thumb still met it.
+ */
+const PLAYING = { index: 0, atSec: 29 } as const;
 
+/**
+ * Both limits, twice over, and two bands left flat: where a fader's thumb sits
+ * against the ends of the bank, and against the curve, is only readable at the
+ * extremes.
+ */
 const EQUALIZER = {
 	enabled: true,
-	gains: [4.5, 3.5, 1.5, -1, -2.5, -1.5, 0.5, 2.5, 4, 3],
+	gains: [12, -12, 0, 5.5, -2.5, 0, 8, -6, 3.5, -12],
 };
 
 /** Slowed, driven and wet, so the player bar's effects button reads as engaged. */
@@ -261,7 +269,7 @@ const PLAYER_STATE: PlayerState = {
 	isPlaying: CURRENT !== null,
 	currentTimeSec: PLAYING.atSec,
 	durationSec: CURRENT?.durationSec ?? 0,
-	volume: 0.75,
+	volume: 0.8,
 	muted: false,
 	repeatMode: "off",
 	shuffled: false,

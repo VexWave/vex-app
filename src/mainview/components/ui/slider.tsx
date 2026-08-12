@@ -9,6 +9,39 @@ interface SliderProps
 	valueText?: string;
 }
 
+/**
+ * The thumb, sitting on the value it marks.
+ *
+ * Radix holds a thumb inside its track by shifting it in by half of itself at the
+ * low end and back out by half at the high end, off the thumb's own measured box
+ * — which slides the point the thumb marks across it as it travels, so the knob
+ * drifts under a dragging pointer and the fill only meets it at the middle. The
+ * box Radix measures is empty and the knob is drawn out of its centre, which
+ * leaves nothing to shift. The knob then overhangs each end of the track by half
+ * of itself, which is where a thumb standing on its own value has to sit.
+ *
+ * `className` styles the knob, the part that is seen. The group is named so that
+ * a focusable ancestor carrying a plain `group` can't light the ring.
+ */
+const SliderThumb = React.forwardRef<
+	React.ElementRef<typeof SliderPrimitive.Thumb>,
+	React.ComponentPropsWithoutRef<typeof SliderPrimitive.Thumb>
+>(({ className, ...props }, ref) => (
+	<SliderPrimitive.Thumb
+		ref={ref}
+		{...props}
+		className="group/thumb relative block size-0 focus-visible:outline-none"
+	>
+		<span
+			className={cn(
+				"absolute left-0 top-0 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/50 bg-background shadow transition-colors group-focus-visible/thumb:ring-1 group-focus-visible/thumb:ring-ring",
+				className,
+			)}
+		/>
+	</SliderPrimitive.Thumb>
+));
+SliderThumb.displayName = SliderPrimitive.Thumb.displayName;
+
 const Slider = React.forwardRef<
 	React.ElementRef<typeof SliderPrimitive.Root>,
 	SliderProps
@@ -32,7 +65,9 @@ const Slider = React.forwardRef<
 		<SliderPrimitive.Root
 			ref={ref}
 			className={cn(
-				"relative flex w-full touch-none select-none items-center",
+				// The height is the thumb's, which no longer sets it: it is the band
+				// the pointer can grab, and the track alone would leave 6px of it.
+				"relative flex h-4 w-full touch-none select-none items-center data-[disabled]:opacity-50",
 				className,
 			)}
 			{...props}
@@ -40,16 +75,15 @@ const Slider = React.forwardRef<
 			<SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-primary/20">
 				<SliderPrimitive.Range className="absolute h-full bg-primary" />
 			</SliderPrimitive.Track>
-			<SliderPrimitive.Thumb
+			<SliderThumb
 				aria-label={ariaLabel}
 				aria-labelledby={ariaLabelledBy}
 				aria-describedby={ariaDescribedBy}
 				aria-valuetext={valueText}
-				className="block h-4 w-4 rounded-full border border-primary/50 bg-background shadow transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
 			/>
 		</SliderPrimitive.Root>
 	),
 );
 Slider.displayName = SliderPrimitive.Root.displayName;
 
-export { Slider };
+export { Slider, SliderThumb };

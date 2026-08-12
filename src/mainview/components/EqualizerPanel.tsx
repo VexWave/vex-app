@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { Group, Toggle } from "@/components/SettingsControls";
 import { Button } from "@/components/ui/button";
+import { SliderThumb } from "@/components/ui/slider";
 import { useEqualizer } from "@/hooks/useEqualizer";
 import { cn } from "@/lib/utils";
 import {
@@ -9,14 +10,6 @@ import {
 	EQ_GAIN_LIMIT_DB,
 	EQ_GAIN_STEP_DB,
 } from "@/player/Equalizer";
-
-/**
- * The thumb, in px. A slider's thumb travels between half of itself from either
- * end of its track, so everything drawn to line up with the thumbs — the fill
- * running up to one, the curve through all ten — carries that same half-thumb
- * inset. The one number they all read from; it is `ui/slider`'s `h-4 w-4`.
- */
-const THUMB_PX = 16;
 
 /**
  * The equalizer, as a bank of ten faders with the curve they describe drawn
@@ -166,22 +159,15 @@ function Fader({
 	disabled: boolean;
 	onChange: (db: number) => void;
 }) {
-	// Where the thumb's centre sits, as a fraction of its travel from the low end.
+	// Where the thumb's centre sits, as a fraction of its travel from the low end
+	// — and, since the thumb stands on its own value, of the track as well.
 	const fraction = (value + EQ_GAIN_LIMIT_DB) / (EQ_GAIN_LIMIT_DB * 2);
-	// The distance from an end of the track to the thumb's centre. The track
-	// spans the whole control while the centre only crosses the half-thumb inset
-	// at each end, which is the offset the fill has to carry too if it is to meet
-	// the thumb it runs to. At 0 dB it comes out as the exact middle, which is
-	// where the fill's other end is pinned.
-	const toThumb = (travelled: number) =>
-		`calc(${THUMB_PX / 2}px + ${travelled.toFixed(4)} * (100% - ${THUMB_PX}px))`;
-	const fromLow = toThumb(fraction);
-	const fromHigh = toThumb(1 - fraction);
+	const percent = (travelled: number) => `${(travelled * 100).toFixed(4)}%`;
 	// Out of the middle towards the thumb: a boost fills up, a cut fills down.
 	const fill =
 		value >= 0
-			? { top: fromHigh, bottom: "50%" }
-			: { top: "50%", bottom: fromLow };
+			? { top: percent(1 - fraction), bottom: "50%" }
+			: { top: "50%", bottom: percent(fraction) };
 
 	return (
 		<SliderPrimitive.Root
@@ -204,11 +190,9 @@ function Fader({
 					style={fill}
 				/>
 			</SliderPrimitive.Track>
-			<SliderPrimitive.Thumb
+			<SliderThumb
 				aria-label={label}
 				aria-valuetext={`${formatDb(value)} decibels`}
-				style={{ height: THUMB_PX, width: THUMB_PX }}
-				className="block rounded-full border border-primary/50 bg-background shadow transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 			/>
 		</SliderPrimitive.Root>
 	);
@@ -236,10 +220,7 @@ function Curve({ gains }: { gains: readonly number[] }) {
 	];
 
 	return (
-		<div
-			className="absolute inset-x-0"
-			style={{ top: THUMB_PX / 2, bottom: THUMB_PX / 2 }}
-		>
+		<div className="absolute inset-0">
 			<div className="absolute inset-x-0 top-1/2 border-t border-border" />
 			<svg
 				aria-hidden="true"
