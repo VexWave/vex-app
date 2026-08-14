@@ -13,9 +13,13 @@
 
 <br>
 
-<a href="https://vexwave.github.io/"><img alt="vexwave.github.io" src="https://img.shields.io/badge/See_more-vexwave.github.io-8B3DEE?style=for-the-badge&labelColor=1A1024"></a>
-
 <img src="assets/library.png" alt="The VexWave library, with a track playing" width="880">
+
+</div>
+
+<div align="right">
+
+<a href="https://vexwave.github.io/"><img alt="vexwave.github.io" src="https://img.shields.io/badge/See_more-vexwave.github.io-8B3DEE?style=for-the-badge&labelColor=1A1024"></a>
 
 </div>
 
