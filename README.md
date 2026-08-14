@@ -15,17 +15,13 @@
 
 <a href="https://vexwave.github.io/"><img alt="vexwave.github.io" src="https://img.shields.io/badge/See_more-vexwave.github.io-8B3DEE?style=for-the-badge&labelColor=1A1024"></a>
 
-<br>
-
 <img src="assets/library.png" alt="The VexWave library, with a track playing" width="880">
 
 </div>
 
----
-
 ## Features
 
-| | |
+| Feature | What it does |
 | --- | --- |
 | **Your library, from your server** | Sign in with host, port and credentials. No folder to scan, and search filters as you type. |
 | **Playlists and artists** | Drag tracks into order, set cover art, play any playlist or artist as its own queue. As many artists per track as a song needs. |
@@ -36,8 +32,6 @@
 | **Edit anything** | Title, cover, credits or delete, straight from the row. |
 | **Ten-band equalizer** | Sits in the playback graph, so a change is heard on the track already playing. |
 | **Discord Rich Presence** | Put what you're listening to on your profile. |
-
----
 
 ## Installation
 
