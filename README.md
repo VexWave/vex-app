@@ -6,60 +6,65 @@
 
 **A desktop music player for the server you already own.**
 
-<img alt="Electrobun" src="https://img.shields.io/badge/Electrobun-8B3DEE?style=flat-square">
-<img alt="Bun" src="https://img.shields.io/badge/Bun-A231FF?style=flat-square">
-<img alt="React" src="https://img.shields.io/badge/React-6C3BD1?style=flat-square">
-<img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-41188F?style=flat-square">
+<a href="https://framework.blackboard.sh/electrobun/"><img alt="Electrobun" src="https://img.shields.io/badge/Electrobun-8B3DEE?style=flat-square"></a>
+<a href="https://bun.sh"><img alt="Bun" src="https://img.shields.io/badge/Bun-A231FF?style=flat-square"></a>
+<a href="https://react.dev"><img alt="React" src="https://img.shields.io/badge/React-6C3BD1?style=flat-square"></a>
+<a href="https://www.typescriptlang.org"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-41188F?style=flat-square"></a>
 
-<br><br>
+<br>
+
+<a href="https://vexwave.github.io/"><img alt="vexwave.github.io" src="https://img.shields.io/badge/See_more-vexwave.github.io-8B3DEE?style=for-the-badge&labelColor=1A1024"></a>
+
+<br>
 
 <img src="assets/library.png" alt="The VexWave library, with a track playing" width="880">
 
 </div>
 
-## What it does
+---
 
-### Your server, your library
-Sign in with a host, a port and your credentials. No folder to scan, no import step, and search
-filters everything you own as you type.
+## Features
 
-### Playlists and artists
-Build playlists, drag their tracks into the order you want, give them cover art, and play any of
-them as its own queue. Manage artist names and avatars, and credit as many of them per track as a
-song deserves.
+| | |
+| --- | --- |
+| **Your library, from your server** | Sign in with host, port and credentials. No folder to scan, and search filters as you type. |
+| **Playlists and artists** | Drag tracks into order, set cover art, play any playlist or artist as its own queue. As many artists per track as a song needs. |
+| **Shuffle worth leaving on** | Every track gets its turn before any repeats, and Previous walks back through what actually played. |
+| **Drop in local files** | Drag audio onto the window. VexWave reads the tags, shows you what it found, and uploads. |
+| **Import from a link** | A YouTube or SoundCloud URL becomes a real track, with the creator suggested as an artist. |
+| **Discover** | Search YouTube and SoundCloud in-app and download a hit into your library. |
+| **Edit anything** | Title, cover, credits or delete, straight from the row. |
+| **Ten-band equalizer** | Sits in the playback graph, so a change is heard on the track already playing. |
+| **Discord Rich Presence** | Put what you're listening to on your profile. |
 
-### Shuffle worth leaving on
-Press play on a playlist, an artist or the whole library and the queue becomes that collection.
-Shuffle gives every track its turn before any comes round again and spaces out what you heard most
-recently, and Previous walks back through what actually played rather than up the list.
+---
 
-### Drop in local files
-Drag audio onto the window. VexWave reads the tags, shows you what it found so you can correct it,
-and uploads the files to your server.
+## Installation
 
-### Import from a link
-A YouTube or SoundCloud URL becomes a real track in your library, with the creator suggested as an
-artist.
+> [!IMPORTANT]
+> VexWave is the client half only. Every track streams from a server you run, so set one up first:
+> **[VexWave/vex-backend](https://github.com/VexWave/vex-backend)**.
 
-### Search both platforms from inside the app
-Discover searches YouTube and SoundCloud and downloads a hit straight into your library — the same
-review step a pasted link goes through, so nothing lands unchecked.
+### From a release
 
-<div align="center">
+Download `VexWave-Setup.exe` from the **[latest release](https://github.com/VexWave/vex-app/releases/latest)**
+and run it. Windows x64, self-contained.
 
-<img src="assets/discover.png" alt="Discover, with YouTube search results and one of them downloading" width="880">
+> [!NOTE]
+> First launch downloads yt-dlp, ffmpeg and deno before showing the login screen.
 
-</div>
+### From source
 
-### Edit anything
-Retitle a track, swap its cover, fix its credits or delete it, straight from the row.
+Needs **[Bun](https://bun.sh) 1.3+**. No npm, no node.
 
-### Shape the sound
-A ten-band equalizer sits in the playback graph, so a change is heard on the track already playing.
-Beside it, a switch for putting what you're listening to on your Discord profile.
+```sh
+git clone https://github.com/VexWave/vex-app.git
+cd vex-app
+bun install
+```
 
-<div align="center">
-
-<img src="assets/settings.png" alt="Settings: the ten-band equalizer and the Discord presence switch" width="880">
-
-</div>
+| Command | What it does |
+| --- | --- |
+| `bun run dev:hmr` | Develop, with Vite HMR on 5173 |
+| `bun run start` | Run from bundled assets |
+| `bun run build:installer:stable` | Build `installers/VexWave-Setup.exe` |
