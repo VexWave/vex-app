@@ -19,9 +19,10 @@ export interface GraphStage {
 }
 
 /**
- * Time constant of every parameter move, in seconds. An exponential approach
- * this short has arrived within about 50 ms — soon enough to belong to the
- * control that asked for it, gradual enough to stay silent.
+ * Time constant of a move a control asked for, in seconds, and the default for
+ * every move. An exponential approach this short has arrived within about 50 ms —
+ * soon enough to belong to the control that asked for it, gradual enough to stay
+ * silent.
  */
 const RAMP_TAU = 0.01;
 
@@ -33,9 +34,17 @@ const RAMP_TAU = 0.01;
  * It is an approach and not an arrival: `setTargetAtTime` closes on its target
  * asymptotically, so a bypassed band settles to 0 dB without ever being exactly
  * 0 dB. Nothing here reads a parameter back, which is what makes that fine.
+ *
+ * A longer `tau` is for a move nobody asked for, which should not be noticed
+ * arriving at all.
  */
-export function easeParam(param: AudioParam, value: number, at: number): void {
-	param.setTargetAtTime(value, at, RAMP_TAU);
+export function easeParam(
+	param: AudioParam,
+	value: number,
+	at: number,
+	tau = RAMP_TAU,
+): void {
+	param.setTargetAtTime(value, at, tau);
 }
 
 /**

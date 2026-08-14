@@ -19,6 +19,7 @@ Everything that talks to the network, the filesystem or the OS. The webview reac
 ## Server I/O
 
 - **Track audio is fetched with plain `fetch`, not the ts-rest client** — the client buffers response bodies, which defeats progressive streaming and Range requests.
+- **A track's bytes are fetched once wherever they can be shared.** The element streams it and `StreamProxy` tees that into `TrackCache`; the level scan (`mainview/player/programLevel`) takes its head off the same tee through `/track/<id>/head`, falling back to a request of its own only where there is no download to join. A second consumer of a track's bytes belongs on that tee too.
 - **An image's `?v=<hash>` travels from the listing through to the backend untouched.** A layer that drops it still serves the right bytes, so nothing visibly breaks — it just returns every cover to the route's uncached path.
 
 ## Managed binaries and yt-dlp
