@@ -43,6 +43,7 @@ Only Windows and macOS have a bin dir, so `BinaryManager.isSupported` is false e
 - **Discord is given the *backend's* cover URL, never the app's own.** Activity images are fetched by Discord's media proxy from the public internet, so the webview's loopback URL is worthless here; a backend on loopback, a private range or a local-only name is dropped for the logo asset, a URL Discord can't fetch rendering as a broken tile.
 - **Rich Presence needs an application id**, hardcoded as `APPLICATION_ID` — not a secret, since it rides in every payload, and a packaged build has no shell to read an override from.
 - **The switch is the webview's** (`@/api/PresenceService`): bun keeps no copy and no default, and connects only once told. Off drops the socket and stops the sweeps — closing the socket is also what clears the card, so nothing is sent on the way out. `setEnabled` returns the resulting connection state as the request's answer; `onStatus` pushes only what Discord does on its own.
+- **A live socket is not an accepted card.** Discord answers a command under the nonce it was sent with, and can take the connection while refusing the activity — activity privacy off, a payload it won't render. That reply is the only place the difference appears.
 - **The card exists only while a track is playing** — no paused state and no idle one, so `PresenceTrack` carries no play/pause flag: its presence *is* the playing state.
 - **Sends are spaced by two timers**: a 1 s debounce, and a 5 s floor keeping SET_ACTIVITY inside its 5-updates-per-20-seconds budget.
 

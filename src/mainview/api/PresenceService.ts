@@ -1,7 +1,7 @@
 import { playerController } from "@/hooks/usePlayer";
 import { storage } from "@/lib/storage";
 import type { PlayerState } from "@/player/types";
-import type { PresenceTrack } from "../../shared/rpcSchema";
+import type { PresenceStatus, PresenceTrack } from "../../shared/rpcSchema";
 import { bun, notifyBun, onBunMessage } from "./rpc";
 
 /**
@@ -36,15 +36,15 @@ const DRIFT_TOLERANCE_SEC = 2;
 
 export interface PresenceState {
 	enabled: boolean;
-	/** Whether a Discord client is answering bun right now. */
-	connected: boolean;
+	/** Where bun's end of the integration stands, as the panel reports it. */
+	status: PresenceStatus;
 }
 
 export class PresenceService {
 	private subscribers = new Set<() => void>();
 	private snapshot: PresenceState = {
 		enabled: storage.discord.presenceEnabled.get() ?? true,
-		connected: false,
+		status: { connection: "offline" },
 	};
 	/** The last state pushed, and when — the baseline the bar has advanced from. */
 	private sent: PresenceTrack | null = null;
@@ -90,9 +90,12 @@ export class PresenceService {
 		if (enabled) this.publishNow();
 	};
 
-	/** A change in the connection bun made on its own — Discord came, or went. */
-	handleStatus(connected: boolean): void {
-		this.update({ connected });
+	/**
+	 * A change bun made on its own — Discord came, went, or turned an update
+	 * down.
+	 */
+	handleStatus(status: PresenceStatus): void {
+		this.update({ status });
 	}
 
 	/**
@@ -104,10 +107,9 @@ export class PresenceService {
 	 */
 	private async announce(enabled: boolean): Promise<void> {
 		try {
-			const status = await bun.setPresenceEnabled({ enabled });
-			this.update({ connected: status.connected });
+			this.update({ status: await bun.setPresenceEnabled({ enabled }) });
 		} catch (err) {
-			this.update({ connected: false });
+			this.update({ status: { connection: "offline" } });
 			console.error("Discord presence: bun never took the setting.", err);
 		}
 	}
@@ -171,6 +173,6 @@ function presenceFor(state: PlayerState): PresenceTrack | null {
 /** App-wide singleton — the presence follows the player, not what is on screen. */
 export const presenceService = new PresenceService();
 
-onBunMessage("presenceStatus", ({ connected }) => {
-	presenceService.handleStatus(connected);
+onBunMessage("presenceStatus", (status) => {
+	presenceService.handleStatus(status);
 });

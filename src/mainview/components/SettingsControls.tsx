@@ -63,7 +63,11 @@ export interface Labelling {
 	"aria-describedby"?: string;
 }
 
-/** A label, an optional line explaining it, and the control they belong to. */
+/**
+ * A label, an optional line explaining it, and the control they belong to. The
+ * control is optional: a row can be there to say something rather than to set
+ * something, which has the same shape and nothing to draw on the right.
+ */
 export function SettingRow({
 	label,
 	hint,
@@ -71,7 +75,7 @@ export function SettingRow({
 }: {
 	label: string;
 	hint?: string;
-	control: (labelling: Labelling) => ReactNode;
+	control?: (labelling: Labelling) => ReactNode;
 }) {
 	const id = useId();
 	const labelId = `${id}-label`;
@@ -92,12 +96,14 @@ export function SettingRow({
 					</p>
 				)}
 			</div>
-			<div className="shrink-0">
-				{control({
-					"aria-labelledby": labelId,
-					"aria-describedby": hint ? hintId : undefined,
-				})}
-			</div>
+			{control && (
+				<div className="shrink-0">
+					{control({
+						"aria-labelledby": labelId,
+						"aria-describedby": hint ? hintId : undefined,
+					})}
+				</div>
+			)}
 		</div>
 	);
 }

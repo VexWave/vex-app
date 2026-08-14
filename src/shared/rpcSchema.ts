@@ -388,15 +388,30 @@ export interface SetPresenceEnabledParams {
 }
 
 /**
- * Whether a Discord client is answering right now, which is what the settings
- * panel reports. Connected says the IPC socket is up, not that a card is
- * showing: there is no card unless something is playing.
+ * Where the integration stands, which is what the settings panel reports.
  *
+ * `connected` is the socket up and past Discord's READY with whatever was last
+ * sent accepted, not that a card is showing: there is no card unless something
+ * is playing. `refused` is Discord taking the connection and turning the
+ * activity down — activity privacy switched off, a payload it won't render, a
+ * rate limit — which reads as working while nothing appears.
+ */
+export type PresenceConnection = "offline" | "connected" | "refused";
+
+/** Discord's own words for why it turned an activity down. */
+export interface PresenceRefusal {
+	code?: number;
+	message?: string;
+}
+
+/**
  * Both the answer to `setPresenceEnabled` and what bun pushes when this changes
  * without being asked — they are the same fact, so they are the same shape.
  */
 export interface PresenceStatus {
-	connected: boolean;
+	connection: PresenceConnection;
+	/** Present only when `connection` is `refused`. */
+	refusal?: PresenceRefusal;
 }
 
 export type PlayerRPC = {

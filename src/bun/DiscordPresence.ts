@@ -1,6 +1,10 @@
 import { connect, type Socket } from "node:net";
 import { trackImagePath } from "../../contract/contract";
-import type { PresenceStatus, PresenceTrack } from "../shared/rpcSchema";
+import type {
+	PresenceRefusal,
+	PresenceStatus,
+	PresenceTrack,
+} from "../shared/rpcSchema";
 
 /**
  * Discord Rich Presence, spoken directly to the desktop client's local IPC
@@ -133,11 +137,22 @@ export class DiscordPresence {
 	private ready = false;
 	private now: PresenceTrack | null = null;
 	/**
-	 * Whether Discord is currently showing a card of ours. Only a card that is up
-	 * has to be taken down, so this keeps an app that idles from birth — started
-	 * but never played from — off the wire entirely.
+	 * Whether a card has been sent and not yet cleared. Only a card that is up has
+	 * to be taken down, so this keeps an app that idles from birth — started but
+	 * never played from — off the wire entirely. Set as the activity goes out
+	 * rather than on Discord's reply: a lost reply would otherwise leave a real
+	 * card standing with nothing willing to clear it, while a clear against a card
+	 * that isn't there costs only the request.
 	 */
 	private shown = false;
+	/**
+	 * Only the newest update is waited on; an earlier reply describes a state
+	 * already replaced, so it goes unmatched.
+	 */
+	private pendingNonce: string | null = null;
+	private refusal: PresenceRefusal | null = null;
+	/** So an unchanged status isn't pushed again. */
+	private lastReported: PresenceStatus | null = null;
 	private lastSentAt = 0;
 	private updateTimer: ReturnType<typeof setTimeout> | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -241,9 +256,15 @@ export class DiscordPresence {
 		this.inbox = Buffer.alloc(0);
 		this.ready = false;
 		// Whatever was on the last connection went with it: Discord drops the card
-		// when the socket that set it closes.
+		// when the socket that set it closes, and a refusal belonged to the client
+		// that gave it — the one now answering may well take what that one didn't.
 		this.shown = false;
+		this.pendingNonce = null;
+		this.refusal = null;
 		this.loggedError = false;
+		// A baseline from the connection being replaced would swallow this one's
+		// first status.
+		this.lastReported = null;
 		socket.on("data", (chunk: Buffer) => this.receive(chunk));
 		socket.on("close", () => this.detach(socket));
 		this.writeJson(OP_HANDSHAKE, { v: 1, client_id: APPLICATION_ID });
@@ -296,8 +317,12 @@ export class DiscordPresence {
 		this.ready = false;
 		// What was playing is no longer anything this end knows. The webview
 		// states it again on the way back on, and until it does there is nothing
-		// here old enough to be wrong.
+		// here old enough to be wrong. A refusal belonged to the dropped
+		// connection just as much.
 		this.now = null;
+		this.pendingNonce = null;
+		this.refusal = null;
+		this.lastReported = null;
 		this.clearTimer("reconnectTimer");
 		this.clearTimer("handshakeTimer");
 		this.clearTimer("updateTimer");
@@ -339,7 +364,11 @@ export class DiscordPresence {
 		}
 		if (opcode !== OP_FRAME) return;
 
-		let message: { evt?: string; data?: Record<string, unknown> };
+		let message: {
+			evt?: string;
+			nonce?: string;
+			data?: Record<string, unknown>;
+		};
 		try {
 			message = JSON.parse(body.toString("utf8"));
 		} catch {
@@ -359,18 +388,26 @@ export class DiscordPresence {
 			return;
 		}
 
-		// Every command is echoed back, so the only replies worth reading are the
-		// rejections — a wrong application id shows up here and nowhere else.
-		if (message.evt === "ERROR" && !this.loggedError) {
-			this.loggedError = true;
-			const { code, message: text } = (message.data ?? {}) as {
-				code?: number;
-				message?: string;
-			};
-			console.warn(
-				`Discord Rich Presence: Discord rejected the update (${code ?? "?"}: ${text ?? "no detail"}).`,
-			);
+		// Discord can take the connection and still refuse the activity — activity
+		// privacy off, a payload it won't render — and this reply is the only place
+		// that shows.
+		if (!message.nonce || message.nonce !== this.pendingNonce) return;
+		this.pendingNonce = null;
+
+		if (message.evt === "ERROR") {
+			const { code, message: text } = (message.data ?? {}) as PresenceRefusal;
+			this.refusal = { code, message: text };
+			// For a developer watching bun; the panel gets this through the status.
+			if (!this.loggedError) {
+				this.loggedError = true;
+				console.warn(
+					`Discord Rich Presence: Discord rejected the update (${code ?? "?"}: ${text ?? "no detail"}).`,
+				);
+			}
+		} else {
+			this.refusal = null;
 		}
+		this.reportStatus();
 	}
 
 	// --- sending ---
@@ -409,6 +446,8 @@ export class DiscordPresence {
 		if (!now && !this.shown) return;
 		this.lastSentAt = Date.now();
 		this.shown = now !== null;
+		const nonce = crypto.randomUUID();
+		this.pendingNonce = nonce;
 		this.writeJson(OP_FRAME, {
 			cmd: "SET_ACTIVITY",
 			// An `activity` left out of the args is what removes the card — the
@@ -417,7 +456,7 @@ export class DiscordPresence {
 				pid: process.pid,
 				activity: now ? this.buildActivity(now) : undefined,
 			},
-			nonce: crypto.randomUUID(),
+			nonce,
 		});
 	}
 
@@ -482,16 +521,32 @@ export class DiscordPresence {
 	}
 
 	/**
-	 * States where the connection stands. Connected means the socket is up, not
-	 * that a card is showing — that depends on something playing.
+	 * States where the integration stands. Connected means the socket is up and
+	 * Discord is taking what it is given, not that a card is showing — that
+	 * depends on something playing.
 	 */
 	private status(): PresenceStatus {
-		return { connected: this.ready };
+		if (!this.ready) return { connection: "offline" };
+		if (this.refusal) return { connection: "refused", refusal: this.refusal };
+		return { connection: "connected" };
 	}
 
-	/** For a change the webview didn't cause and so isn't waiting on. */
+	/**
+	 * For a change the webview didn't cause and so isn't waiting on. Every reply
+	 * passes through here and most leave the status where it was.
+	 */
 	private reportStatus(): void {
-		this.onStatus(this.status());
+		const status = this.status();
+		if (
+			this.lastReported &&
+			this.lastReported.connection === status.connection &&
+			this.lastReported.refusal?.code === status.refusal?.code &&
+			this.lastReported.refusal?.message === status.refusal?.message
+		) {
+			return;
+		}
+		this.lastReported = status;
+		this.onStatus(status);
 	}
 
 	private clearTimer(

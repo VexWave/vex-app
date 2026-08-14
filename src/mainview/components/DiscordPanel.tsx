@@ -1,18 +1,24 @@
-import { Group, Toggle } from "@/components/SettingsControls";
+import { Group, SettingRow, Toggle } from "@/components/SettingsControls";
 import { usePresence } from "@/hooks/usePresence";
 import { cn } from "@/lib/utils";
+import type { PresenceStatus } from "../../shared/rpcSchema";
 
 /**
- * The Discord Rich Presence: a switch, and a mark beside it saying whether
- * Discord is answering.
+ * The Discord Rich Presence: a switch, and a mark beside it saying where the
+ * integration stands.
  *
  * The mark is there because the integration is silent by design — Discord not
  * running is the ordinary case — so without it the switch would have no visible
  * effect at all until a client happened to be up and a track happened to be
- * playing.
+ * playing. A refusal earns a row as well as a mark: it is the one state the user
+ * can usually do something about.
  */
 export function DiscordPanel() {
 	const { presence, service } = usePresence();
+	const refusal =
+		presence.enabled && presence.status.connection === "refused"
+			? presence.status.refusal
+			: undefined;
 
 	return (
 		<Group
@@ -22,9 +28,7 @@ export function DiscordPanel() {
 				<div className="flex items-center gap-3">
 					{/* Only while it is on: switched off, the switch has already said
 					    everything there is to say. */}
-					{presence.enabled && (
-						<ConnectionMark connected={presence.connected} />
-					)}
+					{presence.enabled && <ConnectionMark status={presence.status} />}
 					<Toggle
 						checked={presence.enabled}
 						onChange={service.setEnabled}
@@ -32,31 +36,46 @@ export function DiscordPanel() {
 					/>
 				</div>
 			)}
-		/>
+		>
+			{refusal && (
+				<SettingRow
+					label="Discord refused the update"
+					hint={`${refusal.code ?? "?"}: ${refusal.message ?? "no detail"}`}
+				/>
+			)}
+		</Group>
 	);
 }
 
+const MARK_LABELS: Record<PresenceStatus["connection"], string> = {
+	offline: "Not connected",
+	connected: "Connected",
+	refused: "Discord refused",
+};
+
 /**
- * Whether Discord is reachable. Brightness, not hue: this palette is neutral
- * apart from the violet navigation accent and holds no colour that means
- * "good", so a green dot would be one invented for this line alone.
+ * Where the integration stands. Brightness, not hue: this palette is neutral
+ * apart from the violet navigation accent and holds no colour that means "good"
+ * or "bad", so a green dot — or a red one for a refusal — would be invented for
+ * this line alone.
  */
-function ConnectionMark({ connected }: { connected: boolean }) {
+function ConnectionMark({ status }: { status: PresenceStatus }) {
+	const live = status.connection === "connected";
 	return (
 		<span
 			className={cn(
 				"flex items-center gap-1.5 text-xs",
-				connected ? "text-foreground" : "text-muted-foreground",
+				live ? "text-foreground" : "text-muted-foreground",
 			)}
 		>
 			<span
 				aria-hidden="true"
 				className={cn(
 					"h-2 w-2 rounded-full",
-					connected ? "bg-foreground" : "bg-muted-foreground/40",
+					live ? "bg-foreground" : "bg-muted-foreground/40",
 				)}
 			/>
-			{connected ? "Connected" : "Not connected"}
+			{MARK_LABELS[status.connection]}
 		</span>
 	);
 }

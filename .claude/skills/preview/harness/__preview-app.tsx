@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Renders the real `<App/>` against whatever state you put in the DATA section
  * below. Copied into `src/mainview/` by `render.ts` for the length of a run and
  * deleted afterwards, which is why it can sit at the vite root and use `@/`.
  *
- * **The data below is an example, not a fixture — rewrite it for whatever is
+ * **The data below is an example, not a fixture â€” rewrite it for whatever is
  * being previewed.** A long queue, an empty library, an artist with one track,
  * a failed download: all of it is authored here, per preview. Only the wiring at
  * the bottom is meant to survive.
@@ -48,7 +48,7 @@ import "./index.css";
 import App from "./App";
 
 // ===========================================================================
-// ARTWORK — data URIs, so a preview needs no network and nothing real or
+// ARTWORK â€” data URIs, so a preview needs no network and nothing real or
 // copyrighted ends up in a picture. `crossOrigin="anonymous"` on a `data:` URL
 // still leaves the canvas `lib/coverFit.ts` reads back untainted.
 // ===========================================================================
@@ -96,7 +96,7 @@ const artTrack = (from: string, to: string) =>
 	);
 
 // ===========================================================================
-// DATA — rewrite all of this for the preview being asked for. Names are
+// DATA â€” rewrite all of this for the preview being asked for. Names are
 // fictional on purpose; keep them that way.
 // ===========================================================================
 
@@ -128,12 +128,12 @@ const SEARCH_QUERY = "nova halcyon";
 
 const RESULTS: MediaSearchResult[] = (
 	[
-		["Nova Halcyon — Static Bloom (Official Video)", "Nova Halcyon", 194, still("#c084fc", "#5b21b6")],
+		["Nova Halcyon â€” Static Bloom (Official Video)", "Nova Halcyon", 194, still("#c084fc", "#5b21b6")],
 		["Static Bloom (Kite and Ember Remix)", "Kite and Ember", 292, artTrack("#2dd4bf", "#0f766e")],
-		["Vertigo Sunday — live at Fold Sessions", "Fold Sessions", 241, still("#fb7185", "#7f1d1d")],
+		["Vertigo Sunday â€” live at Fold Sessions", "Fold Sessions", 241, still("#fb7185", "#7f1d1d")],
 		["Neon Arboretum (Visualizer)", "Nova Halcyon", 302, still("#818cf8", "#312e81")],
-		["Nova Halcyon — Nightline, full set", "Nightline Radio", 2480, still("#fbbf24", "#7c2d12")],
-		["Neon Arboretum — full album", "Nova Halcyon", 2287, artTrack("#f472b6", "#701a75")],
+		["Nova Halcyon â€” Nightline, full set", "Nightline Radio", 2480, still("#fbbf24", "#7c2d12")],
+		["Neon Arboretum â€” full album", "Nova Halcyon", 2287, artTrack("#f472b6", "#701a75")],
 	] as const
 ).map(([title, artist, durationSec, thumbnailUrl], index) => ({
 	id: `youtube-${index + 1}`,
@@ -146,7 +146,7 @@ const RESULTS: MediaSearchResult[] = (
 
 /**
  * A download in flight, so a Discover card shows the spinner, the progress bar
- * and the status line — otherwise that state is hover-only and a still frame
+ * and the status line â€” otherwise that state is hover-only and a still frame
  * can't reach it. Set to `null` for a plain grid.
  */
 const RUNNING_IMPORT: ImportJob | null = {
@@ -183,10 +183,15 @@ const EFFECTS = {
 	reverbMix: 0.35,
 } as const;
 
-const PRESENCE: PresenceState = { enabled: true, connected: true };
+const PRESENCE: PresenceState = {
+	enabled: true,
+	status: {
+		connection: "refused",
+		refusal: { code: 4000, message: "Invalid activity" },
+	},};
 
 // ===========================================================================
-// WIRING — derives the stores from the data above. Edit when a store changes,
+// WIRING â€” derives the stores from the data above. Edit when a store changes,
 // not when a preview does.
 // ===========================================================================
 
@@ -322,15 +327,8 @@ createRoot(document.getElementById("root")!).render(
 	</StrictMode>,
 );
 
-// The effects panel only exists while its popover is open, so the trigger is
-// pressed once it has rendered — retried rather than timed, because StrictMode
-// renders twice and nothing here is told when the second one lands. Delete this
-// for a preview that isn't of the panel.
-const openEffects = (): void => {
-	const trigger = document.querySelector<HTMLElement>(
-		'[aria-label="Playback effects"]',
-	);
-	if (trigger) trigger.click();
-	else setTimeout(openEffects, 16);
-};
-setTimeout(openEffects, 16);
+// This preview is of the Discord Presence panel, whose mark and switch sit
+// exactly where the effects popover opens over them, so nothing is pressed here.
+
+
+
