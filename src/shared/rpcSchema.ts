@@ -414,21 +414,13 @@ export interface PresenceStatus {
 	refusal?: PresenceRefusal;
 }
 
-/** One directory VexWave occupies, as the settings panel names it. */
-export interface StorageLocation {
-	path: string;
-	bytes: number;
-}
-
 /**
- * Where VexWave lives on this machine. A location is null when it isn't there
- * — nothing downloaded yet — or when this copy has no standing to remove it,
- * which is the case for a development build and for a platform with no managed
- * binaries. The panel offers no button rather than one that would refuse.
+ * Whether this copy has an install it may remove. False for a development
+ * build, whose channel folder holds a browser cache rather than the app running
+ * out of it, and for any platform the uninstall doesn't cover. The panel offers
+ * no button rather than one that would refuse.
  */
-export type StorageUsageResult =
-	| { ok: true; install: StorageLocation | null; components: StorageLocation | null }
-	| RpcFailure;
+export type UninstallTargetResult = { ok: true; removable: boolean } | RpcFailure;
 
 export type PlayerRPC = {
 	bun: RPCSchema<{
@@ -491,8 +483,8 @@ export type PlayerRPC = {
 				params: SetPresenceEnabledParams;
 				response: PresenceStatus;
 			};
-			/** What VexWave occupies on disk, measured on demand. */
-			getStorageUsage: { params: undefined; response: StorageUsageResult };
+			/** Whether there is an install here for `uninstallApp` to remove. */
+			canUninstall: { params: undefined; response: UninstallTargetResult };
 			/**
 			 * Removes VexWave from the machine and closes it. Answers as soon as
 			 * the removal is under way rather than when it is done: the app can't

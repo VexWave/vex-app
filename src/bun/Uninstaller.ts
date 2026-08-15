@@ -1,8 +1,8 @@
-import { readdir, rm, stat, writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Updater } from "electrobun/bun";
-import type { RpcResult, StorageLocation } from "../shared/rpcSchema";
+import type { RpcResult } from "../shared/rpcSchema";
 
 /** The two shortcuts the Electrobun installer creates, relative to a known root. */
 const SHORTCUTS: { root: string | undefined; segments: string[] }[] = [
@@ -71,17 +71,9 @@ export class Uninstaller {
 	 */
 	constructor(private readonly componentsDir: string | null) {}
 
-	/** What would be deleted and how much room it takes, for the settings panel. */
-	async describe(): Promise<{
-		install: StorageLocation | null;
-		components: StorageLocation | null;
-	}> {
-		const roots = await this.resolveRoots();
-		const components = this.componentsRoot();
-		return {
-			install: roots ? await measure(roots.install) : null,
-			components: components ? await measure(components) : null,
-		};
+	/** Whether there is an install here this copy may remove. */
+	async removable(): Promise<boolean> {
+		return (await this.resolveRoots()) !== null;
 	}
 
 	/**
@@ -147,12 +139,16 @@ export class Uninstaller {
 					"powershell.exe",
 					"-NoProfile",
 					"-NonInteractive",
+					"-WindowStyle",
+					"Hidden",
 					"-ExecutionPolicy",
 					"Bypass",
 					"-File",
 					files.launcher,
 				],
-				{ stdio: ["ignore", "ignore", "ignore"] },
+				// The app has no console of its own, so a console program started
+				// from it is given a fresh window unless this says otherwise.
+				{ stdio: ["ignore", "ignore", "ignore"], windowsHide: true },
 			);
 		} catch (err) {
 			return {
@@ -191,7 +187,9 @@ export class Uninstaller {
 			`$install = '${roots.install}'`,
 			`$exe = '${process.execPath}'`,
 			"",
-			`function Note($m) { "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m | Out-File -LiteralPath $log -Append -Encoding utf8 }`,
+			// Not `Out-File -Encoding utf8`, which stamps a byte-order mark into
+			// the middle of a log the failure message sends the user to read.
+			`function Note($m) { [IO.File]::AppendAllText($log, ("[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m) + [Environment]::NewLine) }`,
 			// A script is read into memory before it runs, so it can remove itself.
 			"function Finish { Remove-Item -LiteralPath $ready -Force; Remove-Item -LiteralPath $PSCommandPath -Force; exit }",
 			"",
@@ -317,9 +315,12 @@ function launcher(files: { worker: string; launcher: string }): string {
 	return [
 		"$ErrorActionPreference = 'SilentlyContinue'",
 		`$worker = '${files.worker}'`,
-		"$flags = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File')",
+		"$flags = @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File')",
 		`$line = 'powershell.exe ' + ($flags -join ' ') + ' "' + $worker + '"'`,
-		"$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $line }",
+		// WMI would otherwise give the helper a visible console of its own. This
+		// is `SW_HIDE`; the flags above only cover PowerShell's own host window.
+		"$startup = New-CimInstance -ClassName Win32_ProcessStartup -Namespace root/cimv2 -ClientOnly -Property @{ ShowWindow = [uint16]0 }",
+		"$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $line; ProcessStartupInformation = $startup }",
 		"if (-not $result -or $result.ReturnValue -ne 0) {",
 		"\tStart-Process -FilePath 'powershell.exe' -ArgumentList ($flags + $worker) -WindowStyle Hidden",
 		"}",
@@ -350,24 +351,4 @@ function isInside(parent: string, child: string): boolean {
 	return (
 		relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
 	);
-}
-
-/** A directory's path and total size, or null when it isn't there at all. */
-async function measure(dir: string): Promise<StorageLocation | null> {
-	const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
-	if (!entries) return null;
-	let bytes = 0;
-	for (const entry of entries) {
-		const child = path.join(dir, entry.name);
-		if (entry.isDirectory()) {
-			bytes += (await measure(child))?.bytes ?? 0;
-		} else if (entry.isFile()) {
-			// A file that vanishes mid-walk (a cache eviction, a finished import)
-			// costs its size from the total, not the whole measurement.
-			bytes += await stat(child)
-				.then((info) => info.size)
-				.catch(() => 0);
-		}
-	}
-	return { path: dir, bytes };
 }

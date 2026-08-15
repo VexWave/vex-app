@@ -14,7 +14,7 @@ Everything that talks to the network, the filesystem or the OS. The webview reac
 | `searchRanking.ts` | Pure re-ranking of one page of those hits. No I/O, no yt-dlp. |
 | `ytDlp.ts` | Plumbing both yt-dlp callers share: base args, child env, output reading, field parsing, failures. |
 | `WindowChrome.ts` | Win32 FFI (`bun:ffi`) for the dark title bar and the window/taskbar icon. Windows-only, best-effort. |
-| `Uninstaller.ts` | Measures what the app occupies on disk, and removes it. Windows-only. |
+| `Uninstaller.ts` | Removes VexWave from the machine. Windows-only. |
 | `DiscordPresence.ts` | Discord Rich Presence, spoken straight to the client's local IPC socket (no library). Best-effort: no Discord running is the normal case, not a fault. |
 
 ## Server I/O

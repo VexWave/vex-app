@@ -1,4 +1,4 @@
-import { app, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { ApiClient } from "./ApiClient";
 import { BinaryManager } from "./BinaryManager";
 import { DiscordPresence } from "./DiscordPresence";
@@ -162,9 +162,9 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			discardImport: (params) => importer.discard(params),
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
 			setPresenceEnabled: ({ enabled }) => discordPresence.setEnabled(enabled),
-			getStorageUsage: async () => ({
+			canUninstall: async () => ({
 				ok: true as const,
-				...(await uninstaller.describe()),
+				removable: await uninstaller.removable(),
 			}),
 			// The same exclusions the yt-dlp updater answers to, for the same
 			// reason turned up: a spawned yt-dlp holds open an executable inside
@@ -175,10 +175,15 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 				return unlessInstalling(async () => {
 					const result = await uninstaller.start();
 					// The helper can only finish once this process releases its own
-					// files, so quitting is part of the uninstall rather than what
+					// files, so going down is part of the uninstall rather than what
 					// follows it. Delayed just long enough for the answer above to
 					// reach the webview.
-					if (result.ok) setTimeout(() => app.quit(), QUIT_DELAY_MS);
+					//
+					// Exiting outright rather than through `app.quit()`, which spends
+					// five seconds waiting on a shutdown that has nothing left to do:
+					// every window and every file here is about to be deleted, and the
+					// helper stops whatever this leaves behind.
+					if (result.ok) setTimeout(() => process.exit(0), QUIT_DELAY_MS);
 					return result;
 				});
 			},

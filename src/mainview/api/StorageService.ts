@@ -1,35 +1,31 @@
-import type { StorageLocation } from "../../shared/rpcSchema";
 import { bun } from "./rpc";
 
 export interface StorageState {
-	/** Null until the first measurement lands. */
-	install: StorageLocation | null;
-	components: StorageLocation | null;
-	measured: boolean;
-	/** A failed measurement, or an uninstall bun turned down. */
+	/** Whether there is an install here to remove. Null until bun has answered. */
+	removable: boolean | null;
+	/** A failed check, or an uninstall bun turned down. */
 	error: string | null;
 	/** Set once the removal is under way, and never cleared — the app is going. */
 	uninstalling: boolean;
 }
 
 /**
- * What VexWave occupies on this machine, and the one action that removes it.
+ * Whether VexWave can take itself off this machine, and the one action that
+ * does it.
  *
- * Both directories are bun's to name: the webview knows neither where the app
- * was installed nor where its binaries were downloaded to, and measuring them
- * is a filesystem walk besides. Nothing here is persisted or session-scoped —
- * this is a fact about the computer, not about the library.
+ * Only bun can answer that: the webview knows neither where the app was
+ * installed nor whether this copy is an installed one at all. Nothing here is
+ * persisted or session-scoped — this is a fact about the computer, not about
+ * the library.
  */
 export class StorageService {
 	private subscribers = new Set<() => void>();
 	private snapshot: StorageState = {
-		install: null,
-		components: null,
-		measured: false,
+		removable: null,
 		error: null,
 		uninstalling: false,
 	};
-	private measuring = false;
+	private checking = false;
 
 	// --- useSyncExternalStore contract (arrow fns keep `this` bound) ---
 
@@ -41,33 +37,27 @@ export class StorageService {
 	getSnapshot = (): StorageState => this.snapshot;
 
 	/**
-	 * Measures both directories. Called when the panel appears rather than at
-	 * startup: the sizes are only ever read there, and walking a couple of
-	 * gigabytes of app bundle is not work to do on every launch.
+	 * Asks bun whether there is anything to remove. Called when the panel
+	 * appears rather than at startup: the answer is only ever read there.
 	 */
-	refresh = async (): Promise<void> => {
-		if (this.measuring) return;
-		this.measuring = true;
+	check = async (): Promise<void> => {
+		if (this.checking) return;
+		this.checking = true;
 		try {
-			const result = await bun.getStorageUsage();
+			const result = await bun.canUninstall();
 			if (!result.ok) {
-				this.update({ measured: true, error: result.error });
+				this.update({ removable: false, error: result.error });
 				return;
 			}
-			this.update({
-				install: result.install,
-				components: result.components,
-				measured: true,
-				error: null,
-			});
+			this.update({ removable: result.removable, error: null });
 		} catch (err) {
 			this.update({
-				measured: true,
+				removable: false,
 				error:
-					err instanceof Error ? err.message : "Couldn't measure what's on disk",
+					err instanceof Error ? err.message : "Couldn't reach the uninstaller",
 			});
 		} finally {
-			this.measuring = false;
+			this.checking = false;
 		}
 	};
 
@@ -97,5 +87,5 @@ export class StorageService {
 	}
 }
 
-/** App-wide singleton — a measurement outlives a trip away from the panel. */
+/** App-wide singleton — the answer outlives a trip away from the panel. */
 export const storageService = new StorageService();

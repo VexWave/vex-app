@@ -191,20 +191,11 @@ const PRESENCE: PresenceState = {
 };
 
 /**
- * A measured install, so the Storage panel shows both paths, both sizes and the
- * button. The alternative — an unmeasurable install — is what a dev build gets,
- * and there the panel draws no button at all.
+ * An installed copy, so the uninstall row is drawn. The alternative is what a
+ * dev build gets, and there the panel draws nothing at all.
  */
 const STORAGE: StorageState = {
-	install: {
-		path: "C:\\Users\\Alex\\AppData\\Local\\app.vexwave",
-		bytes: 2_730_000_000,
-	},
-	components: {
-		path: "C:\\Users\\Alex\\AppData\\Local\\VexWave",
-		bytes: 410_000_000,
-	},
-	measured: true,
+	removable: true,
 	error: null,
 	uninstalling: false,
 };
@@ -310,9 +301,9 @@ discoverService.getSnapshot = () => DISCOVER_STATE;
 playerController.getSnapshot = () => PLAYER_STATE;
 presenceService.getSnapshot = () => PRESENCE;
 storageService.getSnapshot = () => STORAGE;
-// The one store the app measures on mount rather than on a session change, so
-// its fetch is stubbed out as well as its state.
-storageService.refresh = async () => {};
+// The one store the app fills on mount rather than on a session change, so its
+// fetch is stubbed out as well as its state.
+storageService.check = async () => {};
 importService.jobFor = (url: string) =>
 	RUNNING_IMPORT && url === RUNNING_IMPORT.url ? RUNNING_IMPORT : null;
 
