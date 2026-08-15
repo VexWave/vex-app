@@ -14,13 +14,13 @@ const SHORTCUTS: { root: string | undefined; segments: string[] }[] = [
 ];
 
 const UNINSTALL_KEY =
-	"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+	"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 
-/** One-second tries the helper gives the app to exit before abandoning the job. */
-const WAIT_ATTEMPTS = 120;
+/** How long the helper gives the app to exit before abandoning the job. */
+const WAIT_SECONDS = 120;
 
-/** One-second tries at the install directory once the app is actually gone. */
-const DELETE_ATTEMPTS = 60;
+/** How long it keeps at the install directory once nothing runs from it. */
+const DELETE_SECONDS = 120;
 
 /** How long to wait for the helper to report itself before giving up on it. */
 const READY_TIMEOUT_MS = 8_000;
@@ -49,11 +49,14 @@ interface Roots {
  * of the very tree being removed, so the work goes to a detached helper that
  * outlives the app.
  *
- * Two things that helper must get right, both learned the hard way:
+ * Three things that helper must get right, all learned the hard way:
  *
  *   - **It waits for this process to exit before deleting anything.** Deleting
  *     around a live app takes whatever happens to be unlocked and leaves the
  *     rest, which is a half-removed install rather than a failed removal.
+ *   - **It then stops whatever is still running out of the tree.** Quitting
+ *     force-exits, which leaves the CEF helpers orphaned rather than ended, and
+ *     a file one of them has mapped cannot be deleted at all.
  *   - **It is started outside this process's tree**, through WMI, so that
  *     whatever reaps the app's children on the way down cannot reap it too.
  *
@@ -111,21 +114,22 @@ export class Uninstaller {
 			`vexwave-uninstall-${Date.now().toString(36)}`,
 		);
 		const files = {
-			worker: `${stem}.cmd`,
-			launcher: `${stem}.ps1`,
+			worker: `${stem}-worker.ps1`,
+			launcher: `${stem}-launch.ps1`,
 			ready: `${stem}.ready`,
 			log: `${stem}.log`,
 		};
 
-		// Machine-derived, all of it, but it is pasted into a batch file where a
-		// quote ends an argument early and a `%` expands, and into a PowerShell
-		// literal that a `'` would close.
+		// Machine-derived, all of it, but it is pasted into PowerShell literals
+		// that a `'` would close, and into a command line where a `"` ends an
+		// argument early.
 		const written = [
 			roots.install,
+			process.execPath,
 			...rest.map((entry) => entry.path),
 			...Object.values(files),
 		];
-		if (written.some((target) => /["'%\r\n]/.test(target))) {
+		if (written.some((target) => /["'\r\n]/.test(target))) {
 			return {
 				ok: false,
 				error: "VexWave is installed under a path it can't safely remove.",
@@ -172,79 +176,75 @@ export class Uninstaller {
 	}
 
 	/**
-	 * The helper itself. Written as a batch file because `cmd` is the one
-	 * interpreter that is certainly present and certainly unaffected by
-	 * execution policy, and it logs every branch it takes: by the time any of
-	 * this runs there is no app left to report a failure through.
+	 * The helper itself. It logs every branch it takes: by the time any of this
+	 * runs there is no app left to report a failure through.
 	 */
 	private worker(
 		roots: Roots,
 		rest: Removal[],
-		files: { worker: string; ready: string; log: string },
+		files: { ready: string; log: string },
 	): string {
-		const image = path.basename(process.execPath);
 		return [
-			"@echo off",
-			`set "LOG=${files.log}"`,
-			`>>"%LOG%" echo [%DATE% %TIME%] waiting for ${image} (pid ${process.pid})`,
+			"$ErrorActionPreference = 'SilentlyContinue'",
+			`$log = '${files.log}'`,
+			`$ready = '${files.ready}'`,
+			`$install = '${roots.install}'`,
+			`$exe = '${process.execPath}'`,
+			"",
+			`function Note($m) { "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m | Out-File -LiteralPath $log -Append -Encoding utf8 }`,
+			// A script is read into memory before it runs, so it can remove itself.
+			"function Finish { Remove-Item -LiteralPath $ready -Force; Remove-Item -LiteralPath $PSCommandPath -Force; exit }",
+			"",
+			`Note 'waiting for pid ${process.pid}'`,
 			// The handshake: until this exists, the app must not quit.
-			`>"${files.ready}" echo ready`,
-			"set /a TRIES=0",
+			"'ready' | Out-File -LiteralPath $ready -Encoding ascii",
 			"",
-			":wait",
-			// Filtered to the one pid, so the image name is only there to tell a
-			// real row from tasklist's "no tasks match" notice.
-			`tasklist /fi "PID eq ${process.pid}" /nh 2>nul | find /i "${image}" >nul`,
-			"if errorlevel 1 goto gone",
-			"set /a TRIES+=1",
-			`if %TRIES% GEQ ${WAIT_ATTEMPTS} goto abandon`,
-			// `timeout` reads from the console this helper was started without and
-			// fails outright, so pinging the loopback is the sleep that works.
-			"ping -n 2 127.0.0.1 >nul",
-			"goto wait",
+			`$deadline = (Get-Date).AddSeconds(${WAIT_SECONDS})`,
+			`while (Get-Process -Id ${process.pid}) {`,
+			"\tif ((Get-Date) -gt $deadline) { Note 'app never exited; nothing removed'; Finish }",
+			"\tStart-Sleep -Milliseconds 500",
+			"}",
 			"",
-			":gone",
-			'>>"%LOG%" echo [%TIME%] app exited; removing',
-			// The images are unmapped as the process dies, not before it.
-			"ping -n 3 127.0.0.1 >nul",
-			"set /a TRIES=0",
+			// Quitting force-exits, which orphans the CEF helpers rather than
+			// ending them, and one of those keeps CEF\BrowserMetrics\*.pma mapped
+			// for as long as it lives. A mapped file cannot be deleted, so waiting
+			// it out is not an option. Nothing here is worth waiting for anyway:
+			// these are the processes of the app being removed.
+			`$running = @(Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($install + '\\', 'OrdinalIgnoreCase') })`,
+			"if ($running) {",
+			"\tNote ('stopping ' + (($running | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ', '))",
+			"\t$running | Stop-Process -Force",
+			"\tStart-Sleep -Seconds 2",
+			"}",
 			"",
-			":sweep",
-			// A trailing slash is what makes `if exist` ask about the directory.
-			`if not exist "${roots.install}\\" goto swept`,
-			"set /a TRIES+=1",
-			`if %TRIES% GTR ${DELETE_ATTEMPTS} goto stuck`,
-			`rmdir /s /q "${roots.install}" 2>nul`,
-			"ping -n 2 127.0.0.1 >nul",
-			"goto sweep",
+			`$deadline = (Get-Date).AddSeconds(${DELETE_SECONDS})`,
+			"while ($true) {",
+			"\tRemove-Item -LiteralPath $install -Recurse -Force",
+			"\tif (-not (Test-Path -LiteralPath $install)) { break }",
+			"\tif ((Get-Date) -gt $deadline) { break }",
+			"\tStart-Sleep -Seconds 1",
+			"}",
 			"",
-			":swept",
-			'>>"%LOG%" echo [%TIME%] install directory removed',
+			"if (Test-Path -LiteralPath $install) {",
+			// The executable is what tells a removal that never happened from one
+			// that finished around something it couldn't take. Only the first is
+			// worth leaving alone: shortcuts into a gutted install point nowhere.
+			"\tif (Test-Path -LiteralPath $exe) { Note 'install directory would not go; nothing else touched'; Finish }",
+			"\tNote 'install directory left a remnant; removing the rest anyway'",
+			"} else {",
+			"\tNote 'install directory removed'",
+			"}",
+			"",
 			...rest.map(({ kind, path: target }) =>
 				kind === "file"
-					? `del /f /q "${target}" 2>nul`
-					: `rmdir /s /q "${target}" 2>nul`,
+					? `Remove-Item -LiteralPath '${target}' -Force`
+					: `Remove-Item -LiteralPath '${target}' -Recurse -Force`,
 			),
 			// Absent unless the user imported the installer's own .reg file, so
 			// this failing is the ordinary case rather than a fault.
-			`reg delete "${UNINSTALL_KEY}\\${roots.identifier}" /f >nul 2>nul`,
-			'>>"%LOG%" echo [%TIME%] done',
-			"goto finish",
-			"",
-			":stuck",
-			// Something still holds the tree, so the rest is left alone too: a
-			// half-removed install is worse than one that reports it is still here.
-			'>>"%LOG%" echo [%TIME%] install directory would not go; nothing else touched',
-			"goto finish",
-			"",
-			":abandon",
-			'>>"%LOG%" echo [%TIME%] app never exited; nothing removed',
-			"",
-			":finish",
-			`del /f /q "${files.ready}" 2>nul`,
-			// A batch file is read as it runs, so jumping past its end frees the
-			// handle and lets the last command remove the file being executed.
-			'(goto) 2>nul & del "%~f0"',
+			`Remove-Item -LiteralPath '${UNINSTALL_KEY}\\${roots.identifier}' -Recurse -Force`,
+			"Note 'done'",
+			"Finish",
 			"",
 		].join("\r\n");
 	}
@@ -317,9 +317,11 @@ function launcher(files: { worker: string; launcher: string }): string {
 	return [
 		"$ErrorActionPreference = 'SilentlyContinue'",
 		`$worker = '${files.worker}'`,
-		`$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd.exe /c "' + $worker + '"' }`,
+		"$flags = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File')",
+		`$line = 'powershell.exe ' + ($flags -join ' ') + ' "' + $worker + '"'`,
+		"$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $line }",
 		"if (-not $result -or $result.ReturnValue -ne 0) {",
-		"\tStart-Process -FilePath 'cmd.exe' -ArgumentList '/c', $worker -WindowStyle Hidden",
+		"\tStart-Process -FilePath 'powershell.exe' -ArgumentList ($flags + $worker) -WindowStyle Hidden",
 		"}",
 		`Remove-Item -LiteralPath '${files.launcher}' -Force`,
 		"",
