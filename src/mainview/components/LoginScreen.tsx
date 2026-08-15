@@ -6,6 +6,7 @@ import {
 	type ReactNode,
 } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
+import { parseServerUrl } from "@/api/SessionService";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -44,8 +45,7 @@ function Field({
 
 export function LoginScreen() {
 	const { session, service } = useSession();
-	const [host, setHost] = useState(session.lastHost);
-	const [port, setPort] = useState(session.lastPort);
+	const [address, setAddress] = useState(session.lastServerUrl);
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [validationError, setValidationError] = useState<string | null>(null);
@@ -74,17 +74,19 @@ export function LoginScreen() {
 
 	const handleSubmit = (e: FormEvent) => {
 		e.preventDefault();
-		const portNumber = Number(port);
-		if (!host.trim() || !username || !password) {
-			setValidationError("Host, username and password are required.");
+		if (!address.trim() || !username || !password) {
+			setValidationError("Server address, username and password are required.");
 			return;
 		}
-		if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
-			setValidationError("Port must be a number between 1 and 65535.");
+		const baseUrl = parseServerUrl(address);
+		if (!baseUrl) {
+			setValidationError(
+				"Enter the server's full address, including http:// or https://.",
+			);
 			return;
 		}
 		setValidationError(null);
-		void service.login(host.trim(), portNumber, username, password);
+		void service.login(baseUrl, username, password);
 	};
 
 	return (
@@ -100,28 +102,19 @@ export function LoginScreen() {
 				</CardHeader>
 				<CardContent>
 					<form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-						<div className="grid grid-cols-[1fr_100px] gap-3">
-							<Field id="host" label="Host">
-								<Input
-									id="host"
-									placeholder="localhost"
-									autoFocus
-									value={host}
-									onChange={(e) => setHost(e.target.value)}
-									disabled={loggingIn}
-								/>
-							</Field>
-							<Field id="port" label="Port">
-								<Input
-									id="port"
-									inputMode="numeric"
-									placeholder="8080"
-									value={port}
-									onChange={(e) => setPort(e.target.value)}
-									disabled={loggingIn}
-								/>
-							</Field>
-						</div>
+						<Field id="server" label="Server address">
+							{/* text, not url: a bad address is answered by the form's own
+							    message below, not by the browser's bubble. */}
+							<Input
+								id="server"
+								type="text"
+								placeholder="https://music.example.com"
+								autoFocus
+								value={address}
+								onChange={(e) => setAddress(e.target.value)}
+								disabled={loggingIn}
+							/>
+						</Field>
 						<Field id="username" label="Username">
 							<Input
 								id="username"

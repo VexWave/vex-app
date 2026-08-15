@@ -4,8 +4,11 @@
 import type { RPCSchema } from "electrobun/bun";
 
 export interface LoginParams {
-	host: string;
-	port: number;
+	/**
+	 * Absolute base URL of the backend, every contract path hanging off it.
+	 * `parseServerUrl` normalizes it webview-side, so the scheme arrives settled.
+	 */
+	baseUrl: string;
 	username: string;
 	password: string;
 }
@@ -25,8 +28,8 @@ export type LoginResult = { ok: true; token: string } | RpcFailure;
  * login screen.
  */
 export interface RestoreSessionParams {
-	host: string;
-	port: number;
+	/** The address the token was issued at, as `LoginParams.baseUrl`. */
+	baseUrl: string;
 	token: string;
 }
 

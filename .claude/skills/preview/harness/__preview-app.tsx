@@ -243,8 +243,7 @@ const REMOTE_BY_ID = new Map(REMOTES.map((remote) => [remote.id, remote]));
 const SESSION: SessionState = {
 	status: "loggedIn",
 	error: null,
-	lastHost: "",
-	lastPort: "",
+	lastServerUrl: "",
 	restoring: false,
 	retryAfter: null,
 };

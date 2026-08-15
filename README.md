@@ -27,7 +27,7 @@
 
 | Feature | What it does |
 | --- | --- |
-| **Your library** | Sign in with host, port and credentials. No folder to scan, and search filters as you type. |
+| **Your library** | Sign in with your server's address and credentials. No folder to scan, and search filters as you type. |
 | **Import from a link** | A YouTube or SoundCloud URL becomes a real track, with the creator suggested as an artist. |
 | **Discover** | Search YouTube and SoundCloud in-app and load them into your library. |
 | **Equalizer** | Ten sliders to shape the sound |

@@ -3,13 +3,36 @@ import { bun, onBunMessage } from "./rpc";
 
 export type SessionStatus = "loggedOut" | "loggingIn" | "loggedIn";
 
+/**
+ * Normalizes a typed server address into the base URL every contract path hangs
+ * off; null when it isn't one.
+ *
+ * The scheme has to be typed: whether the server speaks TLS isn't knowable here,
+ * and a wrong guess reports as "cannot reach", sending the user to look at their
+ * server rather than at the address. A path survives for a backend behind a
+ * reverse proxy, its trailing slash does not, and a query, a fragment and
+ * credentials are no part of where the server is.
+ */
+export function parseServerUrl(raw: string): string | null {
+	const input = raw.trim();
+	if (!/^https?:\/\//i.test(input)) return null;
+	let url: URL;
+	try {
+		url = new URL(input);
+	} catch {
+		return null;
+	}
+	// WHATWG rejects a port above 65535 but takes 0, which no server listens on.
+	if (url.port === "0") return null;
+	return url.origin + url.pathname.replace(/\/+$/, "");
+}
+
 /** Immutable snapshot of the server session, consumed by the React layer. */
 export interface SessionState {
 	status: SessionStatus;
 	error: string | null;
 	/** Last successfully used server address, prefilled into the login form. */
-	lastHost: string;
-	lastPort: string;
+	lastServerUrl: string;
 	/**
 	 * True while a persisted token is being replayed on startup — the app shows
 	 * a splash instead of the login form so a valid token doesn't flash it.
@@ -32,22 +55,24 @@ export interface SessionState {
  * persisted in localStorage so the login survives a restart: on startup the
  * stored token is replayed into the bun process (`restoreSession`), and every
  * server call still runs bun-side with the token held in ApiClient. Only the
- * token and host/port are remembered — never the password.
+ * token and the server's address are remembered — never the password.
  */
 export class SessionService {
 	private subscribers = new Set<() => void>();
-	private snapshot: SessionState = {
-		status: "loggedOut",
-		error: null,
-		lastHost: storage.session.host.get() ?? "",
-		lastPort: storage.session.port.get() ?? "",
-		// Attempt a silent restore whenever every piece of a session is stored.
-		restoring: hasStoredSession(),
-		retryAfter: null,
-	};
+	private snapshot: SessionState;
 
 	constructor() {
-		if (this.snapshot.restoring) void this.restore();
+		const baseUrl = storage.session.url.get() ?? "";
+		const token = storage.session.token.get() ?? "";
+		this.snapshot = {
+			status: "loggedOut",
+			error: null,
+			lastServerUrl: baseUrl,
+			// A silent restore takes every piece of a session being stored.
+			restoring: !!baseUrl && !!token,
+			retryAfter: null,
+		};
+		if (this.snapshot.restoring) void this.restore(baseUrl, token);
 	}
 
 	/**
@@ -55,12 +80,9 @@ export class SessionService {
 	 * verified here — the library refresh that fires on `loggedIn` validates it,
 	 * and a 401 there clears the token and drops back to the login screen.
 	 */
-	private async restore(): Promise<void> {
-		const host = storage.session.host.get() ?? "";
-		const port = Number(storage.session.port.get() ?? "");
-		const token = storage.session.token.get() ?? "";
+	private async restore(baseUrl: string, token: string): Promise<void> {
 		try {
-			const result = await bun.restoreSession({ host, port, token });
+			const result = await bun.restoreSession({ baseUrl, token });
 			if (result.ok) {
 				this.update({ status: "loggedIn", restoring: false });
 				return;
@@ -81,9 +103,9 @@ export class SessionService {
 
 	getSnapshot = (): SessionState => this.snapshot;
 
+	/** `baseUrl` is a `parseServerUrl` result — the form normalizes before it asks. */
 	async login(
-		host: string,
-		port: number,
+		baseUrl: string,
 		username: string,
 		password: string,
 	): Promise<void> {
@@ -96,7 +118,7 @@ export class SessionService {
 		this.update({ status: "loggingIn", error: null, retryAfter: null });
 		let result;
 		try {
-			result = await bun.login({ host, port, username, password });
+			result = await bun.login({ baseUrl, username, password });
 		} catch (err) {
 			// RPC transport failure or timeout (e.g. bun process unreachable).
 			this.update({
@@ -106,15 +128,10 @@ export class SessionService {
 			return;
 		}
 		if (result.ok) {
-			storage.session.host.set(host);
-			storage.session.port.set(String(port));
+			storage.session.url.set(baseUrl);
 			// Persist the token so the session survives a restart (see restore()).
 			storage.session.token.set(result.token);
-			this.update({
-				status: "loggedIn",
-				lastHost: host,
-				lastPort: String(port),
-			});
+			this.update({ status: "loggedIn", lastServerUrl: baseUrl });
 		} else {
 			this.update({
 				status: "loggedOut",
@@ -157,15 +174,6 @@ export class SessionService {
 		this.snapshot = { ...this.snapshot, ...patch };
 		this.subscribers.forEach((notify) => notify());
 	}
-}
-
-/** Whether a full session (host + port + token) is persisted for restore. */
-function hasStoredSession(): boolean {
-	return (
-		!!storage.session.host.get() &&
-		!!storage.session.port.get() &&
-		!!storage.session.token.get()
-	);
 }
 
 /** App-wide singleton — session state must survive component unmounts. */

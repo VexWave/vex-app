@@ -17,7 +17,7 @@ Layout, the rules that hold across both halves of the app, and the conventions e
 
 A desktop **music player** built with **Electrobun** (NOT Electron — do not use Electron APIs or patterns; see `llms.txt`).
 
-Entirely server-backed: a blocking login screen asks for host/port of a backend plus credentials, and every track in the queue streams from that server. Local files are uploaded and re-enter the queue via a library refresh; YouTube/SoundCloud URLs are imported through a bundled yt-dlp, which also powers the Discover view's search. Tracks, artists and playlists are CRUD-managed against the backend. The API contract (ts-rest + zod v4) is `contract/contract.ts` — read it for the routes.
+Entirely server-backed: a blocking login screen asks for a backend's address (an `http://` or `https://` URL) plus credentials, and every track in the queue streams from that server. Local files are uploaded and re-enter the queue via a library refresh; YouTube/SoundCloud URLs are imported through a bundled yt-dlp, which also powers the Discover view's search. Tracks, artists and playlists are CRUD-managed against the backend. The API contract (ts-rest + zod v4) is `contract/contract.ts` — read it for the routes.
 
 ## Commands
 
@@ -55,6 +55,7 @@ Schema in `src/shared/rpcSchema.ts`, webview singleton in `src/mainview/api/rpc.
 ## Conventions
 
 - **Comments carry what the code can't**, in as few words as the point takes: why a piece of code exists in the form it does — a constant's reasoning, a spec behaviour, a constraint from somewhere else in the app. What it *does* is already on the line below, and repeating that is noise.
+- **The reader to write for is an agent about to change the line.** A comment earns its place by carrying structure, or what has to be known *before* the code is read — never what reading the code would have said. Where nothing is left to say, say nothing.
 - **Write comments in the present tense, about what is there.** State the reason directly rather than through what a thing replaced, no longer does, was tried first, or would do if written another way. History belongs in commit messages. The same goes for these files.
 - `@/` path alias → `src/mainview/` (defined in both `tsconfig.json` and `vite.config.ts`; keep them in sync).
 - Tabs for indentation.

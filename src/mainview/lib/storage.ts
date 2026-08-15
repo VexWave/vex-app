@@ -95,8 +95,8 @@ const enumValue = <T extends string>(
  */
 export const storage = {
 	session: {
-		host: stringValue("player.server.host"),
-		port: stringValue("player.server.port"),
+		/** Base URL of the server, normalized by `parseServerUrl`. */
+		url: stringValue("player.server.url"),
 		token: stringValue("player.server.token"),
 	},
 	player: {

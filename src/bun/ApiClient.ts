@@ -85,15 +85,13 @@ export class ApiClient {
 	 * call validates it (a 401 there falls back to the login screen).
 	 */
 	restoreSession(params: RestoreSessionParams): RpcResult {
-		const { host, port, token } = params;
-		const baseUrl = `http://${host}:${port}`;
+		const { baseUrl, token } = params;
 		this.session = { baseUrl, token, client: createClient(baseUrl, token) };
 		return { ok: true };
 	}
 
 	async login(params: LoginParams): Promise<LoginResult> {
-		const { host, port, username, password } = params;
-		const baseUrl = `http://${host}:${port}`;
+		const { baseUrl, username, password } = params;
 		this.expireSession();
 		try {
 			const res = await createClient(baseUrl).login({
@@ -105,11 +103,8 @@ export class ApiClient {
 				return { ok: true, token };
 			}
 			return failure(res, `Login failed (HTTP ${res.status})`);
-		} catch {
-			return {
-				ok: false,
-				error: `Cannot reach ${baseUrl} — is the server running?`,
-			};
+		} catch (err) {
+			return { ok: false, error: unreachable(baseUrl, err) };
 		}
 	}
 
@@ -429,6 +424,23 @@ export class ApiClient {
 			return { ok: false, error: "Deleting the playlist failed — server unreachable" };
 		}
 	}
+}
+
+/**
+ * What to tell the user when the address never answered. A rejected certificate
+ * reaches `fetch` as a connection failure like any other, and calling that a
+ * server that isn't running points at the wrong half of the problem.
+ */
+function unreachable(baseUrl: string, err: unknown): string {
+	const code = (err as { code?: unknown })?.code;
+	const detail = `${typeof code === "string" ? code : ""} ${
+		err instanceof Error ? err.message : ""
+	}`;
+	// Node's TLS failures all name a cert or the protocol in one of the two.
+	if (/cert|ssl|tls/i.test(detail)) {
+		return `Cannot reach ${baseUrl} — its certificate was rejected.`;
+	}
+	return `Cannot reach ${baseUrl} — is the server running?`;
 }
 
 /**
