@@ -28,7 +28,7 @@ import { navigationService } from "@/api/NavigationService";
 import { playlistService } from "@/api/PlaylistService";
 import { presenceService } from "@/api/PresenceService";
 import { sessionService } from "@/api/SessionService";
-import { storageService } from "@/api/StorageService";
+import { uninstallService } from "@/api/UninstallService";
 import { playerController } from "@/hooks/usePlayer";
 import { watchDevicePixelRatio } from "@/lib/devicePixelRatio";
 // Each store's own state type, so data written here that no longer matches the
@@ -43,7 +43,7 @@ import type { MainViewName } from "@/api/NavigationService";
 import type { PlaylistsState } from "@/api/PlaylistService";
 import type { PresenceState } from "@/api/PresenceService";
 import type { SessionState } from "@/api/SessionService";
-import type { StorageState } from "@/api/StorageService";
+import type { UninstallState } from "@/api/UninstallService";
 import type { PlayerState, Track } from "@/player/types";
 import type { MediaSearchResult, RemoteTrack } from "../shared/rpcSchema";
 import "./index.css";
@@ -194,10 +194,10 @@ const PRESENCE: PresenceState = {
  * An installed copy, so the uninstall row is drawn. The alternative is what a
  * dev build gets, and there the panel draws nothing at all.
  */
-const STORAGE: StorageState = {
+const UNINSTALL: UninstallState = {
 	removable: true,
 	error: null,
-	uninstalling: false,
+	running: false,
 };
 
 // ===========================================================================
@@ -300,10 +300,10 @@ artistService.getSnapshot = () => ARTISTS_STATE;
 discoverService.getSnapshot = () => DISCOVER_STATE;
 playerController.getSnapshot = () => PLAYER_STATE;
 presenceService.getSnapshot = () => PRESENCE;
-storageService.getSnapshot = () => STORAGE;
+uninstallService.getSnapshot = () => UNINSTALL;
 // The one store the app fills on mount rather than on a session change, so its
 // fetch is stubbed out as well as its state.
-storageService.check = async () => {};
+uninstallService.check = async () => {};
 importService.jobFor = (url: string) =>
 	RUNNING_IMPORT && url === RUNNING_IMPORT.url ? RUNNING_IMPORT : null;
 
@@ -341,9 +341,9 @@ createRoot(document.getElementById("root")!).render(
 	</StrictMode>,
 );
 
-// This preview is of the Storage panel, which is the last thing in the settings
-// column and so below the fold: run the scroller to its end once the panels have
-// laid out. Virtual time makes the wait free.
+// This preview is of the uninstall panel, which is the last thing in the
+// settings column and so below the fold: run the scroller to its end once the
+// panels have laid out. Virtual time makes the wait free.
 setTimeout(() => {
 	document
 		.querySelectorAll("[data-radix-scroll-area-viewport]")

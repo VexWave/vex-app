@@ -1,12 +1,12 @@
 import { bun } from "./rpc";
 
-export interface StorageState {
+export interface UninstallState {
 	/** Whether there is an install here to remove. Null until bun has answered. */
 	removable: boolean | null;
-	/** A failed check, or an uninstall bun turned down. */
+	/** An uninstall bun turned down. Nothing else here reaches the screen. */
 	error: string | null;
 	/** Set once the removal is under way, and never cleared — the app is going. */
-	uninstalling: boolean;
+	running: boolean;
 }
 
 /**
@@ -18,12 +18,12 @@ export interface StorageState {
  * persisted or session-scoped — this is a fact about the computer, not about
  * the library.
  */
-export class StorageService {
+export class UninstallService {
 	private subscribers = new Set<() => void>();
-	private snapshot: StorageState = {
+	private snapshot: UninstallState = {
 		removable: null,
 		error: null,
-		uninstalling: false,
+		running: false,
 	};
 	private checking = false;
 
@@ -34,58 +34,53 @@ export class StorageService {
 		return () => this.subscribers.delete(onChange);
 	};
 
-	getSnapshot = (): StorageState => this.snapshot;
+	getSnapshot = (): UninstallState => this.snapshot;
 
 	/**
-	 * Asks bun whether there is anything to remove. Called when the panel
-	 * appears rather than at startup: the answer is only ever read there.
+	 * Asks bun whether there is anything to remove. Called when the panel appears
+	 * rather than at startup, and answered once for the run: an install doesn't
+	 * become a development build while the app is open.
 	 */
 	check = async (): Promise<void> => {
-		if (this.checking) return;
+		if (this.checking || this.snapshot.removable !== null) return;
 		this.checking = true;
 		try {
-			const result = await bun.canUninstall();
-			if (!result.ok) {
-				this.update({ removable: false, error: result.error });
-				return;
-			}
-			this.update({ removable: result.removable, error: null });
-		} catch (err) {
-			this.update({
-				removable: false,
-				error:
-					err instanceof Error ? err.message : "Couldn't reach the uninstaller",
-			});
+			const { removable } = await bun.canUninstall();
+			this.update({ removable });
+		} catch {
+			// Nothing to say and nowhere to say it: a panel that couldn't ask
+			// whether there is an install to remove draws nothing either.
+			this.update({ removable: false });
 		} finally {
 			this.checking = false;
 		}
 	};
 
 	/**
-	 * Removes VexWave and closes it. Success leaves `uninstalling` set with
-	 * nothing to return to: the window is about to go, and the panel spends its
-	 * last moment saying so rather than pretending the button is live again.
+	 * Removes VexWave and closes it. Success leaves `running` set with nothing to
+	 * return to: the window is about to go, and the panel spends its last moment
+	 * saying so rather than pretending the button is live again.
 	 */
 	uninstall = async (): Promise<void> => {
-		if (this.snapshot.uninstalling) return;
-		this.update({ uninstalling: true, error: null });
+		if (this.snapshot.running) return;
+		this.update({ running: true, error: null });
 		try {
 			const result = await bun.uninstallApp();
-			if (!result.ok) this.update({ uninstalling: false, error: result.error });
+			if (!result.ok) this.update({ running: false, error: result.error });
 		} catch (err) {
 			this.update({
-				uninstalling: false,
+				running: false,
 				error:
 					err instanceof Error ? err.message : "The uninstall never started",
 			});
 		}
 	};
 
-	private update(patch: Partial<StorageState>): void {
+	private update(patch: Partial<UninstallState>): void {
 		this.snapshot = { ...this.snapshot, ...patch };
 		this.subscribers.forEach((notify) => notify());
 	}
 }
 
 /** App-wide singleton — the answer outlives a trip away from the panel. */
-export const storageService = new StorageService();
+export const uninstallService = new UninstallService();

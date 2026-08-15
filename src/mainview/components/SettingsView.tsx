@@ -1,6 +1,6 @@
 import { DiscordPanel } from "@/components/DiscordPanel";
 import { EqualizerPanel } from "@/components/EqualizerPanel";
-import { StoragePanel } from "@/components/StoragePanel";
+import { UninstallPanel } from "@/components/UninstallPanel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
@@ -39,7 +39,7 @@ export function SettingsView() {
 					<DiscordPanel />
 					{/* Last: the only panel that sets nothing, and the only one
 					    holding an action there is no way back from. */}
-					<StoragePanel />
+					<UninstallPanel />
 				</div>
 			</ScrollArea>
 		</div>

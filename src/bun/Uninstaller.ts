@@ -17,26 +17,33 @@ const UNINSTALL_KEY =
 	"HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 
 /** How long the helper gives the app to exit before abandoning the job. */
-const WAIT_SECONDS = 120;
+const EXIT_WAIT_SECONDS = 120;
 
-/** How long it keeps at the install directory once nothing runs from it. */
-const DELETE_SECONDS = 120;
+/**
+ * How long it keeps at the install directory afterwards. Nothing of the app's
+ * still holds it by then — the helper has just stopped all of that — so this
+ * only covers a scanner or an open folder window reading the tree on its way
+ * out.
+ */
+const DELETE_RETRY_SECONDS = 30;
 
 /** How long to wait for the helper to report itself before giving up on it. */
 const READY_TIMEOUT_MS = 8_000;
 const READY_POLL_MS = 100;
-
-/** Something the helper removes after the install directory has gone. */
-interface Removal {
-	kind: "dir" | "file";
-	path: string;
-}
 
 interface Roots {
 	/** `%LOCALAPPDATA%\app.vexwave` — every channel, not just the running one. */
 	install: string;
 	/** The bare identifier, which also names the registry uninstall key. */
 	identifier: string;
+}
+
+/** One run's files, named off a common stem so its leftovers sort together. */
+interface HelperFiles {
+	worker: string;
+	launcher: string;
+	ready: string;
+	log: string;
 }
 
 /**
@@ -94,43 +101,25 @@ export class Uninstaller {
 
 		// Everything but the install directory can go in any order once the app is
 		// gone; the install directory is the one that has to be waited out.
-		const rest: Removal[] = [];
-		const components = this.componentsRoot();
-		if (components) rest.push({ kind: "dir", path: components });
-		for (const link of await this.strandedShortcuts(roots.install)) {
-			rest.push({ kind: "file", path: link });
-		}
+		const leftovers = [
+			...(this.componentsDir ? [path.dirname(this.componentsDir)] : []),
+			...(await strandedShortcuts(roots.install)),
+		];
 
 		const stem = path.join(
 			os.tmpdir(),
 			`vexwave-uninstall-${Date.now().toString(36)}`,
 		);
-		const files = {
+		const files: HelperFiles = {
 			worker: `${stem}-worker.ps1`,
 			launcher: `${stem}-launch.ps1`,
 			ready: `${stem}.ready`,
 			log: `${stem}.log`,
 		};
 
-		// Machine-derived, all of it, but it is pasted into PowerShell literals
-		// that a `'` would close, and into a command line where a `"` ends an
-		// argument early.
-		const written = [
-			roots.install,
-			process.execPath,
-			...rest.map((entry) => entry.path),
-			...Object.values(files),
-		];
-		if (written.some((target) => /["'\r\n]/.test(target))) {
-			return {
-				ok: false,
-				error: "VexWave is installed under a path it can't safely remove.",
-			};
-		}
-
 		try {
-			await writeFile(files.worker, this.worker(roots, rest, files), "utf8");
-			await writeFile(files.launcher, launcher(files), "utf8");
+			await writeScript(files.worker, worker(roots, leftovers, files));
+			await writeScript(files.launcher, launcher(files));
 			// Not `cmd /c start`: that leaves the helper inside this process's tree,
 			// where it is killed partway through its work when the app goes down.
 			// WMI has the service create it instead, so it belongs to nothing here.
@@ -160,7 +149,7 @@ export class Uninstaller {
 			};
 		}
 
-		if (!(await waitForFile(files.ready, READY_TIMEOUT_MS))) {
+		if (!(await waitForHandshake(files.ready))) {
 			// Quitting now would close the app on a removal that will never run.
 			await rm(files.worker, { force: true }).catch(() => {});
 			return {
@@ -169,82 +158,6 @@ export class Uninstaller {
 			};
 		}
 		return { ok: true };
-	}
-
-	/**
-	 * The helper itself. It logs every branch it takes: by the time any of this
-	 * runs there is no app left to report a failure through.
-	 */
-	private worker(
-		roots: Roots,
-		rest: Removal[],
-		files: { ready: string; log: string },
-	): string {
-		return [
-			"$ErrorActionPreference = 'SilentlyContinue'",
-			`$log = '${files.log}'`,
-			`$ready = '${files.ready}'`,
-			`$install = '${roots.install}'`,
-			`$exe = '${process.execPath}'`,
-			"",
-			// Not `Out-File -Encoding utf8`, which stamps a byte-order mark into
-			// the middle of a log the failure message sends the user to read.
-			`function Note($m) { [IO.File]::AppendAllText($log, ("[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m) + [Environment]::NewLine) }`,
-			// A script is read into memory before it runs, so it can remove itself.
-			"function Finish { Remove-Item -LiteralPath $ready -Force; Remove-Item -LiteralPath $PSCommandPath -Force; exit }",
-			"",
-			`Note 'waiting for pid ${process.pid}'`,
-			// The handshake: until this exists, the app must not quit.
-			"'ready' | Out-File -LiteralPath $ready -Encoding ascii",
-			"",
-			`$deadline = (Get-Date).AddSeconds(${WAIT_SECONDS})`,
-			`while (Get-Process -Id ${process.pid}) {`,
-			"\tif ((Get-Date) -gt $deadline) { Note 'app never exited; nothing removed'; Finish }",
-			"\tStart-Sleep -Milliseconds 500",
-			"}",
-			"",
-			// Quitting force-exits, which orphans the CEF helpers rather than
-			// ending them, and one of those keeps CEF\BrowserMetrics\*.pma mapped
-			// for as long as it lives. A mapped file cannot be deleted, so waiting
-			// it out is not an option. Nothing here is worth waiting for anyway:
-			// these are the processes of the app being removed.
-			`$running = @(Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($install + '\\', 'OrdinalIgnoreCase') })`,
-			"if ($running) {",
-			"\tNote ('stopping ' + (($running | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ', '))",
-			"\t$running | Stop-Process -Force",
-			"\tStart-Sleep -Seconds 2",
-			"}",
-			"",
-			`$deadline = (Get-Date).AddSeconds(${DELETE_SECONDS})`,
-			"while ($true) {",
-			"\tRemove-Item -LiteralPath $install -Recurse -Force",
-			"\tif (-not (Test-Path -LiteralPath $install)) { break }",
-			"\tif ((Get-Date) -gt $deadline) { break }",
-			"\tStart-Sleep -Seconds 1",
-			"}",
-			"",
-			"if (Test-Path -LiteralPath $install) {",
-			// The executable is what tells a removal that never happened from one
-			// that finished around something it couldn't take. Only the first is
-			// worth leaving alone: shortcuts into a gutted install point nowhere.
-			"\tif (Test-Path -LiteralPath $exe) { Note 'install directory would not go; nothing else touched'; Finish }",
-			"\tNote 'install directory left a remnant; removing the rest anyway'",
-			"} else {",
-			"\tNote 'install directory removed'",
-			"}",
-			"",
-			...rest.map(({ kind, path: target }) =>
-				kind === "file"
-					? `Remove-Item -LiteralPath '${target}' -Force`
-					: `Remove-Item -LiteralPath '${target}' -Recurse -Force`,
-			),
-			// Absent unless the user imported the installer's own .reg file, so
-			// this failing is the ordinary case rather than a fault.
-			`Remove-Item -LiteralPath '${UNINSTALL_KEY}\\${roots.identifier}' -Recurse -Force`,
-			"Note 'done'",
-			"Finish",
-			"",
-		].join("\r\n");
 	}
 
 	/**
@@ -261,47 +174,89 @@ export class Uninstaller {
 	 */
 	private async resolveRoots(): Promise<Roots | null> {
 		if (process.platform !== "win32") return null;
+		const localAppData = process.env.LOCALAPPDATA;
+		if (!localAppData) return null;
 		const { identifier, channel } = await Updater.getLocalInfo();
 		if (!identifier || !channel) return null;
 		// The identifier also names a registry key, so nothing but a plain name.
 		if (!/^[A-Za-z0-9._-]+$/.test(identifier)) return null;
 
-		const install = path.join(localAppData(), identifier);
-		const running = path.join(install, channel);
-		if (!isInside(running, process.execPath)) return null;
+		const install = path.join(localAppData, identifier);
+		if (!isInside(path.join(install, channel), process.execPath)) return null;
 		return { install, identifier };
 	}
+}
 
-	/** `%LOCALAPPDATA%\VexWave` — the binaries' directory and `imports/` beside it. */
-	private componentsRoot(): string | null {
-		return this.componentsDir ? path.dirname(this.componentsDir) : null;
-	}
-
-	/**
-	 * The shortcuts that would be left pointing at nothing. A `.lnk` stores its
-	 * target inside itself, so one is claimed only when the install path appears
-	 * in its bytes — in either encoding, since the format holds the path both
-	 * ways. Matching on the filename alone would delete a shortcut somebody made
-	 * for something else entirely.
-	 *
-	 * A Desktop redirected elsewhere keeps its shortcut; a dead icon is a smaller
-	 * cost than resolving shell folders to hunt for it.
-	 */
-	private async strandedShortcuts(install: string): Promise<string[]> {
-		const found: string[] = [];
-		for (const { root, segments } of SHORTCUTS) {
-			if (!root) continue;
-			const link = path.join(root, ...segments);
-			const file = Bun.file(link);
-			if (!(await file.exists())) continue;
-			const bytes = Buffer.from(await file.arrayBuffer());
-			const points =
-				bytes.includes(Buffer.from(install, "latin1")) ||
-				bytes.includes(Buffer.from(install, "utf16le"));
-			if (points) found.push(link);
-		}
-		return found;
-	}
+/**
+ * The helper itself. It logs every branch it takes: by the time any of this
+ * runs there is no app left to report a failure through.
+ */
+function worker(roots: Roots, leftovers: string[], files: HelperFiles): string {
+	return [
+		"$ErrorActionPreference = 'SilentlyContinue'",
+		`$log = ${literal(files.log)}`,
+		`$ready = ${literal(files.ready)}`,
+		`$install = ${literal(roots.install)}`,
+		`$exe = ${literal(process.execPath)}`,
+		"",
+		// Not `Out-File -Encoding utf8`, which stamps a byte-order mark into the
+		// middle of a log the failure message sends the user to read.
+		`function Note($m) { [IO.File]::AppendAllText($log, ("[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m) + [Environment]::NewLine) }`,
+		// A script is read into memory before it runs, so it can remove itself.
+		"function Finish { Remove-Item -LiteralPath $ready -Force; Remove-Item -LiteralPath $PSCommandPath -Force; exit }",
+		"",
+		`Note 'waiting for pid ${process.pid}'`,
+		// The handshake: until this file exists, the app must not quit.
+		"[IO.File]::WriteAllText($ready, 'ready')",
+		"",
+		`$deadline = (Get-Date).AddSeconds(${EXIT_WAIT_SECONDS})`,
+		`while (Get-Process -Id ${process.pid}) {`,
+		"\tif ((Get-Date) -gt $deadline) { Note 'app never exited; nothing removed'; Finish }",
+		"\tStart-Sleep -Milliseconds 500",
+		"}",
+		"",
+		// Quitting force-exits, which orphans the CEF helpers rather than ending
+		// them, and one of those keeps CEF\BrowserMetrics\*.pma mapped for as long
+		// as it lives. A mapped file cannot be deleted, so waiting it out is not an
+		// option. Nothing here is worth waiting for anyway: these are the processes
+		// of the app being removed.
+		`$running = @(Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($install + '\\', 'OrdinalIgnoreCase') })`,
+		"if ($running) {",
+		"\tNote ('stopping ' + (($running | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ', '))",
+		"\t$running | Stop-Process -Force",
+		"\tStart-Sleep -Seconds 2",
+		"}",
+		"",
+		`$deadline = (Get-Date).AddSeconds(${DELETE_RETRY_SECONDS})`,
+		"while ($true) {",
+		"\tRemove-Item -LiteralPath $install -Recurse -Force",
+		"\tif (-not (Test-Path -LiteralPath $install)) { break }",
+		"\tif ((Get-Date) -gt $deadline) { break }",
+		"\tStart-Sleep -Seconds 1",
+		"}",
+		"",
+		"if (Test-Path -LiteralPath $install) {",
+		// The executable is what tells a removal that never happened from one that
+		// finished around something it couldn't take. Only the first is worth
+		// leaving alone: shortcuts into a gutted install point nowhere.
+		"\tif (Test-Path -LiteralPath $exe) { Note 'install directory would not go; nothing else touched'; Finish }",
+		"\tNote 'install directory left a remnant; removing the rest anyway'",
+		"} else {",
+		"\tNote 'install directory removed'",
+		"}",
+		"",
+		// `-Recurse` is what a directory needs and what a file ignores, so the two
+		// kinds of leftover take the same line.
+		...leftovers.map(
+			(target) => `Remove-Item -LiteralPath ${literal(target)} -Recurse -Force`,
+		),
+		// Absent unless the user imported the installer's own .reg file, so this
+		// failing is the ordinary case rather than a fault.
+		`Remove-Item -LiteralPath ${literal(`${UNINSTALL_KEY}\\${roots.identifier}`)} -Recurse -Force`,
+		"Note 'done'",
+		"Finish",
+		"",
+	].join("\r\n");
 }
 
 /**
@@ -311,38 +266,79 @@ export class Uninstaller {
  * where WMI won't answer; it is still better than not starting at all, and the
  * caller finds out either way by whether the worker reports in.
  */
-function launcher(files: { worker: string; launcher: string }): string {
+function launcher(files: HelperFiles): string {
 	return [
 		"$ErrorActionPreference = 'SilentlyContinue'",
-		`$worker = '${files.worker}'`,
-		"$flags = @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File')",
-		`$line = 'powershell.exe ' + ($flags -join ' ') + ' "' + $worker + '"'`,
-		// WMI would otherwise give the helper a visible console of its own. This
-		// is `SW_HIDE`; the flags above only cover PowerShell's own host window.
+		"$flags = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File'",
+		// Both routes below take one command line and quote nothing themselves, and
+		// the temp directory sits under a user name that may hold spaces. A `"` is
+		// not a legal character in a Windows path, so nothing can escape out of it.
+		`$line = $flags + ' "' + ${literal(files.worker)} + '"'`,
+		// WMI would otherwise give the helper a visible console of its own. This is
+		// `SW_HIDE`; the flags above only cover PowerShell's own host window.
 		"$startup = New-CimInstance -ClassName Win32_ProcessStartup -Namespace root/cimv2 -ClientOnly -Property @{ ShowWindow = [uint16]0 }",
-		"$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $line; ProcessStartupInformation = $startup }",
+		"$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell.exe ' + $line; ProcessStartupInformation = $startup }",
 		"if (-not $result -or $result.ReturnValue -ne 0) {",
-		"\tStart-Process -FilePath 'powershell.exe' -ArgumentList ($flags + $worker) -WindowStyle Hidden",
+		"\tStart-Process -FilePath 'powershell.exe' -ArgumentList $line -WindowStyle Hidden",
 		"}",
-		`Remove-Item -LiteralPath '${files.launcher}' -Force`,
+		`Remove-Item -LiteralPath ${literal(files.launcher)} -Force`,
 		"",
 	].join("\r\n");
 }
 
-/** Polls for a file the helper writes to say it is alive and waiting. */
-async function waitForFile(target: string, timeoutMs: number): Promise<boolean> {
-	const deadline = Date.now() + timeoutMs;
+/**
+ * Windows PowerShell reads a script with no byte-order mark in the system ANSI
+ * codepage, where a UTF-8 path comes out as mojibake — so on a machine whose
+ * user name is not plain ASCII, every path in here would match nothing and the
+ * whole removal would quietly do none of it. The mark is what says UTF-8.
+ */
+function writeScript(target: string, script: string): Promise<void> {
+	return writeFile(target, `\uFEFF${script}`, "utf8");
+}
+
+/**
+ * A PowerShell single-quoted literal. Doubling the quote is the whole of the
+ * escaping such a literal takes, and a path can hold one: `C:\Users\O'Brien` is
+ * a place someone lives.
+ */
+function literal(value: string): string {
+	return `'${value.split("'").join("''")}'`;
+}
+
+/**
+ * The shortcuts that would be left pointing at nothing. A `.lnk` stores its
+ * target inside itself, so one is claimed only when the install path appears in
+ * its bytes — in either encoding, since the format holds the path both ways.
+ * Matching on the filename alone would delete a shortcut somebody made for
+ * something else entirely.
+ *
+ * A Desktop redirected elsewhere keeps its shortcut; a dead icon is a smaller
+ * cost than resolving shell folders to hunt for it.
+ */
+async function strandedShortcuts(install: string): Promise<string[]> {
+	const found: string[] = [];
+	for (const { root, segments } of SHORTCUTS) {
+		if (!root) continue;
+		const link = path.join(root, ...segments);
+		const file = Bun.file(link);
+		if (!(await file.exists())) continue;
+		const bytes = Buffer.from(await file.arrayBuffer());
+		const points =
+			bytes.includes(Buffer.from(install, "latin1")) ||
+			bytes.includes(Buffer.from(install, "utf16le"));
+		if (points) found.push(link);
+	}
+	return found;
+}
+
+/** Polls for the file the helper writes to say it is alive and waiting. */
+async function waitForHandshake(ready: string): Promise<boolean> {
+	const deadline = Date.now() + READY_TIMEOUT_MS;
 	while (Date.now() < deadline) {
-		if (await Bun.file(target).exists()) return true;
+		if (await Bun.file(ready).exists()) return true;
 		await Bun.sleep(READY_POLL_MS);
 	}
 	return false;
-}
-
-function localAppData(): string {
-	return (
-		process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local")
-	);
 }
 
 /** Whether `child` lies within `parent`, both compared as resolved paths. */

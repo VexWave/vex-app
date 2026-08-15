@@ -419,8 +419,13 @@ export interface PresenceStatus {
  * build, whose channel folder holds a browser cache rather than the app running
  * out of it, and for any platform the uninstall doesn't cover. The panel offers
  * no button rather than one that would refuse.
+ *
+ * Nothing can fail in the asking, so this carries no failure shape — only the
+ * answer, the same way `setPresenceEnabled` reports a connection.
  */
-export type UninstallTargetResult = { ok: true; removable: boolean } | RpcFailure;
+export interface UninstallTarget {
+	removable: boolean;
+}
 
 export type PlayerRPC = {
 	bun: RPCSchema<{
@@ -484,7 +489,7 @@ export type PlayerRPC = {
 				response: PresenceStatus;
 			};
 			/** Whether there is an install here for `uninstallApp` to remove. */
-			canUninstall: { params: undefined; response: UninstallTargetResult };
+			canUninstall: { params: undefined; response: UninstallTarget };
 			/**
 			 * Removes VexWave from the machine and closes it. Answers as soon as
 			 * the removal is under way rather than when it is done: the app can't

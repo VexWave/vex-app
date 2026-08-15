@@ -162,10 +162,7 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			discardImport: (params) => importer.discard(params),
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
 			setPresenceEnabled: ({ enabled }) => discordPresence.setEnabled(enabled),
-			canUninstall: async () => ({
-				ok: true as const,
-				removable: await uninstaller.removable(),
-			}),
+			canUninstall: async () => ({ removable: await uninstaller.removable() }),
 			// The same exclusions the yt-dlp updater answers to, for the same
 			// reason turned up: a spawned yt-dlp holds open an executable inside
 			// one of the directories about to be removed.
