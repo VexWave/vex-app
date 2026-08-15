@@ -34,6 +34,6 @@ Every service that holds server data clears it on logout and refetches on login,
 
 ## Navigation and presence
 
-- `UninstallService` is the one service that fetches when a component mounts rather than off a session change, and asks once for the run: whether this copy is an installed one, and so has an install to remove, is a fact about the computer. That is also why it survives a logout untouched.
+- `UninstallService` is the one service that fetches on a component mount rather than off a session change, and asks once: whether this copy is an installed one is a fact about the computer, so a logout leaves it alone.
 - `NavigationService` holds the current view and the item opened in it, so any component can navigate and logging out can reset it. **Views are grouped into sections**, and `SECTION_OF` is where a new view declares itself; only structure lives there, labels and glyphs being `components/Sections`'. **A section is switched to rather than navigated to**, so each resumes the view it was last on.
 - `PresenceService` is the odd one: the only service whose state is mostly *outbound*. It narrows the player's several-times-a-second notifications down to the changes Discord would render and sends `null` for a pause (there is no paused presence — see `src/bun/CLAUDE.md`). **The on/off switch is the app's, not bun's** — a user preference, so it is persisted here and announced to a bun process that keeps no copy. That announcement is a request, not a push: a track update that goes missing is corrected by the next one, a switch that goes missing is not.

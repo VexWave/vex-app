@@ -163,23 +163,17 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
 			setPresenceEnabled: ({ enabled }) => discordPresence.setEnabled(enabled),
 			canUninstall: async () => ({ removable: await uninstaller.removable() }),
-			// The same exclusions the yt-dlp updater answers to, for the same
-			// reason turned up: a spawned yt-dlp holds open an executable inside
-			// one of the directories about to be removed.
+			// The yt-dlp updater's exclusions, for the same reason: a spawned
+			// yt-dlp holds an executable open inside a directory about to go.
 			uninstallApp: async () => {
 				const busy = ytDlpBusyReason();
 				if (busy) return { ok: false as const, error: busy };
 				return unlessInstalling(async () => {
 					const result = await uninstaller.start();
-					// The helper can only finish once this process releases its own
-					// files, so going down is part of the uninstall rather than what
-					// follows it. Delayed just long enough for the answer above to
-					// reach the webview.
-					//
-					// Exiting outright rather than through `app.quit()`, which spends
-					// five seconds waiting on a shutdown that has nothing left to do:
-					// every window and every file here is about to be deleted, and the
-					// helper stops whatever this leaves behind.
+					// The helper can't finish until this process releases its files, so
+					// going down is part of the removal. `process.exit` rather than
+					// `app.quit()`, whose five-second shutdown wait has nothing left to
+					// do here.
 					if (result.ok) setTimeout(() => process.exit(0), QUIT_DELAY_MS);
 					return result;
 				});

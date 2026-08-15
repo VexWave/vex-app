@@ -4,7 +4,7 @@ import path from "node:path";
 import { Updater } from "electrobun/bun";
 import type { RpcResult } from "../shared/rpcSchema";
 
-/** The two shortcuts the Electrobun installer creates, relative to a known root. */
+/** The two shortcuts the Electrobun installer creates, under a known root. */
 const SHORTCUTS: { root: string | undefined; segments: string[] }[] = [
 	{
 		root: process.env.APPDATA,
@@ -20,10 +20,8 @@ const UNINSTALL_KEY =
 const EXIT_WAIT_SECONDS = 120;
 
 /**
- * How long it keeps at the install directory afterwards. Nothing of the app's
- * still holds it by then — the helper has just stopped all of that — so this
- * only covers a scanner or an open folder window reading the tree on its way
- * out.
+ * How long it then keeps at the install directory. Only a scanner or an open
+ * folder window can still hold it: our own processes are stopped by this point.
  */
 const DELETE_RETRY_SECONDS = 30;
 
@@ -38,7 +36,7 @@ interface Roots {
 	identifier: string;
 }
 
-/** One run's files, named off a common stem so its leftovers sort together. */
+/** One run's files, off a common stem so its leftovers sort together. */
 interface HelperFiles {
 	worker: string;
 	launcher: string;
@@ -48,33 +46,27 @@ interface HelperFiles {
 
 /**
  * Removes VexWave from the machine: the install directory, the downloaded
- * binaries beside it, the shortcuts pointing at it, and the registry entry
- * naming it.
+ * binaries beside it, the shortcuts, and the registry entry.
  *
- * None of it can happen from in here. Windows holds an executing image open,
- * and the app is running `launcher.exe`, `bun.exe` and a CEF helper per view out
- * of the very tree being removed, so the work goes to a detached helper that
- * outlives the app.
+ * Windows holds an executing image open and every VexWave process runs out of
+ * the tree being removed, so the work goes to a detached helper. What that
+ * helper must get right, all learned the hard way:
  *
- * Three things that helper must get right, all learned the hard way:
- *
- *   - **It waits for this process to exit before deleting anything.** Deleting
- *     around a live app takes whatever happens to be unlocked and leaves the
- *     rest, which is a half-removed install rather than a failed removal.
- *   - **It then stops whatever is still running out of the tree.** Quitting
- *     force-exits, which leaves the CEF helpers orphaned rather than ended, and
- *     a file one of them has mapped cannot be deleted at all.
- *   - **It is started outside this process's tree**, through WMI, so that
- *     whatever reaps the app's children on the way down cannot reap it too.
- *
- * And because a helper that never starts would mean quitting into a deletion
- * that never happens, it reports for duty before this side agrees to quit.
+ *   - it waits for this process to exit, or it takes only what happens to be
+ *     unlocked and leaves a half-removed install;
+ *   - it then stops what still runs out of the tree: quitting force-exits and
+ *     orphans the CEF helpers, and a file one of them has mapped cannot be
+ *     deleted at all;
+ *   - it starts through WMI, outside this process's tree, so whatever reaps the
+ *     app's children can't reap it too;
+ *   - it reports for duty before this side quits, or the app closes on a
+ *     removal that never runs.
  */
 export class Uninstaller {
 	/**
-	 * @param componentsDir The downloaded binaries' own directory, or null where
-	 * the platform has none. Its parent is what gets removed — `imports/` is its
-	 * sibling (`UrlImporter`), and both are ours.
+	 * @param componentsDir The binaries' own directory, or null where the
+	 * platform has none. Its *parent* is what goes: `imports/` is a sibling
+	 * (`UrlImporter`), and both are ours.
 	 */
 	constructor(private readonly componentsDir: string | null) {}
 
@@ -84,10 +76,9 @@ export class Uninstaller {
 	}
 
 	/**
-	 * Puts the helper in place and answers once it has confirmed it is running
-	 * and waiting. The caller quits the app on success, which is the signal the
-	 * helper is waiting for; on failure nothing has been touched and the app
-	 * stays up to say so.
+	 * Writes the helper and answers once it has confirmed it is waiting. The
+	 * caller quits on success, which is the signal the helper waits for; on
+	 * failure nothing has been touched.
 	 */
 	async start(): Promise<RpcResult> {
 		const roots = await this.resolveRoots();
@@ -99,8 +90,6 @@ export class Uninstaller {
 			};
 		}
 
-		// Everything but the install directory can go in any order once the app is
-		// gone; the install directory is the one that has to be waited out.
 		const leftovers = [
 			...(this.componentsDir ? [path.dirname(this.componentsDir)] : []),
 			...(await strandedShortcuts(roots.install)),
@@ -120,9 +109,6 @@ export class Uninstaller {
 		try {
 			await writeScript(files.worker, worker(roots, leftovers, files));
 			await writeScript(files.launcher, launcher(files));
-			// Not `cmd /c start`: that leaves the helper inside this process's tree,
-			// where it is killed partway through its work when the app goes down.
-			// WMI has the service create it instead, so it belongs to nothing here.
 			Bun.spawn(
 				[
 					"powershell.exe",
@@ -135,8 +121,8 @@ export class Uninstaller {
 					"-File",
 					files.launcher,
 				],
-				// The app has no console of its own, so a console program started
-				// from it is given a fresh window unless this says otherwise.
+				// Without this a console window flashes up: the app has none of its
+				// own for a child to inherit.
 				{ stdio: ["ignore", "ignore", "ignore"], windowsHide: true },
 			);
 		} catch (err) {
@@ -150,7 +136,7 @@ export class Uninstaller {
 		}
 
 		if (!(await waitForHandshake(files.ready))) {
-			// Quitting now would close the app on a removal that will never run.
+			// Quitting now would close the app on a removal that never runs.
 			await rm(files.worker, { force: true }).catch(() => {});
 			return {
 				ok: false,
@@ -162,15 +148,10 @@ export class Uninstaller {
 
 	/**
 	 * `%LOCALAPPDATA%\<identifier>`, or null when this copy has no business
-	 * deleting it.
-	 *
-	 * Nothing here is a formality. `getLocalInfo` answers with empty strings when
-	 * it can't read `version.json`, and joining those resolves to
-	 * `%LOCALAPPDATA%` itself — the one directory this must never be pointed at.
-	 * Requiring the running executable to sit inside the channel folder is what
-	 * proves the tree is this app's own, and is also what makes a dev build
-	 * refuse: `bun run dev:hmr` runs from the repository, and only a browser
-	 * cache is written under the `dev` channel.
+	 * deleting it. `getLocalInfo` answers with empty strings when it can't read
+	 * `version.json`, and joining those lands on `%LOCALAPPDATA%` itself — so the
+	 * running executable has to be found inside the channel folder before the
+	 * tree counts as ours. That is also what makes a dev build refuse.
 	 */
 	private async resolveRoots(): Promise<Roots | null> {
 		if (process.platform !== "win32") return null;
@@ -187,10 +168,7 @@ export class Uninstaller {
 	}
 }
 
-/**
- * The helper itself. It logs every branch it takes: by the time any of this
- * runs there is no app left to report a failure through.
- */
+/** The helper. It logs every branch: nothing is left to report a failure to. */
 function worker(roots: Roots, leftovers: string[], files: HelperFiles): string {
 	return [
 		"$ErrorActionPreference = 'SilentlyContinue'",
@@ -199,14 +177,13 @@ function worker(roots: Roots, leftovers: string[], files: HelperFiles): string {
 		`$install = ${literal(roots.install)}`,
 		`$exe = ${literal(process.execPath)}`,
 		"",
-		// Not `Out-File -Encoding utf8`, which stamps a byte-order mark into the
-		// middle of a log the failure message sends the user to read.
+		// Not `Out-File -Encoding utf8`: it stamps a byte-order mark mid-log.
 		`function Note($m) { [IO.File]::AppendAllText($log, ("[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m) + [Environment]::NewLine) }`,
 		// A script is read into memory before it runs, so it can remove itself.
 		"function Finish { Remove-Item -LiteralPath $ready -Force; Remove-Item -LiteralPath $PSCommandPath -Force; exit }",
 		"",
 		`Note 'waiting for pid ${process.pid}'`,
-		// The handshake: until this file exists, the app must not quit.
+		// The handshake: until this exists, the app must not quit.
 		"[IO.File]::WriteAllText($ready, 'ready')",
 		"",
 		`$deadline = (Get-Date).AddSeconds(${EXIT_WAIT_SECONDS})`,
@@ -215,11 +192,9 @@ function worker(roots: Roots, leftovers: string[], files: HelperFiles): string {
 		"\tStart-Sleep -Milliseconds 500",
 		"}",
 		"",
-		// Quitting force-exits, which orphans the CEF helpers rather than ending
-		// them, and one of those keeps CEF\BrowserMetrics\*.pma mapped for as long
-		// as it lives. A mapped file cannot be deleted, so waiting it out is not an
-		// option. Nothing here is worth waiting for anyway: these are the processes
-		// of the app being removed.
+		// Quitting force-exits, orphaning the CEF helpers, and one of those keeps
+		// CEF\BrowserMetrics\*.pma mapped. A mapped file cannot be deleted at all,
+		// so there is nothing here to wait out.
 		`$running = @(Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($install + '\\', 'OrdinalIgnoreCase') })`,
 		"if ($running) {",
 		"\tNote ('stopping ' + (($running | ForEach-Object { $_.ProcessName } | Sort-Object -Unique) -join ', '))",
@@ -236,22 +211,21 @@ function worker(roots: Roots, leftovers: string[], files: HelperFiles): string {
 		"}",
 		"",
 		"if (Test-Path -LiteralPath $install) {",
-		// The executable is what tells a removal that never happened from one that
-		// finished around something it couldn't take. Only the first is worth
-		// leaving alone: shortcuts into a gutted install point nowhere.
+		// A removal that never started, told from one that finished around
+		// something it couldn't take. Only the first is worth leaving alone:
+		// shortcuts into a gutted install point nowhere.
 		"\tif (Test-Path -LiteralPath $exe) { Note 'install directory would not go; nothing else touched'; Finish }",
 		"\tNote 'install directory left a remnant; removing the rest anyway'",
 		"} else {",
 		"\tNote 'install directory removed'",
 		"}",
 		"",
-		// `-Recurse` is what a directory needs and what a file ignores, so the two
-		// kinds of leftover take the same line.
+		// `-Recurse`: needed by a directory, ignored by a file.
 		...leftovers.map(
 			(target) => `Remove-Item -LiteralPath ${literal(target)} -Recurse -Force`,
 		),
-		// Absent unless the user imported the installer's own .reg file, so this
-		// failing is the ordinary case rather than a fault.
+		// Absent unless the installer's own .reg file was imported, so failing
+		// here is the ordinary case.
 		`Remove-Item -LiteralPath ${literal(`${UNINSTALL_KEY}\\${roots.identifier}`)} -Recurse -Force`,
 		"Note 'done'",
 		"Finish",
@@ -260,22 +234,20 @@ function worker(roots: Roots, leftovers: string[], files: HelperFiles): string {
 }
 
 /**
- * Hands the worker to WMI, whose service creates it as its own child — the
- * point of the exercise, since a process started from here belongs to this
- * app's tree and dies with it. `Start-Process` is the fallback for a machine
- * where WMI won't answer; it is still better than not starting at all, and the
- * caller finds out either way by whether the worker reports in.
+ * Hands the worker to WMI, whose service creates it: a process started from
+ * here would belong to this app's tree and die with it. `Start-Process` is the
+ * fallback where WMI won't answer, and the caller finds out either way from the
+ * handshake.
  */
 function launcher(files: HelperFiles): string {
 	return [
 		"$ErrorActionPreference = 'SilentlyContinue'",
 		"$flags = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File'",
-		// Both routes below take one command line and quote nothing themselves, and
-		// the temp directory sits under a user name that may hold spaces. A `"` is
-		// not a legal character in a Windows path, so nothing can escape out of it.
+		// Neither route below quotes for us, and the temp path can hold spaces. A
+		// `"` is not legal in a Windows path, so nothing escapes this.
 		`$line = $flags + ' "' + ${literal(files.worker)} + '"'`,
-		// WMI would otherwise give the helper a visible console of its own. This is
-		// `SW_HIDE`; the flags above only cover PowerShell's own host window.
+		// SW_HIDE. Without it WMI gives the helper a console of its own; the flags
+		// above only cover PowerShell's host window.
 		"$startup = New-CimInstance -ClassName Win32_ProcessStartup -Namespace root/cimv2 -ClientOnly -Property @{ ShowWindow = [uint16]0 }",
 		"$result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell.exe ' + $line; ProcessStartupInformation = $startup }",
 		"if (-not $result -or $result.ReturnValue -ne 0) {",
@@ -287,33 +259,28 @@ function launcher(files: HelperFiles): string {
 }
 
 /**
- * Windows PowerShell reads a script with no byte-order mark in the system ANSI
- * codepage, where a UTF-8 path comes out as mojibake — so on a machine whose
- * user name is not plain ASCII, every path in here would match nothing and the
- * whole removal would quietly do none of it. The mark is what says UTF-8.
+ * Windows PowerShell reads a script with no byte-order mark in the system
+ * codepage, where a UTF-8 path turns to mojibake and matches nothing: without
+ * this, a user name outside ASCII makes the whole removal quietly do none of it.
  */
 function writeScript(target: string, script: string): Promise<void> {
 	return writeFile(target, `\uFEFF${script}`, "utf8");
 }
 
 /**
- * A PowerShell single-quoted literal. Doubling the quote is the whole of the
- * escaping such a literal takes, and a path can hold one: `C:\Users\O'Brien` is
- * a place someone lives.
+ * A PowerShell single-quoted literal. Doubling the quote is its whole escaping,
+ * and paths do hold one: `C:\Users\O'Brien`.
  */
 function literal(value: string): string {
 	return `'${value.split("'").join("''")}'`;
 }
 
 /**
- * The shortcuts that would be left pointing at nothing. A `.lnk` stores its
- * target inside itself, so one is claimed only when the install path appears in
- * its bytes — in either encoding, since the format holds the path both ways.
- * Matching on the filename alone would delete a shortcut somebody made for
- * something else entirely.
- *
- * A Desktop redirected elsewhere keeps its shortcut; a dead icon is a smaller
- * cost than resolving shell folders to hunt for it.
+ * Shortcuts that would be left pointing at nothing. A `.lnk` holds its target
+ * inside itself, so one is claimed only when the install path appears in its
+ * bytes, in either encoding — matching on the filename would take a shortcut
+ * someone made for something else. A redirected Desktop keeps its icon: hunting
+ * shell folders costs more than a dead one.
  */
 async function strandedShortcuts(install: string): Promise<string[]> {
 	const found: string[] = [];

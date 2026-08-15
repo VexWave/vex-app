@@ -5,18 +5,14 @@ export interface UninstallState {
 	removable: boolean | null;
 	/** An uninstall bun turned down. Nothing else here reaches the screen. */
 	error: string | null;
-	/** Set once the removal is under way, and never cleared — the app is going. */
+	/** Set once the removal is under way, and never cleared: the app is going. */
 	running: boolean;
 }
 
 /**
- * Whether VexWave can take itself off this machine, and the one action that
- * does it.
- *
- * Only bun can answer that: the webview knows neither where the app was
- * installed nor whether this copy is an installed one at all. Nothing here is
- * persisted or session-scoped — this is a fact about the computer, not about
- * the library.
+ * Whether VexWave can take itself off this machine, and the action that does
+ * it. Only bun can answer: the webview knows neither where the app was
+ * installed nor whether this copy is an installed one at all.
  */
 export class UninstallService {
 	private subscribers = new Set<() => void>();
@@ -37,8 +33,7 @@ export class UninstallService {
 	getSnapshot = (): UninstallState => this.snapshot;
 
 	/**
-	 * Asks bun whether there is anything to remove. Called when the panel appears
-	 * rather than at startup, and answered once for the run: an install doesn't
+	 * Asked when the panel appears, and once for the run: an install doesn't
 	 * become a development build while the app is open.
 	 */
 	check = async (): Promise<void> => {
@@ -48,8 +43,7 @@ export class UninstallService {
 			const { removable } = await bun.canUninstall();
 			this.update({ removable });
 		} catch {
-			// Nothing to say and nowhere to say it: a panel that couldn't ask
-			// whether there is an install to remove draws nothing either.
+			// A panel that can't ask has nothing to offer either.
 			this.update({ removable: false });
 		} finally {
 			this.checking = false;
@@ -57,9 +51,8 @@ export class UninstallService {
 	};
 
 	/**
-	 * Removes VexWave and closes it. Success leaves `running` set with nothing to
-	 * return to: the window is about to go, and the panel spends its last moment
-	 * saying so rather than pretending the button is live again.
+	 * Removes VexWave and closes it. `running` stays set on success: the window
+	 * is about to go, and the button has nothing to return to.
 	 */
 	uninstall = async (): Promise<void> => {
 		if (this.snapshot.running) return;

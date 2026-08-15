@@ -341,9 +341,9 @@ createRoot(document.getElementById("root")!).render(
 	</StrictMode>,
 );
 
-// This preview is of the uninstall panel, which is the last thing in the
-// settings column and so below the fold: run the scroller to its end once the
-// panels have laid out. Virtual time makes the wait free.
+// The uninstall panel is last in the settings column, so below the fold: run
+// the scroller to its end once the panels have laid out. Virtual time makes the
+// wait free.
 setTimeout(() => {
 	document
 		.querySelectorAll("[data-radix-scroll-area-viewport]")

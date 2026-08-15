@@ -415,13 +415,10 @@ export interface PresenceStatus {
 }
 
 /**
- * Whether this copy has an install it may remove. False for a development
- * build, whose channel folder holds a browser cache rather than the app running
- * out of it, and for any platform the uninstall doesn't cover. The panel offers
- * no button rather than one that would refuse.
- *
- * Nothing can fail in the asking, so this carries no failure shape — only the
- * answer, the same way `setPresenceEnabled` reports a connection.
+ * Whether this copy has an install it may remove — false for a development
+ * build and for any platform the uninstall doesn't cover, where the panel
+ * offers no button rather than one that would refuse. Nothing can fail in the
+ * asking, so there is no failure shape.
  */
 export interface UninstallTarget {
 	removable: boolean;
@@ -491,11 +488,10 @@ export type PlayerRPC = {
 			/** Whether there is an install here for `uninstallApp` to remove. */
 			canUninstall: { params: undefined; response: UninstallTarget };
 			/**
-			 * Removes VexWave from the machine and closes it. Answers as soon as
-			 * the removal is under way rather than when it is done: the app can't
-			 * delete the directory it is executing out of, so the work is handed
-			 * to a detached helper and this process quits to release its locks —
-			 * there is no later point at which an answer could still be delivered.
+			 * Removes VexWave from the machine and closes it. Answers when the
+			 * removal is under way, not when it is done: the app can't delete the
+			 * tree it executes out of, so a detached helper finishes after this
+			 * process has quit to release its locks.
 			 */
 			uninstallApp: { params: undefined; response: RpcResult };
 		};
