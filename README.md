@@ -4,7 +4,7 @@
 
 # VexWave
 
-**A desktop music player for the server you already own.**
+**A desktop music player conntected to your server.**
 
 <a href="https://framework.blackboard.sh/electrobun/"><img alt="Electrobun" src="https://img.shields.io/badge/Electrobun-8B3DEE?style=flat-square"></a>
 <a href="https://bun.sh"><img alt="Bun" src="https://img.shields.io/badge/Bun-A231FF?style=flat-square"></a>
@@ -27,14 +27,11 @@
 
 | Feature | What it does |
 | --- | --- |
-| **Your library, from your server** | Sign in with host, port and credentials. No folder to scan, and search filters as you type. |
-| **Playlists and artists** | Drag tracks into order, set cover art, play any playlist or artist as its own queue. As many artists per track as a song needs. |
-| **Shuffle worth leaving on** | Every track gets its turn before any repeats, and Previous walks back through what actually played. |
-| **Drop in local files** | Drag audio onto the window. VexWave reads the tags, shows you what it found, and uploads. |
+| **Your library** | Sign in with host, port and credentials. No folder to scan, and search filters as you type. |
 | **Import from a link** | A YouTube or SoundCloud URL becomes a real track, with the creator suggested as an artist. |
-| **Discover** | Search YouTube and SoundCloud in-app and download a hit into your library. |
-| **Edit anything** | Title, cover, credits or delete, straight from the row. |
-| **Ten-band equalizer** | Sits in the playback graph, so a change is heard on the track already playing. |
+| **Discover** | Search YouTube and SoundCloud in-app and load them into your library. |
+| **Equalizer** | Ten sliders to shape the sound |
+| **Effects** | Speed, drive and reverb, straight from the player bar. |
 | **Discord Rich Presence** | Put what you're listening to on your profile. |
 
 ## Installation
