@@ -109,6 +109,14 @@ const LIBRARY: { title: string; artists: string[]; sec: number; cover: string }[
 	{ title: "Vertigo Sunday", artists: ["Lyra Wen", "Nova Halcyon"], sec: 226, cover: cover("#fb7185", "#9f1239") },
 	{ title: "Featherweight", artists: ["The Paper Tigers"], sec: 172, cover: cover("#a3e635", "#4d7c0f") },
 	{ title: "Tidal Drift", artists: ["Kite and Ember"], sec: 259, cover: cover("#2dd4bf", "#0f766e") },
+	{ title: "Paper Lanterns", artists: ["Lyra Wen"], sec: 218, cover: cover("#fb923c", "#c2410c") },
+	{ title: "Neon Arboretum", artists: ["Nova Halcyon"], sec: 302, cover: cover("#818cf8", "#4338ca") },
+	{ title: "Slow Cartography", artists: ["Silvermoth", "Nova Halcyon"], sec: 251, cover: cover("#38bdf8", "#0369a1") },
+	{ title: "Halfway Signal", artists: ["Ivo Marlow"], sec: 236, cover: cover("#f472b6", "#9d174d") },
+	{ title: "Cold Fluorescence", artists: ["Kite and Ember"], sec: 189, cover: cover("#5eead4", "#0f766e") },
+	{ title: "Marble Weather", artists: ["The Paper Tigers", "Lyra Wen"], sec: 274, cover: cover("#facc15", "#a16207") },
+	{ title: "Undertow Hours", artists: ["Silvermoth"], sec: 205, cover: cover("#93c5fd", "#1e40af") },
+	{ title: "Evening Static", artists: ["Nova Halcyon"], sec: 159, cover: cover("#d8b4fe", "#6b21a8") },
 ];
 
 const ARTISTS: [name: string, avatar: string][] = [
@@ -184,6 +192,12 @@ const EFFECTS = {
 	drive: 0.4,
 	reverbMix: 0.35,
 } as const;
+
+/**
+ * Press the player bar's effects button, since nothing draws that panel until it
+ * is pressed. It opens over whichever view is being rendered.
+ */
+const OPEN_EFFECTS = true;
 
 const PRESENCE: PresenceState = {
 	enabled: true,
@@ -345,11 +359,20 @@ createRoot(document.getElementById("root")!).render(
 // the scroller to its end once the panels have laid out. Virtual time makes the
 // wait free.
 setTimeout(() => {
-	document
-		.querySelectorAll("[data-radix-scroll-area-viewport]")
-		.forEach((viewport) => {
-			viewport.scrollTop = viewport.scrollHeight;
-		});
+	// Settings only: every view scrolls through one of these, and a list scrolled
+	// to its end is a picture of its last row rather than of the view.
+	if (view === "settings") {
+		document
+			.querySelectorAll("[data-radix-scroll-area-viewport]")
+			.forEach((viewport) => {
+				viewport.scrollTop = viewport.scrollHeight;
+			});
+	}
+	if (OPEN_EFFECTS) {
+		document
+			.querySelector<HTMLButtonElement>('[aria-label="Playback effects"]')
+			?.click();
+	}
 }, 400);
 
 
