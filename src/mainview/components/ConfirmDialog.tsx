@@ -20,12 +20,15 @@ export function ConfirmDialog({
 	onOpenChange,
 	title,
 	description,
+	confirmLabel = "Delete",
 	onConfirm,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	title: string;
 	description: ReactNode;
+	/** Names what is going, where "Delete" alone would understate it. */
+	confirmLabel?: string;
 	onConfirm: () => void;
 }) {
 	return (
@@ -46,7 +49,7 @@ export function ConfirmDialog({
 							onOpenChange(false);
 						}}
 					>
-						Delete
+						{confirmLabel}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

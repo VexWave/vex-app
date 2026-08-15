@@ -67,6 +67,10 @@ export interface Labelling {
  * A label, an optional line explaining it, and the control they belong to. The
  * control is optional: a row can be there to say something rather than to set
  * something, which has the same shape and nothing to draw on the right.
+ *
+ * The hint is drawn as one paragraph, so a hint of several lines is `span`s
+ * marked `block` rather than nested paragraphs — it stays one thing for the
+ * control beside it to be described by.
  */
 export function SettingRow({
 	label,
@@ -74,7 +78,7 @@ export function SettingRow({
 	control,
 }: {
 	label: string;
-	hint?: string;
+	hint?: ReactNode;
 	control?: (labelling: Labelling) => ReactNode;
 }) {
 	const id = useId();

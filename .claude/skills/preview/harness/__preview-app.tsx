@@ -28,6 +28,7 @@ import { navigationService } from "@/api/NavigationService";
 import { playlistService } from "@/api/PlaylistService";
 import { presenceService } from "@/api/PresenceService";
 import { sessionService } from "@/api/SessionService";
+import { storageService } from "@/api/StorageService";
 import { playerController } from "@/hooks/usePlayer";
 import { watchDevicePixelRatio } from "@/lib/devicePixelRatio";
 // Each store's own state type, so data written here that no longer matches the
@@ -42,6 +43,7 @@ import type { MainViewName } from "@/api/NavigationService";
 import type { PlaylistsState } from "@/api/PlaylistService";
 import type { PresenceState } from "@/api/PresenceService";
 import type { SessionState } from "@/api/SessionService";
+import type { StorageState } from "@/api/StorageService";
 import type { PlayerState, Track } from "@/player/types";
 import type { MediaSearchResult, RemoteTrack } from "../shared/rpcSchema";
 import "./index.css";
@@ -185,10 +187,27 @@ const EFFECTS = {
 
 const PRESENCE: PresenceState = {
 	enabled: true,
-	status: {
-		connection: "refused",
-		refusal: { code: 4000, message: "Invalid activity" },
-	},};
+	status: { connection: "connected" },
+};
+
+/**
+ * A measured install, so the Storage panel shows both paths, both sizes and the
+ * button. The alternative — an unmeasurable install — is what a dev build gets,
+ * and there the panel draws no button at all.
+ */
+const STORAGE: StorageState = {
+	install: {
+		path: "C:\\Users\\Alex\\AppData\\Local\\app.vexwave",
+		bytes: 2_730_000_000,
+	},
+	components: {
+		path: "C:\\Users\\Alex\\AppData\\Local\\VexWave",
+		bytes: 410_000_000,
+	},
+	measured: true,
+	error: null,
+	uninstalling: false,
+};
 
 // ===========================================================================
 // WIRING â€” derives the stores from the data above. Edit when a store changes,
@@ -290,6 +309,10 @@ artistService.getSnapshot = () => ARTISTS_STATE;
 discoverService.getSnapshot = () => DISCOVER_STATE;
 playerController.getSnapshot = () => PLAYER_STATE;
 presenceService.getSnapshot = () => PRESENCE;
+storageService.getSnapshot = () => STORAGE;
+// The one store the app measures on mount rather than on a session change, so
+// its fetch is stubbed out as well as its state.
+storageService.refresh = async () => {};
 importService.jobFor = (url: string) =>
 	RUNNING_IMPORT && url === RUNNING_IMPORT.url ? RUNNING_IMPORT : null;
 
@@ -327,8 +350,16 @@ createRoot(document.getElementById("root")!).render(
 	</StrictMode>,
 );
 
-// This preview is of the Discord Presence panel, whose mark and switch sit
-// exactly where the effects popover opens over them, so nothing is pressed here.
+// This preview is of the Storage panel, which is the last thing in the settings
+// column and so below the fold: run the scroller to its end once the panels have
+// laid out. Virtual time makes the wait free.
+setTimeout(() => {
+	document
+		.querySelectorAll("[data-radix-scroll-area-viewport]")
+		.forEach((viewport) => {
+			viewport.scrollTop = viewport.scrollHeight;
+		});
+}, 400);
 
 
 

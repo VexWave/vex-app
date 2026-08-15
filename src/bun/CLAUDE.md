@@ -14,6 +14,7 @@ Everything that talks to the network, the filesystem or the OS. The webview reac
 | `searchRanking.ts` | Pure re-ranking of one page of those hits. No I/O, no yt-dlp. |
 | `ytDlp.ts` | Plumbing both yt-dlp callers share: base args, child env, output reading, field parsing, failures. |
 | `WindowChrome.ts` | Win32 FFI (`bun:ffi`) for the dark title bar and the window/taskbar icon. Windows-only, best-effort. |
+| `Uninstaller.ts` | Measures what the app occupies on disk, and removes it. Windows-only. |
 | `DiscordPresence.ts` | Discord Rich Presence, spoken straight to the client's local IPC socket (no library). Best-effort: no Discord running is the normal case, not a fault. |
 
 ## Server I/O
@@ -50,4 +51,6 @@ Only Windows and macOS have a bin dir, so `BinaryManager.isSupported` is false e
 ## Windows
 
 - **The title bar and window icon are set by us, not Electrobun** (`WindowChrome.ts`): the caption would otherwise come up in the *system* theme beside an app that is always dark, and Electrobun's build step fails to embed `build.win.icon` (rcedit is resolved from a path baked into their CI). The icon is loaded at runtime from `Resources/app.ico`, which the build does produce. All best-effort.
+- **The app can't delete its own install**, so the uninstall writes a `.cmd` to the temp dir, hands it to the shell, and quits — Windows holds an executing image open, and the tree being removed is the one every VexWave process is running out of. Quitting is part of the removal, not what follows it. The same exclusions that guard the yt-dlp updater guard this, for the same reason.
+- **What it deletes is proved, not computed**: `version.json` names the install directory, but a build reading someone else's copy of it would name a tree it has no business touching, so the running executable has to sit inside the directory before anything is removed. That is also what makes a dev build refuse.
 - **The window is resized by 1px and back once the webview is up** (`index.ts`) — bundled CEF paints its first frame before it has settled on the monitor's device scale factor, so at any scaling other than 100% the layout comes up zoomed and clipped until something forces a recompute. Timed off `dom-ready`, with a 2 s fallback.

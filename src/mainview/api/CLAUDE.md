@@ -1,6 +1,6 @@
 # src/mainview/api — the webview's services
 
-`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. **Add new state here, not in component-local state.**
+`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`/`Storage`. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. **Add new state here, not in component-local state.**
 
 Two modules here are not services: `rpc.ts`, the Electroview singleton (`bun.…` for requests, `onBunMessage` for pushed messages, `notifyBun.…` for fire-and-forget), and `idListEdit.ts` (below).
 
@@ -34,5 +34,6 @@ Every service that holds server data clears it on logout and refetches on login,
 
 ## Navigation and presence
 
+- `StorageService` is the one service that fetches when a component mounts rather than off a session change: what the app occupies on disk is read only where it is shown, and measuring a couple of gigabytes of app bundle is not startup work. It survives a logout for the same reason — this is a fact about the computer, not about the library.
 - `NavigationService` holds the current view and the item opened in it, so any component can navigate and logging out can reset it. **Views are grouped into sections**, and `SECTION_OF` is where a new view declares itself; only structure lives there, labels and glyphs being `components/Sections`'. **A section is switched to rather than navigated to**, so each resumes the view it was last on.
 - `PresenceService` is the odd one: the only service whose state is mostly *outbound*. It narrows the player's several-times-a-second notifications down to the changes Discord would render and sends `null` for a pause (there is no paused presence — see `src/bun/CLAUDE.md`). **The on/off switch is the app's, not bun's** — a user preference, so it is persisted here and announced to a bun process that keeps no copy. That announcement is a request, not a push: a track update that goes missing is corrected by the next one, a switch that goes missing is not.

@@ -1,9 +1,10 @@
-import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import { app, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { ApiClient } from "./ApiClient";
 import { BinaryManager } from "./BinaryManager";
 import { DiscordPresence } from "./DiscordPresence";
 import { MediaSearch } from "./MediaSearch";
 import { StreamProxy } from "./StreamProxy";
+import { Uninstaller } from "./Uninstaller";
 import { UrlImporter } from "./UrlImporter";
 import { applyWindowChrome } from "./WindowChrome";
 import type { PlayerRPC, RpcFailure } from "../shared/rpcSchema";
@@ -75,6 +76,13 @@ const importer: UrlImporter = new UrlImporter(
 );
 
 const mediaSearch = new MediaSearch(binaryManager);
+
+const uninstaller = new Uninstaller(
+	binaryManager.isSupported ? binaryManager.binDir : null,
+);
+
+/** How long the uninstall's answer has to reach the webview before the app goes. */
+const QUIT_DELAY_MS = 500;
 
 /**
  * Why the yt-dlp updater can't run, or null when it can. Windows refuses to
@@ -154,6 +162,26 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			discardImport: (params) => importer.discard(params),
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
 			setPresenceEnabled: ({ enabled }) => discordPresence.setEnabled(enabled),
+			getStorageUsage: async () => ({
+				ok: true as const,
+				...(await uninstaller.describe()),
+			}),
+			// The same exclusions the yt-dlp updater answers to, for the same
+			// reason turned up: a spawned yt-dlp holds open an executable inside
+			// one of the directories about to be removed.
+			uninstallApp: async () => {
+				const busy = ytDlpBusyReason();
+				if (busy) return { ok: false as const, error: busy };
+				return unlessInstalling(async () => {
+					const result = await uninstaller.start();
+					// The helper can only finish once this process releases its own
+					// files, so quitting is part of the uninstall rather than what
+					// follows it. Delayed just long enough for the answer above to
+					// reach the webview.
+					if (result.ok) setTimeout(() => app.quit(), QUIT_DELAY_MS);
+					return result;
+				});
+			},
 		},
 		messages: {
 			presenceChanged: ({ track }) => discordPresence.setNowPlaying(track),
