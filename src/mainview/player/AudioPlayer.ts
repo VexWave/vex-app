@@ -1,7 +1,20 @@
+import { clamp } from "@/lib/utils";
 import { Effects } from "./Effects";
 import { Equalizer } from "./Equalizer";
 import { TypedEventEmitter } from "./TypedEventEmitter";
 import type { Track } from "./types";
+
+/** How loudness follows amplitude: about its 0.6 power (Stevens). */
+const LOUDNESS_EXPONENT = 0.6;
+
+/**
+ * The amplitude a position on the volume control asks of the element, whose own
+ * `volume` is amplitude. Inverting the exponent is what puts loudness in step
+ * with the position, so the same distance is the same change anywhere on the
+ * travel.
+ */
+const amplitudeFor = (position: number): number =>
+	position ** (1 / LOUDNESS_EXPONENT);
 
 interface AudioPlayerEvents extends Record<string, unknown> {
 	trackchange: Track | null;
@@ -32,6 +45,13 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 	 * initializer would hand it `this.audio` while that is still undefined.
 	 */
 	readonly effects: Effects;
+	/**
+	 * Where the volume control stands, which is what everything outside this class
+	 * means by volume; the element holds the amplitude it asks for, and that is
+	 * what `Drive` reads. Kept rather than inverted back out of the element, which
+	 * would not return the same number.
+	 */
+	private position = 1;
 	/** Web Audio graph feeding the backdrop glow; built on the first playback. */
 	private context: AudioContext | null = null;
 	private analyserNode: AnalyserNode | null = null;
@@ -62,7 +82,7 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 		});
 		this.audio.addEventListener("volumechange", () =>
 			this.emit("volumechange", {
-				volume: this.audio.volume,
+				volume: this.position,
 				muted: this.audio.muted,
 			}),
 		);
@@ -99,7 +119,7 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 	}
 
 	get volume(): number {
-		return this.audio.volume;
+		return this.position;
 	}
 
 	get muted(): boolean {
@@ -232,8 +252,9 @@ export class AudioPlayer extends TypedEventEmitter<AudioPlayerEvents> {
 		this.audio.currentTime = Math.min(Math.max(seconds, 0), max);
 	}
 
-	setVolume(volume: number): void {
-		this.audio.volume = Math.min(Math.max(volume, 0), 1);
+	setVolume(position: number): void {
+		this.position = clamp(position, 0, 1, this.position);
+		this.audio.volume = amplitudeFor(this.position);
 	}
 
 	setMuted(muted: boolean): void {
