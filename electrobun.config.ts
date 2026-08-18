@@ -4,7 +4,7 @@ export default {
 	app: {
 		name: "VexWave",
 		identifier: "app.vexwave",
-		version: "0.2.1",
+		version: "0.2.2",
 	},
 	build: {
 		// Vite builds to dist/, we copy from there
