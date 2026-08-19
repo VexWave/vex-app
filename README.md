@@ -14,11 +14,11 @@
 </p>
 
 <p>
-  <a href="https://github.com/VexWave/vex-app/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/VexWave/vex-app/ci.yml?branch=main&style=flat-square&label=build"></a>
+  <a href="https://github.com/VexWave/vex-app/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/VexWave/vex-app/ci.yml?branch=main&label=build"></a>
   &nbsp;
-  <a href="https://github.com/VexWave/vex-app/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/VexWave/vex-app?style=flat-square&label=release&color=blue"></a>
+  <a href="https://github.com/VexWave/vex-app/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/VexWave/vex-app?label=release&color=blue"></a>
   &nbsp;
-  <a href="https://github.com/VexWave/vex-app/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/VexWave/vex-app/total?style=flat-square&label=downloads&color=blue"></a>
+  <a href="https://github.com/VexWave/vex-app/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/VexWave/vex-app/total?label=downloads&color=blue"></a>
 </p>
 
 <br>
