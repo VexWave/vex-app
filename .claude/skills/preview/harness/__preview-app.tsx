@@ -45,7 +45,11 @@ import type { PresenceState } from "@/api/PresenceService";
 import type { SessionState } from "@/api/SessionService";
 import type { UninstallState } from "@/api/UninstallService";
 import type { PlayerState, Track } from "@/player/types";
-import type { MediaSearchResult, RemoteTrack } from "../shared/rpcSchema";
+import type {
+	MediaSearchResult,
+	RemoteArtist,
+	RemoteTrack,
+} from "../shared/rpcSchema";
 import "./index.css";
 import App from "./App";
 
@@ -219,26 +223,57 @@ const UNINSTALL: UninstallState = {
 // not when a preview does.
 // ===========================================================================
 
+// The one place fixture artists get their ids. `ARTISTS_STATE` and every
+// track's `artistIds` are both built off this, so the two can't drift apart.
+const REMOTE_ARTISTS: RemoteArtist[] = ARTISTS.map(
+	([name, imageUrl], index) => ({
+		id: index + 1,
+		name,
+		imageUrl,
+	}),
+);
+
+const ARTIST_ID_BY_NAME = new Map(
+	REMOTE_ARTISTS.map((artist) => [artist.name, artist.id]),
+);
+
+/** A name in `LIBRARY` that no `ARTISTS` row answers to is a fixture typo. */
+function artistId(name: string): number {
+	const id = ARTIST_ID_BY_NAME.get(name);
+	if (id === undefined) throw new Error(`no fixture artist named "${name}"`);
+	return id;
+}
+
 const REMOTES: RemoteTrack[] = LIBRARY.map((entry, index) => ({
 	id: `track-${index + 1}`,
 	title: entry.title,
-	artist: entry.artists.join(", "),
-	artists: entry.artists,
+	artistIds: entry.artists.map(artistId),
 	durationMs: entry.sec * 1000,
 	coverUrl: entry.cover,
 	streamUrl: "",
 }));
 
-const TRACKS: Track[] = REMOTES.map((remote) => ({
+const TRACKS: Track[] = REMOTES.map((remote, index) => ({
 	id: remote.id,
 	title: remote.title,
-	artist: remote.artist,
+	// The joined display line LibraryService derives from the ids above.
+	artist: LIBRARY[index].artists.join(", "),
 	durationSec: remote.durationMs / 1000,
 	coverUrl: remote.coverUrl,
 	src: "",
 }));
 
 const REMOTE_BY_ID = new Map(REMOTES.map((remote) => [remote.id, remote]));
+const TRACK_BY_ID = new Map(TRACKS.map((track) => [track.id, track]));
+
+const TRACKS_BY_ARTIST_ID = new Map<number, Track[]>();
+TRACKS.forEach((track, index) => {
+	for (const id of REMOTES[index].artistIds) {
+		const credited = TRACKS_BY_ARTIST_ID.get(id);
+		if (credited) credited.push(track);
+		else TRACKS_BY_ARTIST_ID.set(id, [track]);
+	}
+});
 
 const SESSION: SessionState = {
 	status: "loggedIn",
@@ -270,11 +305,7 @@ const PLAYLISTS_STATE: PlaylistsState = {
 };
 
 const ARTISTS_STATE: ArtistsState = {
-	artists: ARTISTS.map(([name, imageUrl], index) => ({
-		id: index + 1,
-		name,
-		imageUrl,
-	})),
+	artists: REMOTE_ARTISTS,
 	loading: false,
 	error: null,
 };
@@ -308,6 +339,14 @@ sessionService.getSnapshot = () => SESSION;
 binaryService.getSnapshot = () => BINARIES;
 libraryService.getSnapshot = () => LIBRARY_STATE;
 libraryService.getRemote = (id: string) => REMOTE_BY_ID.get(id);
+// The indices the playlist and artist views project the library through. They
+// are built in `LibraryService.apply` off a real payload, so a stubbed snapshot
+// leaves them empty and both views render as though nothing were credited.
+libraryService.getTrack = (id: string) => TRACK_BY_ID.get(id);
+libraryService.tracksByIds = (trackIds: readonly string[]) =>
+	trackIds.flatMap((id) => TRACK_BY_ID.get(id) ?? []);
+libraryService.tracksOfArtist = (artistId: number) =>
+	TRACKS_BY_ARTIST_ID.get(artistId) ?? [];
 playlistService.getSnapshot = () => PLAYLISTS_STATE;
 artistService.getSnapshot = () => ARTISTS_STATE;
 discoverService.getSnapshot = () => DISCOVER_STATE;
@@ -319,9 +358,6 @@ uninstallService.getSnapshot = () => UNINSTALL;
 uninstallService.check = async () => {};
 importService.jobFor = (url: string) =>
 	RUNNING_IMPORT && url === RUNNING_IMPORT.url ? RUNNING_IMPORT : null;
-
-// The playlist and artist views need no stub of their own: both project the
-// library through `tracksOf` / `trackCountsByName`, which read the two above.
 
 playerController.equalizer.restore(EQUALIZER);
 // Through the setters, because `Effects` is session-only and so has no `restore`

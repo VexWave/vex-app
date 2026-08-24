@@ -54,17 +54,18 @@ the whole thing up, and both are invisible until broken:
 - **Every stub returns one hoisted constant.** `useSyncExternalStore` compares by
   identity, so building the object inside the arrow is "Maximum update depth
   exceeded", not a render.
-- **Nothing may fire an RPC.** Every service refetches off a session *change* and
-  no subscriber is ever notified, so the stubs are plain assignments after a
-  static import. A new store that fetches on construction would need handling.
+- **Nothing may fire an RPC.** `LibraryData` reads off a session *change* and no
+  subscriber is ever notified, so the stubs are plain assignments after a static
+  import. A new store that fetches on construction would need handling.
 
 Stubbed today: `sessionService`, `binaryService`, `libraryService` (+
-`getRemote`), `playlistService`, `artistService`, `discoverService`,
+`getRemote` and the `getTrack` / `tracksByIds` / `tracksOfArtist` indices), `playlistService`, `artistService`, `discoverService`,
 `playerController`, `presenceService`, `importService.jobFor`, and the
 equalizer. **That list is what the app needed when it was written, not a
 contract** — if a view renders empty, the likely reason is a store nobody
-stubbed. The playlist and artist views deliberately have none of their own:
-both project the library through `tracksOf` / `trackCountsByName`.
+stubbed. The playlist and artist views have no store of their own to stub: both
+project the library through those indices, which `LibraryService` builds from a
+real payload and so are empty behind a stubbed snapshot.
 
 The type-check is the safety net for all of this, which is why it is on by
 default: the harness is copied into `src/mainview/` for the run, so `tsc` sees it
