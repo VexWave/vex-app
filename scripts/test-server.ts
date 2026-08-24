@@ -27,7 +27,8 @@ interface StoredTrack {
 	title: string;
 	/** Track length in milliseconds. */
 	duration: number;
-	artists: string[];
+	/** Artist links, ascending by id and each at most once. */
+	artistIds: number[];
 	contentType: string;
 	data: Uint8Array;
 	/** Raw cover-image bytes, served from `/track/:id/image`. */
@@ -61,6 +62,17 @@ const playlists = new Map<number, StoredPlaylist>();
 /** Contract rule: unknown track ids in a playlist body are a 400. */
 function unknownTrackIds(trackIds: string[]): string[] {
 	return trackIds.filter((id) => !tracks.has(id));
+}
+
+/**
+ * The artist links a track may be given: ids nothing answers to are dropped,
+ * and what is left is deduped and ascending — a junction table has no order
+ * and no room for a link twice, so neither has this.
+ */
+function linkable(artistIds: number[]): number[] {
+	return [...new Set(artistIds)]
+		.filter((id) => artists.has(id))
+		.sort((a, b) => a - b);
 }
 
 function authorized(req: Request): boolean {
@@ -350,6 +362,56 @@ Bun.serve({
 				return Response.json({ token });
 			},
 		},
+		// ApiContract.getData: the caller's whole library from one read. Image
+		// bytes are never inlined — each entity carries the path of its image
+		// route instead, and only where there is an image to serve.
+		"/data": {
+			GET: (req: Request) => {
+				if (!authorized(req)) {
+					return new Response("Invalid or missing token", { status: 401 });
+				}
+				// Logged like the writes are, so a manual run can see that a
+				// login costs one read and that a mutation costs one more.
+				console.log(
+					`data ok: ${tracks.size} tracks, ${artists.size} artists, ` +
+						`${playlists.size} playlists`,
+				);
+				return Response.json({
+					// Insertion order, which is what the contract's oldest-first
+					// rule means for a store with no timestamps.
+					tracks: [...tracks.values()].map(
+						({ id, title, duration, artistIds, cover }) => ({
+							id,
+							title,
+							duration,
+							artistIds,
+							coverUrl: cover
+								? trackImagePath(id, imageHash(cover))
+								: undefined,
+						}),
+					),
+					// From the artist map itself, so an artist no track is
+					// credited to still appears.
+					artists: [...artists.values()].map(({ id, name, image }) => ({
+						id,
+						name,
+						imageUrl: image
+							? artistImagePath(id, imageHash(image))
+							: undefined,
+					})),
+					playlists: [...playlists.values()].map(
+						({ id, name, trackIds, image }) => ({
+							id,
+							name,
+							trackIds,
+							imageUrl: image
+								? playlistImagePath(id, imageHash(image))
+								: undefined,
+						}),
+					),
+				});
+			},
+		},
 		"/postTrack": {
 			POST: async (req: Request) => {
 				if (!authorized(req)) {
@@ -361,15 +423,12 @@ Bun.serve({
 				}
 				const { title, duration, artistIds, data: audio, cover } = parsed.data;
 				const id = crypto.randomUUID();
-				// Resolve artist ids to names, dropping ids that don't exist.
-				const artistNames = (artistIds ?? [])
-					.map((artistId) => artists.get(artistId)?.name)
-					.filter((name): name is string => name !== undefined);
+				const links = linkable(artistIds ?? []);
 				tracks.set(id, {
 					id,
 					title,
 					duration,
-					artists: artistNames,
+					artistIds: links,
 					contentType: sniffAudioType(audio),
 					data: audio,
 					cover: cover ? new Uint8Array(cover) : undefined,
@@ -378,7 +437,7 @@ Bun.serve({
 					`postTrack ok: #${id} "${title}" duration=${duration}ms ` +
 						`audio=${audio.byteLength}B` +
 						(cover ? ` cover=${cover.byteLength}B` : "") +
-						(artistNames.length ? ` artists=${artistNames.join(", ")}` : ""),
+						(links.length ? ` artists=[${links.join(", ")}]` : ""),
 				);
 				return new Response("ok");
 			},
@@ -396,11 +455,7 @@ Bun.serve({
 				const track = tracks.get(id);
 				if (!track) return new Response("not found", { status: 404 });
 				if (title !== undefined) track.title = title;
-				if (artistIds !== undefined) {
-					track.artists = artistIds
-						.map((artistId) => artists.get(artistId)?.name)
-						.filter((name): name is string => name !== undefined);
-				}
+				if (artistIds !== undefined) track.artistIds = linkable(artistIds);
 				if (cover === null) track.cover = undefined;
 				else if (cover !== undefined) track.cover = new Uint8Array(cover);
 				console.log(
@@ -557,25 +612,6 @@ Bun.serve({
 				return new Response("ok");
 			},
 		},
-		"/playlists": {
-			GET: (req: Request) => {
-				if (!authorized(req)) {
-					return new Response("Invalid or missing token", { status: 401 });
-				}
-				// Never inline image bytes: expose the image route's path instead,
-				// and only for playlists that actually have a cover.
-				return Response.json(
-					[...playlists.values()].map(({ id, name, trackIds, image }) => ({
-						id,
-						name,
-						trackIds,
-						imageUrl: image
-							? playlistImagePath(id, imageHash(image))
-							: undefined,
-					})),
-				);
-			},
-		},
 		// ApiContract.getPlaylistImage ("/playlist/:id/image"): raw stored
 		// cover-image bytes, public (no auth) per the contract.
 		[ApiContract.getPlaylistImage.path]: {
@@ -591,26 +627,15 @@ Bun.serve({
 				if (!parsed.success || !artists.delete(parsed.data.id)) {
 					return new Response("not found", { status: 404 });
 				}
+				// The tracks are kept, their links to this artist are not — every
+				// id `/data` sends has an artist behind it.
+				for (const track of tracks.values()) {
+					track.artistIds = track.artistIds.filter(
+						(id) => id !== parsed.data.id,
+					);
+				}
 				console.log(`deleteArtist ok: #${parsed.data.id}`);
 				return new Response("ok");
-			},
-		},
-		"/artists": {
-			GET: (req: Request) => {
-				if (!authorized(req)) {
-					return new Response("Invalid or missing token", { status: 401 });
-				}
-				// Never inline image bytes: expose the image route's path instead,
-				// and only for artists that actually have an avatar.
-				return Response.json(
-					[...artists.values()].map(({ id, name, image }) => ({
-						id,
-						name,
-						imageUrl: image
-							? artistImagePath(id, imageHash(image))
-							: undefined,
-					})),
-				);
 			},
 		},
 		// ApiContract.getArtistImage ("/artist/:id/image"): raw stored image
@@ -624,26 +649,6 @@ Bun.serve({
 		[ApiContract.getTrackImage.path]: {
 			GET: (req: Bun.BunRequest<typeof ApiContract.getTrackImage.path>) =>
 				serveImage(req, tracks.get(req.params.id)?.cover),
-		},
-		"/tracks": {
-			GET: (req: Request) => {
-				if (!authorized(req)) {
-					return new Response("Invalid or missing token", { status: 401 });
-				}
-				return Response.json(
-					[...tracks.values()].map(
-						({ id, title, duration, artists, cover }) => ({
-							id,
-							title,
-							duration,
-							artists,
-							coverUrl: cover
-								? trackImagePath(id, imageHash(cover))
-								: undefined,
-						}),
-					),
-				);
-			},
 		},
 		// ApiContract.getTrackAudio ("/track/:id/audio" — ts-rest and Bun share
 		// the :param syntax): the stored bytes with Accept-Ranges + 206 support
