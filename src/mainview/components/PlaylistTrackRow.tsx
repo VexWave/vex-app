@@ -39,7 +39,7 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 	track,
 	rowIndex,
 	serverId,
-	artistNames,
+	artistIds,
 	artists,
 	isCurrent,
 	showBars,
@@ -56,8 +56,8 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 	rowIndex: number;
 	/** Server-side track id — membership edits are addressed by it. */
 	serverId: string;
-	/** The track's linked artist names, for the "Go to artist" entry. */
-	artistNames: readonly string[] | undefined;
+	/** The track's linked artist ids, for the "Go to artist" entry. */
+	artistIds: readonly number[] | undefined;
 	artists: RemoteArtist[];
 	isCurrent: boolean;
 	showBars: boolean;
@@ -129,7 +129,7 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 					<>
 						<TrackEditItem onSelect={() => onEdit(track)} />
 						<TrackArtistItems
-							artistNames={artistNames}
+							artistIds={artistIds}
 							artists={artists}
 							onOpenArtist={onOpenArtist}
 						/>

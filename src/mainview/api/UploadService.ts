@@ -9,6 +9,7 @@ import type { ImportedArtist } from "../../shared/rpcSchema";
 import { blobToBase64, tooLargeMessage } from "@/lib/utils";
 import { artistService } from "./ArtistService";
 import { bun } from "./rpc";
+import { libraryData } from "./LibraryData";
 import { libraryService } from "./LibraryService";
 import { sessionService } from "./SessionService";
 
@@ -305,7 +306,7 @@ export class UploadService {
 				// has actually put it back in the queue as a streaming track —
 				// dropping the placeholder first would make an uploaded track
 				// vanish from the UI if that refresh failed.
-				if (await libraryService.refresh()) {
+				if (await libraryData.refresh()) {
 					this.items = this.items.filter((i) => i !== item);
 					if (known) this.playLanded(known);
 				} else {

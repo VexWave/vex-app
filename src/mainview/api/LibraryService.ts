@@ -1,68 +1,56 @@
 import { playerController } from "@/hooks/usePlayer";
 import type { Track } from "@/player/types";
 import type { EditTrackParams, RemoteTrack } from "../../shared/rpcSchema";
+import { libraryData } from "./LibraryData";
+import type { LibraryDataState } from "./LibraryData";
+import { mutate } from "./mutate";
+import type { MutationResult } from "./mutate";
 import { bun } from "./rpc";
 import { sessionService } from "./SessionService";
 
-/**
- * Queue context id for "the queue mirrors the whole library" (see
- * PlayerController.queueContextId). Playing a playlist or an artist replaces
- * it with that collection's own context id.
- */
+/** Queue context id for the library (see PlayerController.queueContextId). */
 export const LIBRARY_QUEUE_CONTEXT = "library";
 
-/** Immutable snapshot of the server-library state, consumed by React. */
 export interface LibraryState {
-	/** Server library, newest first — what the Library view renders. */
+	/** Newest first. */
 	tracks: Track[];
 	loading: boolean;
 	error: string | null;
 }
 
-/** Result shape for track mutations the context menu shows inline. */
-export type MutationResult = { ok: true } | { ok: false; error: string };
-
-/** The mutable fields of an edit — everything except the track id. */
 export type EditTrackChanges = Omit<EditTrackParams, "id">;
 
 /**
- * Owns the server library: fetches it when a session starts and clears it
- * (and the play queue) when the session ends — the stream URLs are only valid
- * against the session that produced them, so letting them survive a re-login
- * would play another server's audio under stale metadata.
+ * `libraryData`'s tracks as `Track`s, newest first, with artist names joined
+ * in — both halves come from one payload, so the join can't disagree.
  *
- * The library list itself lives in this snapshot; the play queue only mirrors
- * it while the library is what the user played from (queue context). When a
- * playlist or an artist owns the queue, refreshes still patch queued copies'
- * metadata and drop server-deleted tracks, but membership stays that
- * collection's. The library is a playable collection like those two, and `play`
- * is where it becomes the queue outright.
+ * Owns the id indices `ArtistService` and `PlaylistService` project through,
+ * so neither passes over the library.
  */
 export class LibraryService {
 	private subscribers = new Set<() => void>();
 	private snapshot: LibraryState = { tracks: [], loading: false, error: null };
-	private fetchSeq = 0;
-	// Server metadata for each library track, keyed by track id — the same id
-	// the queue and the rows use. Holds what a Track has no field for, chiefly
-	// the currently-linked artist names.
+	// What a Track has no field for, chiefly artistIds.
 	private remoteById = new Map<string, RemoteTrack>();
+	private trackById = new Map<string, Track>();
+	private tracksByArtistId = new Map<number, Track[]>();
+	// Kept apart from the read's error so neither overwrites the other.
+	private mutationError: string | null = null;
+	// Rebuilding on a loading-only patch would hand memoized rows new arrays
+	// for nothing.
+	private builtFrom: Pick<LibraryDataState, "tracks" | "artists"> =
+		libraryData.getSnapshot();
 
 	constructor() {
+		libraryData.subscribe(() => this.apply());
+
+		// Stream URLs are session-scoped, so the queue dies with the session.
 		let previousStatus = sessionService.getSnapshot().status;
 		sessionService.subscribe(() => {
 			const status = sessionService.getSnapshot().status;
 			if (status === previousStatus) return;
 			previousStatus = status;
-			if (status === "loggedIn") {
-				void this.refresh();
-			} else if (status === "loggedOut") {
-				this.fetchSeq += 1; // drop in-flight results from the old session
-				this.remoteById.clear();
-				// Every queued track streams from this session's server, so the
-				// whole queue is invalidated when the session ends.
-				playerController.clearQueue();
-				this.update({ tracks: [], loading: false, error: null });
-			}
+			if (status === "loggedOut") playerController.clearQueue();
 		});
 	}
 
@@ -75,79 +63,83 @@ export class LibraryService {
 
 	getSnapshot = (): LibraryState => this.snapshot;
 
-	/** Server metadata for a library track, or undefined for unknown ids. */
+	getTrack(trackId: string): Track | undefined {
+		return this.trackById.get(trackId);
+	}
+
 	getRemote(trackId: string): RemoteTrack | undefined {
 		return this.remoteById.get(trackId);
 	}
 
 	/**
-	 * Re-fetch the server library. Resolves `true` once a fresh list has been
-	 * applied (or a newer refresh has superseded this one and will apply it),
-	 * `false` if the fetch failed — callers that just uploaded a track use this
-	 * to know it actually landed before dropping their pending placeholder.
+	 * Unknown ids are skipped — the server drops a deleted track from every
+	 * playlist, so the next read has already left it behind.
 	 */
-	async refresh(): Promise<boolean> {
-		const seq = ++this.fetchSeq;
-		this.update({ loading: true, error: null });
-		let result;
-		try {
-			result = await bun.listTracks();
-		} catch (err) {
-			// RPC transport failure or timeout (e.g. bun process unreachable).
-			if (seq !== this.fetchSeq) return true; // superseded by a newer refresh
-			this.update({
-				loading: false,
-				error:
-					err instanceof Error ? err.message : "Failed to load server library",
-			});
-			return false;
+	tracksByIds(trackIds: readonly string[]): Track[] {
+		const tracks: Track[] = [];
+		for (const trackId of trackIds) {
+			const track = this.trackById.get(trackId);
+			if (track) tracks.push(track);
 		}
-		if (seq !== this.fetchSeq) return true; // superseded by a newer refresh
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			this.update({ loading: false, error: result.error });
-			return false;
-		}
-		// A track id is a uuid and sorts arbitrarily, so upload order is the
-		// server's listing order (oldest first, per the contract) — reversed
-		// here to put the newest uploads on top.
-		const remotes = [...result.tracks].reverse();
-		this.remoteById = new Map(remotes.map((remote) => [remote.id, remote]));
-		const tracks = remotes.map(toTrack);
-		this.update({ tracks, loading: false, error: null });
-		this.syncQueue(tracks);
-		return true;
+		return tracks;
 	}
 
 	/**
-	 * The ids the library holds right now, as a marker to hand back to
-	 * `newestSince` later. Taken before a write, it is what tells that write's
-	 * own track apart afterwards.
+	 * The shared index array, stable until the next read so callers can memoize
+	 * on it. **Never sort or splice it.**
 	 */
+	tracksOfArtist(artistId: number): Track[] {
+		return this.tracksByArtistId.get(artistId) ?? [];
+	}
+
+	/** A marker for `newestSince`, taken before a write. */
 	trackIds(): ReadonlySet<string> {
 		return new Set(this.remoteById.keys());
 	}
 
 	/**
-	 * The newest library track absent from `known` — how a caller that added a
-	 * track finds the one it added, since the write routes answer with a bare
-	 * string and the id the server assigned first appears in this listing. The
-	 * list is newest first, so the first miss is the latest arrival; null when
-	 * nothing has arrived since (a refresh that hasn't landed yet, or one that
-	 * failed).
+	 * The newest track absent from `known`. Write routes return no id, so this
+	 * is how a caller finds the track it just added.
 	 */
 	newestSince(known: ReadonlySet<string>): Track | null {
 		return this.snapshot.tracks.find((track) => !known.has(track.id)) ?? null;
 	}
 
+	private apply(): void {
+		const data = libraryData.getSnapshot();
+		// A read in flight takes down the last mutation's banner.
+		if (data.loading) this.mutationError = null;
+		const error = this.mutationError ?? data.error;
+		if (
+			data.tracks === this.builtFrom.tracks &&
+			data.artists === this.builtFrom.artists
+		) {
+			this.update({ loading: data.loading, error });
+			return;
+		}
+		this.builtFrom = data;
+		// A uuid carries no order, so upload order is the contract's oldest-first.
+		const remotes = [...data.tracks].reverse();
+		this.remoteById = new Map(remotes.map((remote) => [remote.id, remote]));
+		const namesById = new Map(data.artists.map(({ id, name }) => [id, name]));
+		const tracks = remotes.map((remote) => toTrack(remote, namesById));
+		this.trackById = new Map(tracks.map((track) => [track.id, track]));
+		this.tracksByArtistId = new Map();
+		tracks.forEach((track, index) => {
+			for (const artistId of remotes[index].artistIds) {
+				const credited = this.tracksByArtistId.get(artistId);
+				if (credited) credited.push(track);
+				else this.tracksByArtistId.set(artistId, [track]);
+			}
+		});
+		this.update({ tracks, loading: data.loading, error });
+		this.syncQueue(tracks);
+	}
+
 	/**
-	 * Push a fresh library into the play queue. When the library owns the
-	 * queue (or nothing is queued yet — fresh login), the queue mirrors it
-	 * outright. When another collection owns it, only queued copies' metadata
-	 * is patched and server-deleted tracks are dropped; membership itself is
-	 * that collection's service's business.
+	 * When the library owns the queue (or nothing does), the queue mirrors it.
+	 * Otherwise membership is the owning collection's — only metadata is
+	 * patched and deleted tracks dropped.
 	 */
 	private syncQueue(tracks: Track[]): void {
 		const context = playerController.queueContextId;
@@ -166,11 +158,7 @@ export class LibraryService {
 		playerController.removeTracks((track) => !this.remoteById.has(track.id));
 	}
 
-	/**
-	 * Make the whole library the play queue and start at `index` (of the list as
-	 * it is rendered, newest first) — what clicking a library row does. Later
-	 * refreshes keep the queue in sync via `syncQueue`.
-	 */
+	/** `index` is into the rendered list, newest first. */
 	play(index = 0): void {
 		playerController.playCollection(
 			LIBRARY_QUEUE_CONTEXT,
@@ -179,10 +167,6 @@ export class LibraryService {
 		);
 	}
 
-	/**
-	 * Play a library track named by id, for callers holding a track rather than
-	 * a place in the list. An id the library doesn't hold plays nothing.
-	 */
 	playTrack(trackId: string): void {
 		const index = this.snapshot.tracks.findIndex(
 			(track) => track.id === trackId,
@@ -190,46 +174,21 @@ export class LibraryService {
 		if (index !== -1) this.play(index);
 	}
 
-	/**
-	 * Delete a server track, then drop it from the library and the queue.
-	 * Failures land in the snapshot's `error` (the confirm dialog has already
-	 * closed, so the App banner is where the user still is).
-	 */
+	/** Failures land in the snapshot's `error` — the confirm dialog has closed. */
 	async removeTrack(trackId: string): Promise<void> {
 		const remote = this.remoteById.get(trackId);
 		if (!remote) return;
-		let result;
-		try {
-			result = await bun.deleteTrack({ id: remote.id });
-		} catch (err) {
-			this.update({
-				error: err instanceof Error ? err.message : "Deleting the track failed",
-			});
-			return;
-		}
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			this.update({ error: result.error });
-			return;
-		}
-		this.remoteById.delete(trackId);
-		// The server also drops the track from every playlist. Their join skips
-		// ids the library doesn't know, so those lists render right away; their
-		// stored trackIds are PlaylistService's to catch up, which it does off
-		// this snapshot change (see its constructor).
-		this.update({
-			tracks: this.snapshot.tracks.filter((track) => track.id !== trackId),
-		});
-		playerController.removeTracks((track) => track.id === trackId);
+		const result = await mutate(
+			() => bun.deleteTrack({ id: remote.id }),
+			"Deleting the track failed",
+		);
+		// The server unlinks it everywhere too; only a read puts all three in
+		// agreement.
+		if (result.ok) void libraryData.refresh();
+		else this.fail(result.error);
 	}
 
-	/**
-	 * Edit a server track (title, cover, and/or artist links), then refetch so
-	 * the list and queue update. Returns the outcome instead of writing to the
-	 * snapshot so the edit dialog can show it inline.
-	 */
+	/** Returns the outcome so the edit dialog can show it inline. */
 	async editTrack(
 		trackId: string,
 		changes: EditTrackChanges,
@@ -238,23 +197,17 @@ export class LibraryService {
 		if (!remote) {
 			return { ok: false, error: "Only server tracks can be edited." };
 		}
-		let result;
-		try {
-			result = await bun.editTrack({ id: remote.id, ...changes });
-		} catch (err) {
-			return {
-				ok: false,
-				error: err instanceof Error ? err.message : "Editing the track failed",
-			};
-		}
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			return { ok: false, error: result.error };
-		}
-		void this.refresh();
-		return { ok: true };
+		const result = await mutate(
+			() => bun.editTrack({ id: remote.id, ...changes }),
+			"Editing the track failed",
+		);
+		if (result.ok) void libraryData.refresh();
+		return result;
+	}
+
+	private fail(error: string): void {
+		this.mutationError = error;
+		this.update({ error });
 	}
 
 	private update(patch: Partial<LibraryState>): void {
@@ -263,14 +216,15 @@ export class LibraryService {
 	}
 }
 
-function toTrack(remote: RemoteTrack): Track {
+function toTrack(remote: RemoteTrack, names: Map<number, string>): Track {
+	const credited = remote.artistIds
+		.map((artistId) => names.get(artistId))
+		.filter((name): name is string => name !== undefined);
 	return {
 		id: remote.id,
 		title: remote.title,
-		artist: remote.artist,
-		// ms→s at the player boundary: Track.durationSec / AudioPlayer /
-		// PlayerBar / formatTime all live in the seconds domain, matching
-		// HTMLAudioElement.
+		artist: credited.join(", ") || undefined,
+		// The player is in seconds throughout, matching HTMLAudioElement.
 		durationSec: remote.durationMs / 1000,
 		coverUrl: remote.coverUrl,
 		src: remote.streamUrl,

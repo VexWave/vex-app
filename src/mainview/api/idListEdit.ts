@@ -1,4 +1,5 @@
-import type { MutationResult } from "./LibraryService";
+import { libraryData } from "./LibraryData";
+import type { MutationResult } from "./mutate";
 
 /**
  * The list a write wants to send: the ids themselves, `"noop"` when the state
@@ -15,15 +16,16 @@ export type IdListDraft<Id extends string | number> = Id[] | "noop" | "stale";
  * rejects the entire edit (400). Ids die behind the client's back — deleting a
  * track drops it from every playlist, deleting an artist unlinks it from every
  * track — so any list built from a mirror of server state can carry a dead id,
- * and a mirror that isn't refetched keeps building the same doomed list.
+ * and a mirror that isn't re-read keeps building the same doomed list.
  *
  * The way out is to send an *intent* rather than a list: `build` recomputes it
- * from whatever the service holds at that moment, so it can be run again after
- * `resync` has replaced that state with the server's. Callers therefore never
- * hand over a precomputed array.
+ * from whatever the service holds at that moment, so it can be run again once a
+ * fresh read has replaced that state with the server's. Callers therefore never
+ * hand over a precomputed array — and never choose what to re-read either,
+ * there being one read behind every list an intent can be built from.
  *
  * A rejection is diagnosed by rebuilding, not by reading the server's message:
- * if the resync changes what the intent produces, the list was stale and the
+ * if the fresh read changes what the intent produces, the list was stale and the
  * rebuilt one goes out. If it rebuilds identically there is nothing stale to
  * explain the rejection, so the original error stands rather than being sent a
  * second time to fail the same way. At most one retry — an edit the server
@@ -33,13 +35,11 @@ export async function submitIdList<Id extends string | number>(edit: {
 	/** Recompute the full list from the service's current state. */
 	build: () => IdListDraft<Id>;
 	send: (ids: Id[]) => Promise<MutationResult>;
-	/** Refetch the state `build` reads, so rebuilding sees the server's. */
-	resync: () => Promise<unknown>;
-	/** Reported when even a resync leaves the state too stale to build from. */
+	/** Reported when even a fresh read leaves the state too stale to build from. */
 	staleError: string;
 }): Promise<MutationResult> {
 	const rebuild = async () => {
-		await edit.resync();
+		await libraryData.refresh();
 		return edit.build();
 	};
 

@@ -69,11 +69,13 @@ export interface RemoteTrack {
 	/** Server-side track id (a uuid — it says nothing about upload order). */
 	id: string;
 	title: string;
-	/** Joined artist names for display (undefined when the track has none). */
-	artist?: string;
-	/** The track's linked artist names, as the server returns them — used to
-	 * pre-select the currently-linked artists when editing. */
-	artists: string[];
+	/**
+	 * Ids of the artists credited on this track, ascending by id rather than in
+	 * the order they were submitted — the server's junction stores no position.
+	 * The names are not sent per track: the webview joins these against
+	 * `RemoteLibrary.artists`, which is also what lets a link be navigated to.
+	 */
+	artistIds: number[];
 	/** Track length in milliseconds, as the server returns it. */
 	durationMs: number;
 	/**
@@ -91,9 +93,6 @@ export interface RemoteTrack {
 	 */
 	coverUrl?: string;
 }
-
-/** Oldest first, as the server sends it — the only record of upload order. */
-export type ListTracksResult = { ok: true; tracks: RemoteTrack[] } | RpcFailure;
 
 export interface DeleteTrackParams {
 	/** Server-side track id. */
@@ -145,10 +144,6 @@ export interface RemoteArtist {
 	imageUrl?: string;
 }
 
-export type ListArtistsResult =
-	| { ok: true; artists: RemoteArtist[] }
-	| RpcFailure;
-
 export interface CreatePlaylistParams {
 	name: string;
 	/** Initial ordered playback list; a track at most once. Omit for empty. */
@@ -196,9 +191,22 @@ export interface RemotePlaylist {
 	imageUrl?: string;
 }
 
-export type ListPlaylistsResult =
-	| { ok: true; playlists: RemotePlaylist[] }
-	| RpcFailure;
+/**
+ * The caller's whole library, from one server read — so the three parts are a
+ * single snapshot and cannot disagree about a track, an artist or a membership.
+ */
+export interface RemoteLibrary {
+	/** Oldest first, as the server sends it — the only record of upload order. */
+	tracks: RemoteTrack[];
+	/**
+	 * Every artist the user owns, including ones no track is credited to. Each
+	 * appears once here and is referenced by id from `tracks`.
+	 */
+	artists: RemoteArtist[];
+	playlists: RemotePlaylist[];
+}
+
+export type GetLibraryResult = ({ ok: true } & RemoteLibrary) | RpcFailure;
 
 // --- Binary manager --------------------------------------------------------
 
@@ -439,15 +447,19 @@ export type PlayerRPC = {
 			restoreSession: { params: RestoreSessionParams; response: RpcResult };
 			/** Drops the bun-side session (token + client); no server call. */
 			logout: { params: undefined; response: RpcResult };
+			/**
+			 * The caller's whole library — tracks, artists and playlists — in
+			 * one server read, so the three parts are one snapshot rather than
+			 * three that can disagree. Everything the UI shows of the server is
+			 * derived from this; nothing else fetches library data.
+			 */
+			getLibrary: { params: undefined; response: GetLibraryResult };
 			uploadTrack: { params: UploadTrackParams; response: RpcResult };
 			deleteTrack: { params: DeleteTrackParams; response: RpcResult };
 			editTrack: { params: EditTrackParams; response: RpcResult };
-			listTracks: { params: undefined; response: ListTracksResult };
-			listArtists: { params: undefined; response: ListArtistsResult };
 			createArtist: { params: CreateArtistParams; response: RpcResult };
 			editArtist: { params: EditArtistParams; response: RpcResult };
 			deleteArtist: { params: DeleteArtistParams; response: RpcResult };
-			listPlaylists: { params: undefined; response: ListPlaylistsResult };
 			createPlaylist: { params: CreatePlaylistParams; response: RpcResult };
 			editPlaylist: { params: EditPlaylistParams; response: RpcResult };
 			deletePlaylist: { params: DeletePlaylistParams; response: RpcResult };

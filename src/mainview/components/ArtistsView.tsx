@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Plus, Search, Users } from "lucide-react";
 import { artistQueueContext, artistService } from "@/api/ArtistService";
 import { openIdOf } from "@/api/NavigationService";
@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useArtists } from "@/hooks/useArtists";
-import { useLibrary } from "@/hooks/useLibrary";
 import { useNavigation } from "@/hooks/useNavigation";
 import { usePlayer } from "@/hooks/usePlayer";
 import { countLabel, trackCountLabel } from "@/lib/utils";
@@ -29,8 +28,6 @@ export function ArtistsView() {
 	const { view, service: navigation } = useNavigation();
 	// The cards' play buttons mirror playback: a playing artist shows pause.
 	const { state: playerState } = usePlayer();
-	// An artist's tracks come from the library, so its counts follow it.
-	const { library } = useLibrary();
 	const [dialogOpen, setDialogOpen] = useState(false);
 	// The artist being edited, or null when the dialog is in "create" mode.
 	const [editing, setEditing] = useState<RemoteArtist | null>(null);
@@ -45,14 +42,6 @@ export function ArtistsView() {
 		setEditing(artist);
 		setDialogOpen(true);
 	};
-
-	// One pass over the library for the whole grid — a per-card count would be
-	// re-derived on every player timeupdate. `library.tracks` is in the deps
-	// purely as the recompute trigger for that read.
-	const trackCounts = useMemo(
-		() => artistService.trackCountsByName(),
-		[library.tracks],
-	);
 
 	// Always render the *fresh* snapshot of the opened artist; if it was
 	// deleted (here or server-side), fall back to the grid.
@@ -147,7 +136,11 @@ export function ArtistsView() {
 										playerState.queueContextId ===
 										artistQueueContext(artist.id);
 									const playing = ownsQueue && playerState.isPlaying;
-									const count = trackCounts.get(artist.name) ?? 0;
+									// An index lookup, not a pass over the library —
+									// LibraryService keys it by artist id. The read that
+									// rebuilds that index republishes the artist list
+									// above, so the count never lags it.
+									const count = artistService.tracksOf(artist).length;
 									return (
 										<li key={artist.id}>
 											<CollectionCard

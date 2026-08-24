@@ -70,17 +70,20 @@ export function PlaylistDetail({
 	// list; the row menus just call into them.
 	const actions = useTrackActions();
 
-	// Join the ordered trackIds against the library. `position` is the index
-	// into trackIds (only used for the move-bound checks); the row index is
-	// the position in the *joined* list (what playback addresses) — they
-	// diverge only while a dangling id awaits the next playlists refresh.
-	const rows = useMemo(() => {
-		const byId = new Map(library.tracks.map((track) => [track.id, track]));
-		return playlist.trackIds.flatMap((serverId, position) => {
-			const track = byId.get(serverId);
-			return track ? [{ track, serverId, position }] : [];
-		});
-	}, [playlist, library.tracks]);
+	// Join the ordered trackIds against the library, one index lookup each.
+	// `position` is the index into trackIds (only used for the move-bound
+	// checks); the row index is the position in the *joined* list (what
+	// playback addresses) — they diverge only while a dangling id awaits the
+	// next read. `library.tracks` is in the deps purely as that read's
+	// recompute trigger.
+	const rows = useMemo(
+		() =>
+			playlist.trackIds.flatMap((serverId, position) => {
+				const track = libraryService.getTrack(serverId);
+				return track ? [{ track, serverId, position }] : [];
+			}),
+		[playlist, library.tracks],
+	);
 
 	// Stable row handlers — they only change on the (rare) playlists refresh,
 	// so the memoized rows survive the per-second timeupdate re-renders.
@@ -210,8 +213,8 @@ export function PlaylistDetail({
 											rowIndex={rowIndex}
 											serverId={serverId}
 											// Keeps its identity until the next library
-											// refresh, so the memoized row is unaffected.
-											artistNames={libraryService.getRemote(track.id)?.artists}
+											// read, so the memoized row is unaffected.
+											artistIds={libraryService.getRemote(track.id)?.artistIds}
 											artists={artists.artists}
 											isCurrent={isCurrent}
 											showBars={isCurrent && state.isPlaying}

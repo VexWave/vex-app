@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Music, Search } from "lucide-react";
+import { Loader2, Music, Search } from "lucide-react";
 import { LIBRARY_QUEUE_CONTEXT, libraryService } from "@/api/LibraryService";
 import { navigationService } from "@/api/NavigationService";
 import { EmptyState } from "@/components/EmptyState";
@@ -30,7 +30,7 @@ export function TrackList() {
 	const { state } = usePlayer();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
-	// For the rows' "Go to artist" entry: the names a track carries have to be
+	// For the rows' "Go to artist" entry: the ids a track carries have to be
 	// resolved against the artist list to become somewhere to navigate.
 	const { artists } = useArtists();
 	const { uploads } = useUploads();
@@ -82,6 +82,11 @@ export function TrackList() {
 		visible.length === 0 &&
 		visibleImports.length === 0 &&
 		visibleUploads.length === 0;
+	// Before the first read lands there is nothing to say about the library yet,
+	// so it spins rather than claiming to be empty — same as the artists and
+	// playlists views. `isEmpty`, not the track count: an upload or import in
+	// flight is something to show, and a read fires while both are pending.
+	const firstLoad = library.loading && isEmpty;
 
 	return (
 		<div className="flex h-full flex-col">
@@ -101,7 +106,11 @@ export function TrackList() {
 			</div>
 			<Separator />
 
-			{isEmpty ? (
+			{firstLoad ? (
+				<div className="flex flex-1 items-center justify-center text-muted-foreground">
+					<Loader2 className="h-6 w-6 animate-spin" />
+				</div>
+			) : isEmpty ? (
 				// An empty library is where Discover is most worth offering. The button
 				// takes its label and glyph from the section table, so it names the
 				// same place the switch's segment does.
@@ -143,8 +152,8 @@ export function TrackList() {
 							const isCurrent =
 								ownsQueue && track.id === state.currentTrack?.id;
 							// The row's server-side facts: its id (playlist membership
-							// is keyed by it) and its artist names. Both keep their
-							// identity until the next library refresh, so handing them
+							// is keyed by it) and its artist ids. Both keep their
+							// identity until the next library read, so handing them
 							// to a memoized row costs it no re-renders.
 							const remote = libraryService.getRemote(track.id);
 							return (
@@ -152,7 +161,7 @@ export function TrackList() {
 									<LibraryTrackRow
 										track={track}
 										index={index}
-										artistNames={remote?.artists}
+										artistIds={remote?.artistIds}
 										isCurrent={isCurrent}
 										showBars={isCurrent && state.isPlaying}
 										playlists={playlists.playlists}

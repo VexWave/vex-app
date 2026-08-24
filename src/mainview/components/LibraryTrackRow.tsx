@@ -24,7 +24,7 @@ import type { Track } from "@/player/types";
 export const LibraryTrackRow = memo(function LibraryTrackRow({
 	track,
 	index,
-	artistNames,
+	artistIds,
 	isCurrent,
 	showBars,
 	playlists,
@@ -39,8 +39,8 @@ export const LibraryTrackRow = memo(function LibraryTrackRow({
 	track: Track;
 	/** Position in the library — what playback addresses, not the row number. */
 	index: number;
-	/** The track's linked artist names, for the "Go to artist" entry. */
-	artistNames: readonly string[] | undefined;
+	/** The track's linked artist ids, for the "Go to artist" entry. */
+	artistIds: readonly number[] | undefined;
 	isCurrent: boolean;
 	showBars: boolean;
 	playlists: RemotePlaylist[];
@@ -68,7 +68,7 @@ export const LibraryTrackRow = memo(function LibraryTrackRow({
 				<>
 					<TrackEditItem onSelect={() => onEdit(track)} />
 					<TrackArtistItems
-						artistNames={artistNames}
+						artistIds={artistIds}
 						artists={artists}
 						onOpenArtist={onOpenArtist}
 					/>

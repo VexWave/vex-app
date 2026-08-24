@@ -122,30 +122,19 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 				api.expireSession();
 				return { ok: true as const };
 			},
+			// `streamProxy` satisfies `ProxyUrls` structurally: what crosses to
+			// the webview is loopback URLs, never the backend's own.
+			getLibrary: () => api.getLibrary(streamProxy),
 			uploadTrack: (params) => api.uploadTrack(params),
-			listTracks: () =>
-				api.listTracks(
-					(serverId) => streamProxy.urlForTrack(serverId),
-					(serverId, version) =>
-						streamProxy.urlForTrackImage(serverId, version),
-				),
 			deleteTrack: async (params) => {
 				const result = await api.deleteTrack(params);
 				if (result.ok) streamProxy.evictTrack(params.id);
 				return result;
 			},
 			editTrack: (params) => api.editTrack(params),
-			listArtists: () =>
-				api.listArtists((artistId, version) =>
-					streamProxy.urlForArtistImage(artistId, version),
-				),
 			createArtist: (params) => api.createArtist(params),
 			editArtist: (params) => api.editArtist(params),
 			deleteArtist: (params) => api.deleteArtist(params),
-			listPlaylists: () =>
-				api.listPlaylists((playlistId, version) =>
-					streamProxy.urlForPlaylistImage(playlistId, version),
-				),
 			createPlaylist: (params) => api.createPlaylist(params),
 			editPlaylist: (params) => api.editPlaylist(params),
 			deletePlaylist: (params) => api.deletePlaylist(params),

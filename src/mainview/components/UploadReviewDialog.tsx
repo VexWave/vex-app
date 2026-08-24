@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AlertCircle, ImagePlus, Loader2, Music } from "lucide-react";
 import { artistService } from "@/api/ArtistService";
+import { libraryData } from "@/api/LibraryData";
 import { uploadService, type StagedUpload } from "@/api/UploadService";
 import { ArtistSuggestion } from "@/components/ArtistSuggestion";
 import { Button } from "@/components/ui/button";
@@ -30,12 +31,12 @@ export function UploadReviewDialog() {
 	const head = staged[0];
 	const hasBatch = head !== undefined;
 
-	// Refresh the artist list once when a batch opens, so a proposed import
-	// artist can be matched against the freshest library (and any artist created
+	// Re-read the library once when a batch opens, so a proposed import artist
+	// can be matched against the freshest artist list (and any artist created
 	// just before shows up).
 	const prevHasBatch = useRef(false);
 	useEffect(() => {
-		if (hasBatch && !prevHasBatch.current) void artistService.refresh();
+		if (hasBatch && !prevHasBatch.current) void libraryData.refresh();
 		prevHasBatch.current = hasBatch;
 	}, [hasBatch]);
 

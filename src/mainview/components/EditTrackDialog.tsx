@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, ImagePlus, Loader2, Music } from "lucide-react";
 import {
 	libraryService,
@@ -58,28 +58,21 @@ export function EditTrackDialog({
 	const [error, setError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	// The names currently linked to this track, per the last library fetch.
-	const currentNames = useMemo(() => {
-		if (!track) return new Set<string>();
-		return new Set(libraryService.getRemote(track.id)?.artists ?? []);
-	}, [track]);
-
-	// Seed a fresh form from the track every time the dialog opens.
+	// Seed a fresh form from the track every time the dialog opens. The linked
+	// artists are read here rather than held in state of their own: the ids are
+	// only wanted at the moment of seeding, and a value memoized on `track`
+	// would be a second dependency saying exactly what `track` already says.
 	useEffect(() => {
 		if (!open) return;
+		const linked = new Set(
+			track ? libraryService.getRemote(track.id)?.artistIds : [],
+		);
 		setTitle(track?.title ?? "");
 		setCover({ kind: "unchanged" });
-		const initial = new Set<number>();
-		for (const artist of artistState.artists) {
-			if (currentNames.has(artist.name)) initial.add(artist.id);
-		}
-		setSelected(new Set(initial));
-		setInitialIds(initial);
+		setSelected(new Set(linked));
+		setInitialIds(linked);
 		setSubmitting(false);
 		setError(null);
-		// artistState.artists is intentionally omitted: reseeding on a background
-		// refresh would discard the user's in-progress edits.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open, track]);
 
 	// Preview follows the cover edit: a picked file gets an object URL (revoked

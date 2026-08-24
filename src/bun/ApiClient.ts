@@ -19,9 +19,7 @@ import type {
 	EditArtistParams,
 	EditPlaylistParams,
 	EditTrackParams,
-	ListArtistsResult,
-	ListPlaylistsResult,
-	ListTracksResult,
+	GetLibraryResult,
 	LoginParams,
 	LoginResult,
 	RestoreSessionParams,
@@ -29,6 +27,14 @@ import type {
 	RpcResult,
 	UploadTrackParams,
 } from "../shared/rpcSchema";
+
+/** How server ids become the loopback proxy URLs the webview loads. */
+export interface ProxyUrls {
+	urlForTrack(id: string): string;
+	urlForTrackImage(id: string, version?: string): string;
+	urlForArtistImage(id: number, version?: string): string;
+	urlForPlaylistImage(id: number, version?: string): string;
+}
 
 // `src/shared/limits.ts` and the contract are the same fence in different units,
 // and the webview checks payload sizes against the copy it can import. If the
@@ -175,86 +181,68 @@ export class ApiClient {
 	}
 
 	/**
-	 * Server track listing. `urlForTrack` maps a server track id to its
-	 * stream-proxy URL, and `urlForTrackImage` to its cover-image proxy URL, so
-	 * complete RemoteTracks are assembled in one place. Like `listArtists`'
-	 * imageUrl rewrite, `coverUrl` stays undefined unless the server sent one —
-	 * and where it did, the version it named comes along (see `imageVersion`).
+	 * The caller's whole library in one read — tracks, artists and playlists
+	 * from a single server snapshot, which is what lets the webview treat the
+	 * three as agreeing with each other.
 	 *
-	 * The server's order (oldest first) is passed through untouched — it is
+	 * `urls` maps server ids to the loopback proxy URLs the webview loads, so
+	 * complete Remote* values are assembled in one place. An image URL stays
+	 * undefined where the server sent none, and where it did, the content
+	 * version it names rides along to the proxy URL (see `imageVersion`) —
+	 * dropping that silently returns every image to the route's uncached path.
+	 *
+	 * The server's track order (oldest first) is passed through untouched: it is
 	 * what tells the webview which tracks are the recent uploads.
+	 *
+	 * The artist names are deliberately not joined in here. Both sides are in
+	 * hand, but sending a name per link would re-duplicate on the wire exactly
+	 * what one read removed, and would leave the webview holding names it can't
+	 * resolve back to an artist. `artistIds` goes across; the webview joins.
 	 */
-	async listTracks(
-		urlForTrack: (serverId: string) => string,
-		urlForTrackImage: (serverId: string, version?: string) => string,
-	): Promise<ListTracksResult> {
+	async getLibrary(urls: ProxyUrls): Promise<GetLibraryResult> {
 		const client = this.session?.client;
 		if (!client) {
 			return { ok: false, status: 401, error: "Not logged in" };
 		}
 		try {
-			const res = await client.getTracks();
+			const res = await client.getData();
 			if (res.status === 200) {
+				const { tracks, artists, playlists } = res.body;
 				return {
 					ok: true,
-					tracks: res.body.map((track) => ({
+					tracks: tracks.map((track) => ({
 						id: track.id,
 						title: track.title,
-						artist: track.artists.join(", ") || undefined,
-						artists: track.artists,
+						artistIds: track.artistIds,
 						durationMs: track.duration,
-						streamUrl: urlForTrack(track.id),
+						streamUrl: urls.urlForTrack(track.id),
 						coverUrl: track.coverUrl
-							? urlForTrackImage(track.id, imageVersion(track.coverUrl))
+							? urls.urlForTrackImage(track.id, imageVersion(track.coverUrl))
 							: undefined,
 					})),
-				};
-			}
-			if (res.status === 401) this.expireSession();
-			return failure(res, `Loading the track list failed (HTTP ${res.status})`);
-		} catch {
-			return { ok: false, error: "Loading the track list failed — server unreachable" };
-		}
-	}
-
-	/**
-	 * Server artist listing. `urlForArtistImage` maps an artist id to its
-	 * stream-proxy avatar URL; the server only sends `imageUrl` (its own image
-	 * route) for artists that actually have an image, so it stays undefined for
-	 * the rest — the webview never reaches the backend directly. What that URL
-	 * is good for here besides its presence is the version on it, which rides
-	 * along to the proxy URL (see `imageVersion`).
-	 */
-	async listArtists(
-		urlForArtistImage: (artistId: number, version?: string) => string,
-	): Promise<ListArtistsResult> {
-		const client = this.session?.client;
-		if (!client) {
-			return { ok: false, status: 401, error: "Not logged in" };
-		}
-		try {
-			const res = await client.getArtists();
-			if (res.status === 200) {
-				return {
-					ok: true,
-					artists: res.body.map(({ id, name, imageUrl }) => ({
+					artists: artists.map(({ id, name, imageUrl }) => ({
 						id,
 						name,
 						imageUrl: imageUrl
-							? urlForArtistImage(id, imageVersion(imageUrl))
+							? urls.urlForArtistImage(id, imageVersion(imageUrl))
+							: undefined,
+					})),
+					playlists: playlists.map(({ id, name, trackIds, imageUrl }) => ({
+						id,
+						name,
+						trackIds,
+						imageUrl: imageUrl
+							? urls.urlForPlaylistImage(id, imageVersion(imageUrl))
 							: undefined,
 					})),
 				};
 			}
 			if (res.status === 401) this.expireSession();
-			return failure(
-				res,
-				`Loading the artist list failed (HTTP ${res.status})`,
-			);
+			return failure(res, `Loading the library failed (HTTP ${res.status})`);
 		} catch {
 			return {
 				ok: false,
-				error: "Loading the artist list failed — server unreachable",
+				error: "Loading the library failed — server unreachable",
 			};
 		}
 	}
@@ -318,43 +306,6 @@ export class ApiClient {
 			return failure(res, `Deleting the artist failed (HTTP ${res.status})`);
 		} catch {
 			return { ok: false, error: "Deleting the artist failed — server unreachable" };
-		}
-	}
-
-	/**
-	 * Server playlist listing. `urlForPlaylistImage` maps a playlist id to its
-	 * stream-proxy cover URL; like `listArtists`, `imageUrl` stays undefined
-	 * unless the server sent one — the webview never reaches the backend.
-	 */
-	async listPlaylists(
-		urlForPlaylistImage: (playlistId: number, version?: string) => string,
-	): Promise<ListPlaylistsResult> {
-		const client = this.session?.client;
-		if (!client) {
-			return { ok: false, status: 401, error: "Not logged in" };
-		}
-		try {
-			const res = await client.getPlaylists();
-			if (res.status === 200) {
-				return {
-					ok: true,
-					playlists: res.body.map(({ id, name, trackIds, imageUrl }) => ({
-						id,
-						name,
-						trackIds,
-						imageUrl: imageUrl
-							? urlForPlaylistImage(id, imageVersion(imageUrl))
-							: undefined,
-					})),
-				};
-			}
-			if (res.status === 401) this.expireSession();
-			return failure(res, `Loading the playlists failed (HTTP ${res.status})`);
-		} catch {
-			return {
-				ok: false,
-				error: "Loading the playlists failed — server unreachable",
-			};
 		}
 	}
 

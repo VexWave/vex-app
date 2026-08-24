@@ -1,6 +1,5 @@
 import { LogOut, RefreshCw } from "lucide-react";
-import { artistService } from "@/api/ArtistService";
-import { libraryService } from "@/api/LibraryService";
+import { libraryData } from "@/api/LibraryData";
 import { AddTracksButton } from "@/components/AddTracksButton";
 import { HeaderAction } from "@/components/HeaderAction";
 import { ImportUrlButton } from "@/components/ImportUrlButton";
@@ -33,11 +32,9 @@ export function AppHeader() {
 	const { library } = useLibrary();
 	const { service: session } = useSession();
 
-	// Both stores back one of the main views, so a single refresh keeps the
-	// track list and the artist list in step with each other.
+	// One read backs every view of the server, so one action refreshes them all.
 	const refresh = () => {
-		void libraryService.refresh();
-		void artistService.refresh();
+		void libraryData.refresh();
 	};
 
 	return (

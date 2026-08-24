@@ -8,9 +8,11 @@ import { findMatchingArtist } from "@/lib/artistMatch";
 import type { Track } from "@/player/types";
 import { submitIdList } from "./idListEdit";
 import type { IdListDraft } from "./idListEdit";
+import { libraryData } from "./LibraryData";
 import { libraryService } from "./LibraryService";
+import { mutate } from "./mutate";
+import type { MutationResult } from "./mutate";
 import { bun } from "./rpc";
-import { sessionService } from "./SessionService";
 
 /** Queue context id for "the queue is this artist's tracks" (see PlayerController). */
 export function artistQueueContext(artistId: number): string {
@@ -21,15 +23,14 @@ export function artistQueueContext(artistId: number): string {
 export interface ArtistsState {
 	artists: RemoteArtist[];
 	loading: boolean;
-	/** List-level error (fetch, delete and fire-and-forget unlink failures). */
+	/** List-level error (the read's, or a delete/unlink that failed). */
 	error: string | null;
 }
 
 /**
- * Owns the server artist list: fetches it when a session starts and clears
- * it when the session ends (artist data is session-scoped). Mutations
- * (create/edit/delete) refetch instead of patching locally — the server assigns
- * ids, so it stays the single source of truth.
+ * The server's artists, sorted by name. Mutations write and then re-read
+ * `libraryData` rather than patching locally — the server assigns ids, so it
+ * stays the single source of truth.
  *
  * An artist is also a playable collection: `tracksOf` projects the library onto
  * one artist and `play` makes that projection the queue, tagged with the
@@ -42,37 +43,18 @@ export class ArtistService {
 		loading: false,
 		error: null,
 	};
-	private fetchSeq = 0;
-	// Renames in flight; while any is, the queue projection is untrustworthy
-	// (see `edit` and `syncQueue`). A counter, not a flag: two renames can
-	// overlap, and the second must not release the first one's hold.
-	private renamesInFlight = 0;
+	// The last mutation's failure, until the next read clears it.
+	private mutationError: string | null = null;
+	// The payload the sorted list above was built from; see LibraryService.
+	private builtFrom: RemoteArtist[] = libraryData.getSnapshot().artists;
 
 	constructor() {
-		let previousStatus = sessionService.getSnapshot().status;
-		sessionService.subscribe(() => {
-			const status = sessionService.getSnapshot().status;
-			if (status === previousStatus) return;
-			previousStatus = status;
-			if (status === "loggedIn") {
-				void this.refresh();
-			} else if (status === "loggedOut") {
-				this.fetchSeq += 1; // drop in-flight results from the old session
-				this.update({ artists: [], loading: false, error: null });
-			}
-		});
-
-		// An artist's tracks are a projection of the library, so the library —
-		// not this list — is what changes them: a track uploaded, deleted, or
-		// (un)linked to the artist. Only the track list itself matters, and it
-		// keeps its identity across the loading flags every refresh emits.
-		let lastTracks = libraryService.getSnapshot().tracks;
-		libraryService.subscribe(() => {
-			const { tracks } = libraryService.getSnapshot();
-			if (tracks === lastTracks) return;
-			lastTracks = tracks;
-			this.syncQueue();
-		});
+		// One payload carries both this list and the library it projects onto,
+		// so one subscription answers a track uploaded, deleted or (un)linked
+		// as much as an artist created or renamed. `LibraryService` rebuilds
+		// its indices off the same store and subscribes to it first, so they
+		// are current by the time `apply` reads them.
+		libraryData.subscribe(() => this.apply());
 	}
 
 	// --- useSyncExternalStore contract (arrow fns keep `this` bound) ---
@@ -87,37 +69,12 @@ export class ArtistService {
 	/**
 	 * The artist's tracks, in library order (newest first).
 	 *
-	 * The join is by name: a track listing carries its artists' *names*, not
-	 * their ids (see RemoteTrack.artists), and those names are the server's own
-	 * copy of the records in this list — so an exact match is the link itself,
-	 * not a guess (unlike the fuzzy import matching in lib/artistMatch). Two
-	 * artists sharing one name consequently share a track list; that ambiguity
-	 * exists server-side and the client can't resolve it.
+	 * The join is by id — a track names the artists it is credited to (see
+	 * `RemoteTrack.artistIds`), and both sides come from the same read — so two
+	 * artists sharing a name keep separate track lists.
 	 */
 	tracksOf(artist: RemoteArtist): Track[] {
-		return libraryService
-			.getSnapshot()
-			.tracks.filter(
-				(track) =>
-					libraryService.getRemote(track.id)?.artists.includes(artist.name) ??
-					false,
-			);
-	}
-
-	/**
-	 * How many library tracks each artist name is credited on, in one pass over
-	 * the library — for lists that need a number per artist (the grid) rather
-	 * than one artist's tracks. Keyed by name for the same reason `tracksOf`
-	 * joins on it.
-	 */
-	trackCountsByName(): Map<string, number> {
-		const counts = new Map<string, number>();
-		for (const track of libraryService.getSnapshot().tracks) {
-			for (const name of libraryService.getRemote(track.id)?.artists ?? []) {
-				counts.set(name, (counts.get(name) ?? 0) + 1);
-			}
-		}
-		return counts;
+		return libraryService.tracksOfArtist(artist.id);
 	}
 
 	/**
@@ -140,38 +97,23 @@ export class ArtistService {
 		);
 	}
 
-	/** Re-fetch the artist list from the server. */
-	async refresh(): Promise<void> {
-		const seq = ++this.fetchSeq;
-		this.update({ loading: true, error: null });
-		let result;
-		try {
-			result = await bun.listArtists();
-		} catch (err) {
-			// RPC transport failure or timeout (e.g. bun process unreachable).
-			if (seq !== this.fetchSeq) return;
-			this.update({
-				loading: false,
-				error:
-					err instanceof Error ? err.message : "Failed to load artists",
-			});
+	/** Rebuild the sorted list from the library payload, then republish. */
+	private apply(): void {
+		const data = libraryData.getSnapshot();
+		if (data.loading) this.mutationError = null;
+		const error = this.mutationError ?? data.error;
+		if (data.artists === this.builtFrom) {
+			this.update({ loading: data.loading, error });
 			return;
 		}
-		if (seq !== this.fetchSeq) return;
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			this.update({ loading: false, error: result.error });
-			return;
-		}
+		this.builtFrom = data.artists;
 		// Sorted by name so every artist list in the app (the grid, the track
 		// dialog's picker) is in the same findable order; the server returns
 		// insertion order.
-		const artists = [...result.artists].sort((a, b) =>
+		const artists = [...data.artists].sort((a, b) =>
 			a.name.localeCompare(b.name),
 		);
-		this.update({ artists, loading: false, error: null });
+		this.update({ artists, loading: data.loading, error });
 		this.syncQueue();
 	}
 
@@ -183,9 +125,6 @@ export class ArtistService {
 	 * harmless).
 	 */
 	private syncQueue(): void {
-		// Mid-rename the two sides of the name join disagree (see `edit`), and
-		// the projection would come back empty — which now stops playback.
-		if (this.renamesInFlight > 0) return;
 		const context = playerController.queueContextId;
 		if (context === null) return;
 		const artist = this.snapshot.artists.find(
@@ -196,31 +135,18 @@ export class ArtistService {
 	}
 
 	/**
-	 * Create an artist on the server, then refetch. The refetch is awaited so
-	 * the new artist is in the snapshot by the time this resolves. Returns the
+	 * Create an artist on the server, then re-read. The read is awaited so the
+	 * new artist is in the snapshot by the time this resolves. Returns the
 	 * outcome instead of writing `error` to the snapshot so the create dialog can
 	 * show the failure inline and stay open.
 	 */
-	async create(
-		input: CreateArtistParams,
-	): Promise<{ ok: true } | { ok: false; error: string }> {
-		let result;
-		try {
-			result = await bun.createArtist(input);
-		} catch (err) {
-			return {
-				ok: false,
-				error: err instanceof Error ? err.message : "Creating the artist failed",
-			};
-		}
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			return { ok: false, error: result.error };
-		}
-		await this.refresh();
-		return { ok: true };
+	async create(input: CreateArtistParams): Promise<MutationResult> {
+		const result = await mutate(
+			() => bun.createArtist(input),
+			"Creating the artist failed",
+		);
+		if (result.ok) await libraryData.refresh();
+		return result;
 	}
 
 	/**
@@ -238,12 +164,12 @@ export class ArtistService {
 		// could have created this artist since.
 		const known = findMatchingArtist(input.name, this.snapshot.artists);
 		if (known) return { ok: true, id: known.id };
-		await this.refresh();
+		await libraryData.refresh();
 		const existing = findMatchingArtist(input.name, this.snapshot.artists);
 		if (existing) return { ok: true, id: existing.id };
 
 		// The create route returns no id, so the artist has to be located by name
-		// in the list create() refetched — an exact match by now.
+		// in the list create() re-read — an exact match by now.
 		const created = await this.create(input);
 		if (!created.ok) return created;
 		const now = findMatchingArtist(input.name, this.snapshot.artists);
@@ -257,89 +183,42 @@ export class ArtistService {
 	}
 
 	/**
-	 * Edit an artist's name and/or avatar on the server, then refetch. Like
+	 * Edit an artist's name and/or avatar on the server, then re-read. Like
 	 * `create`, returns the outcome so the edit dialog can show a failure inline
 	 * and stay open.
 	 */
-	async edit(
-		input: EditArtistParams,
-	): Promise<{ ok: true } | { ok: false; error: string }> {
-		// Read before the request: the refetch below replaces the snapshot, and
-		// only an actual rename has to reach the library (see the end of this
-		// method). The dialog submits the name whether or not it was touched.
-		const renamed =
-			input.name !== undefined &&
-			input.name !== this.snapshot.artists.find(({ id }) => id === input.id)?.name;
-		let result;
-		try {
-			result = await bun.editArtist(input);
-		} catch (err) {
-			return {
-				ok: false,
-				error: err instanceof Error ? err.message : "Editing the artist failed",
-			};
-		}
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			return { ok: false, error: result.error };
-		}
-		if (!renamed) {
-			void this.refresh();
-			return { ok: true };
-		}
-		// Every linked track carries this artist's name — as its displayed
-		// artist line and as the key `tracksOf` joins on — so a rename leaves
-		// the library stale (the artist would appear to have lost its tracks)
-		// until it is refetched too. (An avatar-only edit changes nothing there,
-		// hence the plain refresh above.)
-		//
-		// The two land in either order, and until both have, one of them still
-		// carries the old name and the projection between them is empty — which
-		// would stop playback if this artist owns the queue. So queue syncing is
-		// held off until they agree, then run once.
-		this.renamesInFlight += 1;
-		void Promise.allSettled([this.refresh(), libraryService.refresh()]).then(
-			() => {
-				this.renamesInFlight -= 1;
-				this.syncQueue();
-			},
+	async edit(input: EditArtistParams): Promise<MutationResult> {
+		const result = await mutate(
+			() => bun.editArtist(input),
+			"Editing the artist failed",
 		);
-		return { ok: true };
+		// A rename changes only what is displayed: tracks link to this artist by
+		// id, so nothing about the projection moves under it and one read carries
+		// both sides of the change at once.
+		if (result.ok) void libraryData.refresh();
+		return result;
 	}
 
 	/**
 	 * Unlink a track from this artist, leaving the track and its other artists
-	 * alone. The edit route replaces a track's links by id while the track only
-	 * carries its artists' names, so the names that stay are resolved back to
-	 * ids through this list — and a name that resolves to nothing means this
-	 * list is behind, which `submitIdList` answers by refetching and building
-	 * again. Failures land in the snapshot's `error` — the row menu that
-	 * triggers this is long gone by the time one arrives.
+	 * alone. The edit route replaces a track's links as one list, so it goes
+	 * through `submitIdList` — a track that died under the edit is answered by
+	 * rebuilding rather than by failing at the user. Failures land in the
+	 * snapshot's `error`: the row menu that triggered this is long gone by the
+	 * time one arrives.
 	 */
 	async unlinkTrack(artist: RemoteArtist, trackId: string): Promise<void> {
 		const result = await submitIdList({
 			build: () => this.linksWithout(artist, trackId),
 			send: (artistIds) => libraryService.editTrack(trackId, { artistIds }),
-			// The names come from the library, the ids from this list, so a build
-			// that couldn't reconcile them needs both refetched. Settled, not
-			// all: one list failing to load must still let the other through.
-			resync: () =>
-				Promise.allSettled([this.refresh(), libraryService.refresh()]),
-			staleError: `“${artist.name}” could not be unlinked — the artist list is out of date.`,
+			staleError: `“${artist.name}” could not be unlinked — the library is out of date.`,
 		});
-		if (!result.ok) this.update({ error: result.error });
+		if (!result.ok) this.fail(result.error);
 	}
 
 	/**
 	 * The artist ids a track keeps once `artist` is unlinked — its links minus
 	 * this one, since the edit replaces the whole set.
-	 *
-	 * The track carries its artists' *names*, so each one is resolved against
-	 * this list to get an id back. A name nothing answers to leaves the set
-	 * unbuildable rather than one member short: sending it short would unlink
-	 * an artist nobody asked to unlink.
 	 */
 	private linksWithout(
 		artist: RemoteArtist,
@@ -347,48 +226,29 @@ export class ArtistService {
 	): IdListDraft<number> {
 		const remote = libraryService.getRemote(trackId);
 		if (!remote) return "noop"; // not a library track — nothing to unlink
-		const idsByName = new Map(
-			this.snapshot.artists.map((candidate) => [candidate.name, candidate.id]),
-		);
-		const artistIds: number[] = [];
-		for (const name of remote.artists) {
-			// Compared by name, not id: a same-named duplicate artist is
-			// indistinguishable from this one in the UI, so both links go.
-			if (name === artist.name) continue;
-			const id = idsByName.get(name);
-			if (id === undefined) return "stale";
-			artistIds.push(id);
-		}
-		return artistIds;
+		return remote.artistIds.filter((id) => id !== artist.id);
 	}
 
 	/**
-	 * Delete an artist on the server, then refetch. Failures land in the
+	 * Delete an artist on the server, then re-read. Failures land in the
 	 * snapshot's `error` — the confirm dialog closes before the result
 	 * arrives, so the list banner is where the user still is.
 	 */
 	async remove(id: number): Promise<void> {
-		let result;
-		try {
-			result = await bun.deleteArtist({ id });
-		} catch (err) {
-			this.update({
-				error:
-					err instanceof Error ? err.message : "Deleting the artist failed",
-			});
-			return;
-		}
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			this.update({ error: result.error });
-			return;
-		}
-		void this.refresh();
-		// The server keeps the tracks but drops their links to this artist, so
-		// their artist lines would keep naming it until the library refetches.
-		void libraryService.refresh();
+		const result = await mutate(
+			() => bun.deleteArtist({ id }),
+			"Deleting the artist failed",
+		);
+		// The server keeps the tracks and drops their links to this artist; one
+		// read carries both, so the credit lines never name an artist that is
+		// already gone.
+		if (result.ok) void libraryData.refresh();
+		else this.fail(result.error);
+	}
+
+	private fail(error: string): void {
+		this.mutationError = error;
+		this.update({ error });
 	}
 
 	private update(patch: Partial<ArtistsState>): void {

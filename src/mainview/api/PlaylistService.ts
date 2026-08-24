@@ -7,8 +7,10 @@ import type {
 	RemotePlaylist,
 } from "../../shared/rpcSchema";
 import { submitIdList } from "./idListEdit";
+import { libraryData } from "./LibraryData";
 import { libraryService } from "./LibraryService";
-import type { MutationResult } from "./LibraryService";
+import { mutate } from "./mutate";
+import type { MutationResult } from "./mutate";
 import { bun } from "./rpc";
 import { sessionService } from "./SessionService";
 
@@ -21,18 +23,18 @@ export function playlistQueueContext(playlistId: number): string {
 export interface PlaylistsState {
 	playlists: RemotePlaylist[];
 	loading: boolean;
-	/** List-level error (fetch or delete failures). */
+	/** List-level error (the read's, or a mutation that failed). */
 	error: string | null;
 }
 
 /**
- * Owns the server playlists: fetches them when a session starts and clears
- * them when it ends. Mutations refetch instead of patching locally — the
- * server assigns ids and drops deleted tracks, so it stays the single source
- * of truth. Reordering is the one exception, and holds a local order until the
- * server confirms it (`applyOrder`). Track membership is edited by full
- * replacement of the ordered `trackIds` (that's the whole contract;
- * add/remove/reorder are conveniences over it).
+ * The server's playlists, deduped and with a reorder still in flight showing
+ * over them. Mutations write and then re-read `libraryData` rather than
+ * patching locally — the server assigns ids and drops deleted tracks, so it
+ * stays the single source of truth. Reordering is the one exception, and holds
+ * a local order until the server confirms it (`applyOrder`). Track membership
+ * is edited by full replacement of the ordered `trackIds` (that's the whole
+ * contract; add/remove/reorder are conveniences over it).
  */
 export class PlaylistService {
 	private subscribers = new Set<() => void>();
@@ -41,47 +43,29 @@ export class PlaylistService {
 		loading: false,
 		error: null,
 	};
-	private fetchSeq = 0;
 	// Locally held track order for playlists with a reorder in flight, keyed by
 	// playlist id (see applyOrder). Keyed rather than a single value because a
 	// reorder outlives the view it was made in — dragging in one playlist and
 	// navigating to another before the request lands must not cross the two.
 	private pendingOrders = new Map<number, string[]>();
+	// The last mutation's failure, until the next read clears it.
+	private mutationError: string | null = null;
+	// The payload the list above was built from; see LibraryService.
+	private builtFrom: RemotePlaylist[] = libraryData.getSnapshot().playlists;
 
 	constructor() {
+		libraryData.subscribe(() => this.apply());
+
+		// A pending order outlives the request that carries it, so one still
+		// held at logout would be overlaid onto whatever playlist takes that id
+		// in the next session — an order the server never had, and one no read
+		// can dislodge until another reorder retires it.
 		let previousStatus = sessionService.getSnapshot().status;
 		sessionService.subscribe(() => {
 			const status = sessionService.getSnapshot().status;
 			if (status === previousStatus) return;
 			previousStatus = status;
-			if (status === "loggedIn") {
-				void this.refresh();
-			} else if (status === "loggedOut") {
-				this.fetchSeq += 1; // drop in-flight results from the old session
-				this.pendingOrders.clear();
-				this.update({ playlists: [], loading: false, error: null });
-			}
-		});
-
-		// A deleted track is dropped from every playlist server-side, which
-		// leaves this list holding an id the server no longer knows — and a
-		// membership edit replaces `trackIds` wholesale, where an unknown id is
-		// a 400. `submitIdList` recovers from that, but a deletion is the one
-		// moment the client can see it coming, so refetch the lists that
-		// carried the track and let the next edit find them current. Only ids
-		// the library *had* and lost count as deletions: one it doesn't know
-		// yet (its refresh trailing a playlist's) is a track very much alive.
-		let knownTrackIds = libraryTrackIds();
-		libraryService.subscribe(() => {
-			const trackIds = libraryTrackIds();
-			const deleted = new Set(
-				[...knownTrackIds].filter((id) => !trackIds.has(id)),
-			);
-			knownTrackIds = trackIds;
-			// Logging out empties the library too; that is the subscription
-			// above's business, and refetching would be unauthorized anyway.
-			if (sessionService.getSnapshot().status !== "loggedIn") return;
-			if (deleted.size > 0 && this.holdsAny(deleted)) void this.refresh();
+			if (status === "loggedOut") this.pendingOrders.clear();
 		});
 	}
 
@@ -94,27 +78,14 @@ export class PlaylistService {
 
 	getSnapshot = (): PlaylistsState => this.snapshot;
 
-	/**
-	 * A playlist's ordered playable tracks, joined against the library.
-	 * Ids the library doesn't know (e.g. a track deleted moments ago, before
-	 * the next playlists refetch) are skipped — the server guarantees they're
-	 * gone from the playlist too.
-	 */
+	/** A playlist's ordered playable tracks, joined against the library. */
 	tracksOf(playlist: RemotePlaylist): Track[] {
-		const byId = new Map(
-			libraryService.getSnapshot().tracks.map((track) => [track.id, track]),
-		);
-		const tracks: Track[] = [];
-		for (const trackId of playlist.trackIds) {
-			const track = byId.get(trackId);
-			if (track) tracks.push(track);
-		}
-		return tracks;
+		return libraryService.tracksByIds(playlist.trackIds);
 	}
 
 	/**
 	 * Make the playlist the play queue and start at `index` (of its joined
-	 * track list). Later membership edits keep the queue in sync via refresh.
+	 * track list). Later membership edits keep the queue in sync via `apply`.
 	 */
 	play(playlist: RemotePlaylist, index = 0): void {
 		playerController.playCollection(
@@ -132,49 +103,34 @@ export class PlaylistService {
 		);
 	}
 
-	/** Re-fetch the playlist list from the server. */
-	async refresh(): Promise<void> {
-		const seq = ++this.fetchSeq;
-		this.update({ loading: true, error: null });
-		let result;
-		try {
-			result = await bun.listPlaylists();
-		} catch (err) {
-			// RPC transport failure or timeout (e.g. bun process unreachable).
-			if (seq !== this.fetchSeq) return;
-			this.update({
-				loading: false,
-				error:
-					err instanceof Error ? err.message : "Failed to load playlists",
-			});
+	/** Rebuild the list from the library payload, then republish. */
+	private apply(): void {
+		const data = libraryData.getSnapshot();
+		if (data.loading) this.mutationError = null;
+		const error = this.mutationError ?? data.error;
+		if (data.playlists === this.builtFrom) {
+			this.update({ loading: data.loading, error });
 			return;
 		}
-		if (seq !== this.fetchSeq) return;
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			this.update({ loading: false, error: result.error });
-			return;
-		}
+		this.builtFrom = data.playlists;
 		// trackIds are deduped defensively — playlists predating the
 		// no-duplicates rule may still carry copies; the next membership edit
 		// persists the deduped list.
-		const playlists = result.playlists.map((playlist) => ({
+		const playlists = data.playlists.map((playlist) => ({
 			...playlist,
 			trackIds: this.orderOf(playlist.id, [...new Set(playlist.trackIds)]),
 		}));
-		this.update({ playlists, loading: false, error: null });
+		this.update({ playlists, loading: data.loading, error });
 		this.syncQueue();
 	}
 
 	/**
-	 * The order a freshly fetched playlist should be shown in: the server's,
-	 * unless a reorder for it is still on its way, in which case the local one
-	 * wins. Every reorder triggers a refetch, so without this the list would
-	 * snap back to the pre-drag order for as long as a *later* reorder is still
-	 * in flight. Membership the local order doesn't know about is the server's
-	 * to decide — ids it dropped go, ids it gained land at the end.
+	 * The order a freshly read playlist should be shown in: the server's, unless
+	 * a reorder for it is still on its way, in which case the local one wins.
+	 * Every reorder triggers a re-read, so without this the list would snap back
+	 * to the pre-drag order for as long as a *later* reorder is still in flight.
+	 * Membership the local order doesn't know about is the server's to decide —
+	 * ids it dropped go, ids it gained land at the end.
 	 */
 	private orderOf(playlistId: number, serverTrackIds: string[]): string[] {
 		const pending = this.pendingOrders.get(playlistId);
@@ -189,7 +145,7 @@ export class PlaylistService {
 	 * to the snapshot up front — a dragged row that springs back to its old
 	 * slot for the round trip reads as a failed drag — and only then sent, so
 	 * what a second reorder computes from already carries the first one's move.
-	 * A rejected edit drops the local order and refetches the server's.
+	 * A rejected edit drops the local order and re-reads the server's.
 	 */
 	private applyOrder(playlistId: number, trackIds: string[]): void {
 		this.pendingOrders.set(playlistId, trackIds);
@@ -209,11 +165,11 @@ export class PlaylistService {
 			const isLast = this.pendingOrders.get(playlistId) === trackIds;
 			if (isLast) this.pendingOrders.delete(playlistId);
 			if (!result.ok) {
-				this.update({ error: result.error });
-				// Rows sit in an order the server rejected. The refetch is what
+				this.fail(result.error);
+				// Rows sit in an order the server rejected. The re-read is what
 				// puts the list back to what actually persisted — unless a later
-				// reorder is still queued, which brings its own refetch.
-				if (isLast) await this.refresh();
+				// reorder is still queued, which brings its own.
+				if (isLast) await libraryData.refresh();
 			}
 		});
 	}
@@ -235,56 +191,32 @@ export class PlaylistService {
 	}
 
 	/**
-	 * Create a playlist on the server, then refetch. The refetch is awaited so
-	 * the new playlist is in the snapshot by the time this resolves. Returns
-	 * the outcome instead of writing `error` to the snapshot so the dialog can
-	 * show the failure inline and stay open.
+	 * Create a playlist on the server, then re-read. The read is awaited so the
+	 * new playlist is in the snapshot by the time this resolves. Returns the
+	 * outcome instead of writing `error` to the snapshot so the dialog can show
+	 * the failure inline and stay open.
 	 */
 	async create(input: CreatePlaylistParams): Promise<MutationResult> {
-		let result;
-		try {
-			result = await bun.createPlaylist(input);
-		} catch (err) {
-			return {
-				ok: false,
-				error:
-					err instanceof Error ? err.message : "Creating the playlist failed",
-			};
-		}
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			return { ok: false, error: result.error };
-		}
-		await this.refresh();
-		return { ok: true };
+		const result = await mutate(
+			() => bun.createPlaylist(input),
+			"Creating the playlist failed",
+		);
+		if (result.ok) await libraryData.refresh();
+		return result;
 	}
 
 	/**
-	 * Edit a playlist on the server (name/cover/track list), then
-	 * refetch. Like `create`, returns the outcome so dialogs can show a
-	 * failure inline and stay open.
+	 * Edit a playlist on the server (name/cover/track list), then re-read. Like
+	 * `create`, returns the outcome so dialogs can show a failure inline and
+	 * stay open.
 	 */
 	async edit(input: EditPlaylistParams): Promise<MutationResult> {
-		let result;
-		try {
-			result = await bun.editPlaylist(input);
-		} catch (err) {
-			return {
-				ok: false,
-				error:
-					err instanceof Error ? err.message : "Editing the playlist failed",
-			};
-		}
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			return { ok: false, error: result.error };
-		}
-		await this.refresh();
-		return { ok: true };
+		const result = await mutate(
+			() => bun.editPlaylist(input),
+			"Editing the playlist failed",
+		);
+		if (result.ok) await libraryData.refresh();
+		return result;
 	}
 
 	// Membership edits send a full replacement of trackIds, so two in flight at
@@ -305,11 +237,11 @@ export class PlaylistService {
 
 	/**
 	 * Queue an edit that computes its new track list when its turn comes, from
-	 * whatever the preceding edit's refetch produced — so quick successive adds
+	 * whatever the preceding edit's re-read produced — so quick successive adds
 	 * from the picker don't each drop the one before. Nothing is shown until
 	 * the round trip lands; reordering is the exception, see `applyOrder`.
 	 *
-	 * `submitIdList` runs the same computation again against refetched state if
+	 * `submitIdList` runs the same computation again against re-read state if
 	 * the server rejects the list, which is what makes a membership edit survive
 	 * a track that died under it.
 	 */
@@ -321,19 +253,18 @@ export class PlaylistService {
 			const result = await submitIdList({
 				build: () => {
 					// A playlist this list doesn't hold is either gone from the
-					// server or not fetched yet — the refetch is what tells them
+					// server or not read yet — the re-read is what tells them
 					// apart, so leave that call to submitIdList.
 					const playlist = this.byId(playlistId);
 					if (!playlist) return "stale";
 					return buildTrackIds(playlist.trackIds) ?? "noop";
 				},
 				send: (trackIds) => this.edit({ id: playlistId, trackIds }),
-				resync: () => this.refresh(),
 				staleError: "Playlist not found.",
 			});
 			// Row menus and the add picker fire-and-forget these, so a failure
 			// also lands in the snapshot's error banner.
-			if (!result.ok) this.update({ error: result.error });
+			if (!result.ok) this.fail(result.error);
 			return result;
 		});
 	}
@@ -364,7 +295,7 @@ export class PlaylistService {
 			const error = `A playlist holds at most ${MAX_TRACKS_PER_PLAYLIST} tracks.`;
 			// Row menus and the picker fire-and-forget, so it also has to land in
 			// the banner — same reason chainMembershipEdit puts failures there.
-			this.update({ error });
+			this.fail(error);
 			return Promise.resolve({ ok: false, error });
 		}
 		return this.chainMembershipEdit(playlistId, (current) => {
@@ -427,29 +358,17 @@ export class PlaylistService {
 	}
 
 	/**
-	 * Delete a playlist on the server, then refetch. Failures land in the
+	 * Delete a playlist on the server, then re-read. Failures land in the
 	 * snapshot's `error` — the confirm dialog closes before the result
 	 * arrives, so the list banner is where the user still is.
 	 */
 	async remove(id: number): Promise<void> {
-		let result;
-		try {
-			result = await bun.deletePlaylist({ id });
-		} catch (err) {
-			this.update({
-				error:
-					err instanceof Error ? err.message : "Deleting the playlist failed",
-			});
-			return;
-		}
-		if (!result.ok) {
-			if (result.status === 401) {
-				sessionService.markExpired("Session expired — please log in again.");
-			}
-			this.update({ error: result.error });
-			return;
-		}
-		void this.refresh();
+		const result = await mutate(
+			() => bun.deletePlaylist({ id }),
+			"Deleting the playlist failed",
+		);
+		if (result.ok) void libraryData.refresh();
+		else this.fail(result.error);
 	}
 
 	private byId(playlistId: number): RemotePlaylist | undefined {
@@ -458,22 +377,15 @@ export class PlaylistService {
 		);
 	}
 
-	/** Whether any playlist references one of these track ids. */
-	private holdsAny(trackIds: ReadonlySet<string>): boolean {
-		return this.snapshot.playlists.some((playlist) =>
-			playlist.trackIds.some((trackId) => trackIds.has(trackId)),
-		);
+	private fail(error: string): void {
+		this.mutationError = error;
+		this.update({ error });
 	}
 
 	private update(patch: Partial<PlaylistsState>): void {
 		this.snapshot = { ...this.snapshot, ...patch };
 		this.subscribers.forEach((notify) => notify());
 	}
-}
-
-/** The library's track ids, for spotting the ones a refresh dropped. */
-function libraryTrackIds(): Set<string> {
-	return new Set(libraryService.getSnapshot().tracks.map((track) => track.id));
 }
 
 /** App-wide singleton — playlist state must survive component unmounts. */

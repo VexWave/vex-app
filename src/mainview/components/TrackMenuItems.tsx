@@ -33,23 +33,21 @@ export function TrackEditItem({ onSelect }: { onSelect: () => void }) {
  * no artists, a single item when it has one, and a submenu to pick from when
  * it has several.
  *
- * The track carries its artists' names, so they are matched against the artist
- * list to get something to navigate to; a name with no artist behind it (the
- * list is briefly stale right after an import) is left out rather than offered
- * as a dead entry.
+ * The track names its artists by id, and both sides come from one read, so
+ * every link resolves to an artist in `artists`.
  */
 export function TrackArtistItems({
-	artistNames,
+	artistIds,
 	artists,
 	onOpenArtist,
 }: {
-	/** The track's linked artist names (RemoteTrack.artists). */
-	artistNames: readonly string[] | undefined;
+	/** The track's linked artist ids (RemoteTrack.artistIds). */
+	artistIds: readonly number[] | undefined;
 	artists: RemoteArtist[];
 	onOpenArtist: (artistId: number) => void;
 }) {
-	const linked = artistNames
-		? artists.filter((artist) => artistNames.includes(artist.name))
+	const linked = artistIds
+		? artists.filter((artist) => artistIds.includes(artist.id))
 		: [];
 	if (linked.length === 0) return null;
 	if (linked.length === 1) {
