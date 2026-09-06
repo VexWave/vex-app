@@ -1,56 +1,56 @@
 # src/bun — the bun main process
 
-Everything that talks to the network, the filesystem or the OS. The webview reaches none of it except across the RPC boundary and through the loopback stream proxy — see the root `CLAUDE.md` for both, and for the rule that all server I/O lives here.
+Everything talk network, filesystem, OS. Webview no touch none of it except RPC boundary and loopback stream proxy — see root `CLAUDE.md` for both, and rule: all server I/O live here.
 
 | File | Role |
 | --- | --- |
-| `index.ts` | Creates the `BrowserWindow` and wires the RPC handlers. Also owns the mutual exclusion between yt-dlp's spawners and its updater, and the Windows startup resize nudge. |
-| `ApiClient.ts` | ts-rest client + session token. The only place that talks HTTP to the backend. |
-| `StreamProxy.ts` | Loopback HTTP server. Re-serves backend audio and images to the webview with the token attached, plus finished URL imports straight off disk. |
+| `index.ts` | Make `BrowserWindow`, wire RPC handlers. Also own mutual exclusion between yt-dlp spawners and updater, and Windows startup resize nudge. |
+| `ApiClient.ts` | ts-rest client + session token. Only place talk HTTP to backend. |
+| `StreamProxy.ts` | Loopback HTTP server. Re-serve backend audio and images to webview with token attached, plus finished URL imports straight off disk. |
 | `TrackCache.ts` | Byte-bounded in-memory LRU of fully-downloaded tracks. |
-| `BinaryManager.ts` | Downloads yt-dlp/ffmpeg/ffprobe/deno into a per-user bin dir. |
-| `UrlImporter.ts` | Runs yt-dlp, one job at a time. |
-| `MediaSearch.ts` | yt-dlp searches of YouTube/SoundCloud for the Discover view. |
-| `searchRanking.ts` | Pure re-ranking of one page of those hits. No I/O, no yt-dlp. |
+| `BinaryManager.ts` | Download yt-dlp/ffmpeg/ffprobe/deno into per-user bin dir. |
+| `UrlImporter.ts` | Run yt-dlp, one job at time. |
+| `MediaSearch.ts` | yt-dlp searches of YouTube/SoundCloud for Discover view. |
+| `searchRanking.ts` | Pure re-rank of one page of hits. No I/O, no yt-dlp. |
 | `ytDlp.ts` | Plumbing both yt-dlp callers share: base args, child env, output reading, field parsing, failures. |
-| `WindowChrome.ts` | Win32 FFI (`bun:ffi`) for the dark title bar and the window/taskbar icon. Windows-only, best-effort. |
-| `Uninstaller.ts` | Removes VexWave from the machine. Windows-only. |
-| `DiscordPresence.ts` | Discord Rich Presence, spoken straight to the client's local IPC socket (no library). Best-effort: no Discord running is the normal case, not a fault. |
+| `WindowChrome.ts` | Win32 FFI (`bun:ffi`) for dark title bar and window/taskbar icon. Windows-only, best-effort. |
+| `Uninstaller.ts` | Remove VexWave from machine. Windows-only. |
+| `DiscordPresence.ts` | Discord Rich Presence, speak straight to client local IPC socket (no library). Best-effort: no Discord running normal case, not fault. |
 
 ## Server I/O
 
-- **Track audio is fetched with plain `fetch`, not the ts-rest client** — the client buffers response bodies, which defeats progressive streaming and Range requests.
-- **A track's bytes are fetched once wherever they can be shared.** The element streams it and `StreamProxy` tees that into `TrackCache`; the level scan (`mainview/player/programLevel`) takes its head off the same tee through `/track/<id>/head`, falling back to a request of its own only where there is no download to join. A second consumer of a track's bytes belongs on that tee too.
-- **An image's `?v=<hash>` travels from the `getData` read through to the backend untouched.** A layer that drops it still serves the right bytes, so nothing visibly breaks — it just returns every cover to the route's uncached path.
+- **Track audio fetch with plain `fetch`, not ts-rest client** — client buffer response bodies, defeat progressive streaming and Range requests.
+- **Track bytes fetched once, wherever shareable.** Element stream it, `StreamProxy` tee into `TrackCache`; level scan (`mainview/player/programLevel`) take head off same tee through `/track/<id>/head`, fall back to own request only where no download to join. Second consumer of track bytes belong on that tee too.
+- **Image `?v=<hash>` travel from `getData` read through to backend untouched.** Layer that drop it still serve right bytes, so nothing visibly break — just return every cover to route uncached path.
 
 ## Managed binaries and yt-dlp
 
-Only Windows and macOS have a bin dir, so `BinaryManager.isSupported` is false everywhere else and both yt-dlp callers refuse up front rather than spawning a path that doesn't exist.
+Only Windows and macOS got bin dir, so `BinaryManager.isSupported` false everywhere else and both yt-dlp callers refuse up front rather than spawn path that no exist.
 
-- **Importer and yt-dlp updater mutually exclude each other** — Windows can't overwrite a running exe. `ytDlpBusyReason` (`index.ts`) is the one place that knows the full set of spawners, so a new one belongs there.
-- **Every yt-dlp call passes `--encoding UTF-8`** (`YT_DLP_BASE_ARGS`, spread into each argument list so a new caller can't forget it) — without it Windows mangles accents in `--print` output.
-- **A URL import captures exactly one artist**, the uploader. Platforms pack co-credits into a single string with per-platform separators, and every attempt to split them was worse.
-- Creator avatars are YouTube-only and best-effort, and the lookup must hit the channel's `/about` page — a bare channel URL returns the first *video's* thumbnails instead.
+- **Importer and yt-dlp updater mutually exclude each other** — Windows can't overwrite running exe. `ytDlpBusyReason` (`index.ts`) one place know full set of spawners, new one belong there.
+- **Every yt-dlp call pass `--encoding UTF-8`** (`YT_DLP_BASE_ARGS`, spread into each argument list so new caller can't forget it) — without it Windows mangle accents in `--print` output.
+- **URL import capture exactly one artist**, the uploader. Platforms pack co-credits into single string with per-platform separators, every attempt split them worse.
+- Creator avatars YouTube-only and best-effort, lookup must hit channel `/about` page — bare channel URL return first *video's* thumbnails instead.
 
 ## Discover search
 
-- **A search answers from inside its RPC request** (`--flat-playlist`, so no entry is resolved); downloads still can't. One search runs at a time — a new query kills the one still running, which then fails as superseded.
-- **A search's exit code doesn't decide whether it succeeded**: yt-dlp reports an unavailable entry or a failed continuation page by exit code while the hits it did resolve are already on stdout.
-- **`searchRanking.ts` never filters**, only reorders, so a demoted hit is still two rows away. Its weights are only comparable to each other — moving one means re-checking the rest against real pages.
-- **YouTube Music is not a search source**: its flat entries carry only an id and a title — nothing a result card draws — and filling those in would cost one extraction per result.
+- **Search answer from inside its RPC request** (`--flat-playlist`, so no entry resolved); downloads still can't. One search run at time — new query kill one still running, then fail as superseded.
+- **Search exit code no decide success**: yt-dlp report unavailable entry or failed continuation page by exit code while hits it did resolve already on stdout.
+- **`searchRanking.ts` never filter**, only reorder, so demoted hit still two rows away. Weights only comparable to each other — move one mean re-check rest against real pages.
+- **YouTube Music not search source**: flat entries carry only id and title — nothing result card draw — filling those in cost one extraction per result.
 
 ## Discord Rich Presence
 
-- **Discord is given the *backend's* cover URL, never the app's own.** Activity images are fetched by Discord's media proxy from the public internet, so the webview's loopback URL is worthless here; a backend on loopback, a private range or a local-only name is dropped for the logo asset, a URL Discord can't fetch rendering as a broken tile.
-- **Rich Presence needs an application id**, hardcoded as `APPLICATION_ID` — not a secret, since it rides in every payload, and a packaged build has no shell to read an override from.
-- **The switch is the webview's** (`@/api/PresenceService`): bun keeps no copy and no default, and connects only once told. Off drops the socket and stops the sweeps — closing the socket is also what clears the card, so nothing is sent on the way out. `setEnabled` returns the resulting connection state as the request's answer; `onStatus` pushes only what Discord does on its own.
-- **A live socket is not an accepted card.** Discord answers a command under the nonce it was sent with, and can take the connection while refusing the activity — activity privacy off, a payload it won't render. That reply is the only place the difference appears.
-- **The card exists only while a track is playing** — no paused state and no idle one, so `PresenceTrack` carries no play/pause flag: its presence *is* the playing state.
-- **Sends are spaced by two timers**: a 1 s debounce, and a 5 s floor keeping SET_ACTIVITY inside its 5-updates-per-20-seconds budget.
+- **Discord given *backend's* cover URL, never app's own.** Activity images fetched by Discord media proxy from public internet, so webview loopback URL worthless here; backend on loopback, private range or local-only name dropped for logo asset, URL Discord can't fetch render as broken tile.
+- **Rich Presence need application id**, hardcoded as `APPLICATION_ID` — not secret, since it ride in every payload, packaged build got no shell to read override from.
+- **Switch belong to webview** (`@/api/PresenceService`): bun keep no copy and no default, connect only once told. Off drop socket and stop sweeps — closing socket also what clear card, so nothing sent on way out. `setEnabled` return resulting connection state as request answer; `onStatus` push only what Discord do on its own.
+- **Live socket not accepted card.** Discord answer command under nonce it sent with, and can take connection while refuse activity — activity privacy off, payload it won't render. That reply only place difference appear.
+- **Card exist only while track playing** — no paused state, no idle one, so `PresenceTrack` carry no play/pause flag: its presence *is* playing state.
+- **Sends spaced by two timers**: 1 s debounce, and 5 s floor keep SET_ACTIVITY inside its 5-updates-per-20-seconds budget.
 
 ## Windows
 
-- **The title bar and window icon are set by us, not Electrobun** (`WindowChrome.ts`): the caption would otherwise come up in the *system* theme beside an app that is always dark, and Electrobun's build step fails to embed `build.win.icon` (rcedit is resolved from a path baked into their CI). The icon is loaded at runtime from `Resources/app.ico`, which the build does produce. All best-effort.
-- **The app can't delete its own install** (`Uninstaller.ts`), so the uninstall hands a script to a detached helper and quits — Windows holds an executing image open. **Quitting is part of the removal**: `index.ts` exits outright, not through `app.quit()`. The yt-dlp updater's exclusions guard it too.
-- **What it deletes is proved, not computed**: the running executable has to sit inside the directory `version.json` names before anything is removed. That is also what makes a dev build refuse, and the settings panel absent there.
-- **The window is resized by 1px and back once the webview is up** (`index.ts`) — bundled CEF paints its first frame before it has settled on the monitor's device scale factor, so at any scaling other than 100% the layout comes up zoomed and clipped until something forces a recompute. Timed off `dom-ready`, with a 2 s fallback.
+- **Title bar and window icon set by us, not Electrobun** (`WindowChrome.ts`): caption would otherwise come up in *system* theme beside app always dark, and Electrobun build step fail embed `build.win.icon` (rcedit resolved from path baked into their CI). Icon loaded at runtime from `Resources/app.ico`, which build do produce. All best-effort.
+- **App can't delete own install** (`Uninstaller.ts`), so uninstall hand script to detached helper and quit — Windows hold executing image open. **Quitting part of removal**: `index.ts` exit outright, not through `app.quit()`. yt-dlp updater exclusions guard it too.
+- **What it delete proved, not computed**: running executable must sit inside directory `version.json` name before anything removed. That also what make dev build refuse, and settings panel absent there.
+- **Window resized by 1px and back once webview up** (`index.ts`) — bundled CEF paint first frame before settle on monitor device scale factor, so at any scaling other than 100% layout come up zoomed and clipped until something force recompute. Timed off `dom-ready`, with 2 s fallback.

@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file guide Claude Code (claude.ai/code) when it work with code in this repo.
 
-Layout, the rules that hold across both halves of the app, and the conventions every file follows. What only one half needs lives beside that half, in a `CLAUDE.md` that loads with the first file opened under it:
+Layout, rules that hold for both halves of app, and conventions every file follow. What only one half need live beside that half, in `CLAUDE.md` that load when first file open under it:
 
 | File | Covers |
 | --- | --- |
@@ -11,57 +11,57 @@ Layout, the rules that hold across both halves of the app, and the conventions e
 | `src/mainview/player/CLAUDE.md` | the playback core: queue, transport, shuffle |
 | `src/mainview/api/CLAUDE.md` | the webview's services |
 
-**Keep these files short.** They carry structure, rules that span files, and what the code can't say on its own — never a walkthrough of how a module works, and never its history. Why a given line takes the form it does belongs in a comment beside that line.
+**Keep these files short.** They carry structure, rules that span files, and what code no can say by itself — never walkthrough how module work, never its history. Why a line take its shape belong in comment beside that line.
 
 ## What this is
 
-A desktop **music player** built with **Electrobun** (NOT Electron — do not use Electron APIs or patterns; see `llms.txt`).
+A desktop **music player** built with **Electrobun** (NOT Electron — no use Electron APIs or patterns; see `llms.txt`).
 
-Entirely server-backed: a blocking login screen asks for a backend's address (an `http://` or `https://` URL) plus credentials, and every track in the queue streams from that server. Local files are uploaded and re-enter the queue via a library refresh; YouTube/SoundCloud URLs are imported through a bundled yt-dlp, which also powers the Discover view's search. Tracks, artists and playlists are CRUD-managed against the backend. The API contract (ts-rest + zod v4) is `contract/contract.ts` — read it for the routes.
+All server-backed: blocking login screen ask for backend's address (an `http://` or `https://` URL) plus credentials, and every track in queue stream from that server. Local files get upload and re-enter queue through library refresh; YouTube/SoundCloud URLs get import through bundled yt-dlp, same tool also power Discover view's search. Tracks, artists and playlists get CRUD-managed against backend. API contract (ts-rest + zod v4) is `contract/contract.ts` — read it for routes.
 
 ## Commands
 
-- **bun only** — npm and node are not installed on this machine, which is why the shadcn CLI can't run; its components are vendored by hand into `src/mainview/components/ui/`.
-- `bun run dev:hmr` — the one to develop with: Vite HMR on 5173 alongside the app. `bun run start` runs from bundled assets instead.
-- `bun run release` — the whole release procedure: picks the next version, tags main's current commit and pushes it. Only a pushed `v*` tag builds stable; nothing else in CI does.
-- `bun run build:installer:stable` / `build:installer:canary` — what CI runs: a channel's build plus `scripts/fuse-installer.ts`, which folds electrobun's Windows installer set into one self-contained exe in `installers/`. Both build the UI first, and the two channels' names differ, so they coexist.
-- **`dev` and `build:stable` skip the Vite build**, unlike `start` and `build:canary` — they ship whatever `dist/` already held, which is a stale UI if the webview changed since.
-- `bunx tsc --noEmit` — type-check (no test framework or linter exists yet). **`scripts/` is a second project** (`bunx tsc --noEmit -p scripts`): the root config's `DOM` lib collides with bun's own globals over `Response`/`BodyInit`.
+- **bun only** — npm and node not installed on this machine, this why shadcn CLI no can run; its components get vendored by hand into `src/mainview/components/ui/`.
+- `bun run dev:hmr` — the one to develop with: Vite HMR on 5173 alongside app. `bun run start` run from bundled assets instead.
+- `bun run release` — whole release procedure: pick next version, tag main's current commit and push it. Only pushed `v*` tag build stable; nothing else in CI do.
+- `bun run build:installer:stable` / `build:installer:canary` — what CI run: channel's build plus `scripts/fuse-installer.ts`, which fold electrobun's Windows installer set into one self-contained exe in `installers/`. Both build UI first, and two channels' names differ, so they coexist.
+- **`dev` and `build:stable` skip the Vite build**, unlike `start` and `build:canary` — they ship whatever `dist/` already hold, which be stale UI if webview change since.
+- `bunx tsc --noEmit` — type-check (no test framework or linter exist yet). **`scripts/` is second project** (`bunx tsc --noEmit -p scripts`): root config's `DOM` lib collide with bun's own globals over `Response`/`BodyInit`.
 - `bun run scripts/test-server.ts` — throwaway backend for manual end-to-end testing (`test`/`test` on port 8790).
-- The README is a showcase page and documents no commands; `package.json` is the only reference.
+- README be showcase page, document no commands; `package.json` be only reference.
 
 ## The two contexts
 
-A **bun main process** (`src/bun/`) and a **React 18 webview** (`src/mainview/`), with `src/shared/` holding what both may import.
+A **bun main process** (`src/bun/`) and a **React 18 webview** (`src/mainview/`), with `src/shared/` hold what both may import.
 
-**All server I/O runs bun-side** — the webview never issues HTTP to the backend (avoiding CORS entirely) and never learns its address. Anything the UI needs from the network arrives over RPC or through a `StreamProxy` loopback URL.
+**All server I/O run bun-side** — webview never send HTTP to backend (this avoid CORS entirely) and never learn its address. Anything UI need from network arrive over RPC or through `StreamProxy` loopback URL.
 
 ### RPC boundary
 
 Schema in `src/shared/rpcSchema.ts`, webview singleton in `src/mainview/api/rpc.ts`.
 
-- `rpcSchema.ts` is **not** under the `@/` alias — import it by relative path. Its type-only imports are what keep it safe for both contexts.
-- Both `defineRPC` calls set `maxRequestTime: 120_000`; Electrobun's 1 s default is far too short for uploads.
-- Work that outlives even that (binary installs, URL imports) returns from its RPC immediately and streams progress as pushed messages.
-- A 401 returns to the login screen. The stream path has no RPC to carry one, so bun pushes `sessionExpired` instead.
-- **A 429 is waited out, never retried into.** `Retry-After` rides the failure as `RpcFailure.retryAfterSec`; nothing in the app retries itself.
-- `presenceChanged` is the only thing pushed *to* bun rather than requested: nothing is returned and nothing waits on it, and a dropped update is corrected by the next one. **State that can't correct itself that way is a request** — which is why the presence switch is `setPresenceEnabled`, answered with the connection it left behind.
+- `rpcSchema.ts` is **not** under `@/` alias — import it by relative path. Its type-only imports be what keep it safe for both contexts.
+- Both `defineRPC` calls set `maxRequestTime: 120_000`; Electrobun's 1 s default be far too short for uploads.
+- Work that outlive even that (binary installs, URL imports) return from its RPC right away and stream progress as pushed messages.
+- A 401 send back to login screen. Stream path have no RPC to carry one, so bun push `sessionExpired` instead.
+- **A 429 get waited out, never retried into.** `Retry-After` ride the failure as `RpcFailure.retryAfterSec`; nothing in app retry itself.
+- `presenceChanged` be only thing pushed *to* bun rather than requested: nothing return and nothing wait on it, and dropped update get corrected by next one. **State that no can correct itself that way be a request** — this why presence switch be `setPresenceEnabled`, answered with connection it leave behind.
 
 ### Payload ceilings
 
-- **`src/shared/limits.ts` mirrors the contract's bounds rather than importing them** — importing `contract/contract.ts` webview-side would pull zod and `Buffer` into the browser bundle and hand the webview the address it is kept ignorant of. `ApiClient` checks the mirror against the contract at startup and throws on a disagreement.
-- **A payload over a ceiling is refused before it is encoded** (`UploadService.enqueue`, every image picker), not when the server answers 413. The 413 branch survives for a server holding a tighter line than the contract, and defers to that server's own message.
+- **`src/shared/limits.ts` mirror the contract's bounds rather than importing them** — importing `contract/contract.ts` webview-side would pull zod and `Buffer` into browser bundle and hand webview the address it be kept ignorant of. `ApiClient` check mirror against contract at startup and throw on disagreement.
+- **A payload over ceiling get refused before it get encoded** (`UploadService.enqueue`, every image picker), not when server answer 413. The 413 branch survive for server holding tighter line than contract, and defer to that server's own message.
 
 ## Conventions
 
-- **Comments carry what the code can't**, in as few words as the point takes: why a piece of code exists in the form it does — a constant's reasoning, a spec behaviour, a constraint from somewhere else in the app. What it *does* is already on the line below, and repeating that is noise.
-- **The reader to write for is an agent about to change the line.** A comment earns its place by carrying structure, or what has to be known *before* the code is read — never what reading the code would have said. Where nothing is left to say, say nothing.
-- **Write comments in the present tense, about what is there.** State the reason directly rather than through what a thing replaced, no longer does, was tried first, or would do if written another way. History belongs in commit messages. The same goes for these files.
+- **Comments carry what code no can**, in few words as point take: why piece of code exist in form it do — a constant's reasoning, spec behaviour, constraint from somewhere else in app. What it *do* already on line below, repeating that be noise.
+- **The reader to write for be an agent about to change the line.** A comment earn its place by carrying structure, or what must be known *before* code get read — never what reading code would have said. Where nothing left to say, say nothing.
+- **Write comments in present tense, about what be there.** State reason direct rather than through what thing replaced, no longer do, tried first, or would do if written another way. History belong in commit messages. Same go for these files.
 - `@/` path alias → `src/mainview/` (defined in both `tsconfig.json` and `vite.config.ts`; keep them in sync).
 - Tabs for indentation.
-- `@types/three` is a required devDependency only because electrobun's own source imports `three`; without it `tsc` fails inside `node_modules/electrobun`.
+- `@types/three` be required devDependency only because electrobun's own source import `three`; without it `tsc` fail inside `node_modules/electrobun`.
 
 ## Gotchas
 
-- **`win.bundleCEF: true` is intentional** — the system WebView2 path renders blurry on HiDPI because Electrobun's launcher declares no DPI awareness (open bug: https://github.com/blackboardsh/electrobun/issues/324), and bundled CEF sets its own. The same issue is what the startup resize nudge in `src/bun/index.ts` works around. Side effect: a one-time Windows location-permission prompt.
-- Electrobun's real docs are https://framework.blackboard.sh/electrobun/ and https://github.com/blackboardsh/electrobun — the `blackboard.sh/electrobun/*` URLs in `llms.txt` redirect to a marketing SPA.
+- **`win.bundleCEF: true` be intentional** — system WebView2 path render blurry on HiDPI because Electrobun's launcher declare no DPI awareness (open bug: https://github.com/blackboardsh/electrobun/issues/324), and bundled CEF set its own. Same issue be what startup resize nudge in `src/bun/index.ts` work around. Side effect: one-time Windows location-permission prompt.
+- Electrobun's real docs be https://framework.blackboard.sh/electrobun/ and https://github.com/blackboardsh/electrobun — the `blackboard.sh/electrobun/*` URLs in `llms.txt` redirect to marketing SPA.

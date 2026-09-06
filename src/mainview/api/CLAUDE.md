@@ -1,39 +1,39 @@
 # src/mainview/api — the webview's services
 
-`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`/`Uninstall`. All are module-level singletons exposed to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as the player core. **Add new state here, not in component-local state.**
+`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`/`Uninstall`. All module-level singleton, show to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as player core. **New state go here, not component-local state.**
 
-Three modules here are not services: `rpc.ts`, the Electroview singleton (`bun.…` for requests, `onBunMessage` for pushed messages, `notifyBun.…` for fire-and-forget), `LibraryData.ts` (below), and `idListEdit.ts` (below).
+Three module here not service: `rpc.ts`, Electroview singleton (`bun.…` for request, `onBunMessage` for pushed message, `notifyBun.…` for fire-and-forget), `LibraryData.ts` (below), `idListEdit.ts` (below).
 
-**`LibraryData` is the only thing in the app that reads the library.** One `getLibrary` call answers with tracks, artists and playlists from a single server snapshot; `Library`/`Artist`/`Playlist` each derive their snapshot from it and hold nothing but what is theirs on top — the name sort, a reorder in flight, their own last mutation's error. That store clears on logout and re-reads on login, keyed off `SessionService`'s status; nothing else has a session lifecycle of its own. **A mutation re-reads rather than patching locally**, because the server assigns ids and drops what a delete took with it — and because an image URL names the version of the bytes behind it, that read is also the whole of how a replaced cover or avatar reaches the screen. One read means one error and one spinner: a failed one shows in all three views, which is honest.
+**`LibraryData` only thing in app that read library.** One `getLibrary` call answer with tracks, artists, playlists from single server snapshot; `Library`/`Artist`/`Playlist` each derive snapshot from it, hold nothing but own stuff on top — name sort, reorder in flight, own last mutation error. Store clear on logout, re-read on login, keyed off `SessionService` status; nothing else got session lifecycle of own. **Mutation re-read rather than patch locally**, because server assign ids and drop what delete take with it — and because image URL name version of bytes behind it, that read also whole way replaced cover or avatar reach screen. One read mean one error and one spinner: failed one show in all three view, that honest.
 
 ## Track identity and ordering
 
-- **A track id is a uuid, so the library's "newest first" order comes from the server's order, not from the id.** `getData` is contractually oldest-first and `LibraryService.apply` reverses it. Artists and playlists still have serial ids.
-- **No write route returns the id it assigned**, so whatever a client just created it has to find in the next read: `LibraryService.newestSince` for a track, `ArtistService.resolveOrCreate` by name for an artist.
-- **A `Track` carries the server's id unchanged — it is not namespaced.** `LibraryService.toTrack` is the only place a `Track` is made, so there is no second kind of track id for a prefix to tell it apart from.
+- **Track id is uuid, so library "newest first" order come from server order, not from id.** `getData` contractually oldest-first, `LibraryService.apply` reverse it. Artists and playlists still got serial ids.
+- **No write route return id it assigned**, so whatever client just made, it gotta find in next read: `LibraryService.newestSince` for track, `ArtistService.resolveOrCreate` by name for artist.
+- **`Track` carry server id unchanged — not namespaced.** `LibraryService.toTrack` only place `Track` made, so no second kind of track id for prefix to tell apart.
 
 ## Collections
 
-- **A collection is played through its own service, never by a component reaching `playerController`** — the queue context id it plays under is the one that service syncs against on every later read.
-- **An artist's tracks are joined by id**: a track carries its artists' ids (`RemoteTrack.artistIds`), and both sides arrive in one read, so two artists sharing a name keep separate track lists and no window exists where the two disagree. The names on a track's credit line are joined in by `LibraryService`, which owns the id→tracks index the artist view projects through.
-- **An artist's collection is re-derived from the library; a playlist's membership is its own.** Both are indices `LibraryService` builds once per read (`tracksOfArtist`, `tracksByIds`), not a pass over the library per artist or per playlist.
+- **Collection played through own service, never component reach `playerController`** — queue context id it play under is one that service sync against on every later read.
+- **Artist tracks joined by id**: track carry its artists' ids (`RemoteTrack.artistIds`), both side arrive in one read, so two artist sharing name keep separate track list, no window where two disagree. Names on track credit line joined in by `LibraryService`, which own id→tracks index artist view project through.
+- **Artist collection re-derived from library; playlist membership own thing.** Both index `LibraryService` build once per read (`tracksOfArtist`, `tracksByIds`), not pass over library per artist or per playlist.
 
 ## Writes that replace a whole list of ids
 
-- **Submitted as an intent, not as a list** — `submitIdList` (`idListEdit.ts`), used by playlist membership edits and by unlinking a track from an artist. The server validates such a list as a unit, and ids die behind the client's back (deleting a track drops it from every playlist), so handing over a `build` that recomputes the list from current state is what lets a rejection be answered by re-reading rather than by failing at the user. It re-reads on its own — there is one read to re-run, so no caller chooses. **A new collection's membership edits take the same shape.**
-- **Dialog writes and playlist reordering stay off that path deliberately.** A dialog reports its failure inline for the user to resubmit — silently re-sending a selection they authored, minus whatever died under it, would change what they asked for. Reordering keeps `applyOrder`, whose in-flight order is identified by array identity that a rebuilt array would break.
-- **Reordering is applied locally before the server confirms it** (`PlaylistService.applyOrder`), the only membership edit that is: a drag has to land where it was dropped. The list keeps showing the locally held order until the last reorder settles, or an earlier one's read would undo a later one still in flight.
+- **Submit as intent, not as list** — `submitIdList` (`idListEdit.ts`), used by playlist membership edit and by unlink track from artist. Server validate such list as unit, and ids die behind client back (delete track drop it from every playlist), so hand over `build` that recompute list from current state is what let rejection answer by re-read rather than fail at user. Re-read on own — one read to re-run, so no caller choose. **New collection membership edit take same shape.**
+- **Dialog write and playlist reorder stay off that path on purpose.** Dialog report failure inline for user to resubmit — silent re-send selection they wrote, minus whatever died under it, would change what they ask for. Reorder keep `applyOrder`, whose in-flight order identified by array identity that rebuilt array would break.
+- **Reorder applied locally before server confirm it** (`PlaylistService.applyOrder`), only membership edit that so: drag gotta land where dropped. List keep showing locally held order till last reorder settle, or earlier one's read would undo later one still in flight.
 
 ## Uploads, imports, session
 
-- **An upload drops its pending placeholder only once the following library read confirms the track landed**, so a failed read doesn't lose it.
-- **An imported track starts playing once its upload lands, and it is the only upload that does** (`EnqueueOptions.playWhenReady`) — a download the user went and asked for is one they asked to hear.
-- **At most one import job exists per URL**, which is what makes a URL enough to identify a download: a Discover card finds its own by matching `ImportJob.url` through the same `parseImportUrl` normalization.
-- Imports and Discover results are **not** session-scoped — nothing about a download touches the backend until the upload step, so both survive a logout.
-- **The whole queue is cleared on logout** (`LibraryService` does it, on the status change that empties `LibraryData`) — every stream URL is session-scoped. **Log out is local only**: it drops the stored token and the bun session without revoking anything server-side.
+- **Upload drop pending placeholder only once following library read confirm track landed**, so failed read don't lose it.
+- **Imported track start playing once its upload land, only upload that do** (`EnqueueOptions.playWhenReady`) — download user went and asked for is one they ask to hear.
+- **At most one import job per URL**, what make URL enough to identify download: Discover card find own by matching `ImportJob.url` through same `parseImportUrl` normalization.
+- Imports and Discover result **not** session-scoped — nothing about download touch backend till upload step, so both survive logout.
+- **Whole queue cleared on logout** (`LibraryService` do it, on status change that empty `LibraryData`) — every stream URL session-scoped. **Log out local only**: it drop stored token and bun session without revoke anything server-side.
 
 ## Navigation and presence
 
-- `UninstallService` is the one service that fetches on a component mount rather than off a session change, and asks once: whether this copy is an installed one is a fact about the computer, so a logout leaves it alone.
-- `NavigationService` holds the current view and the item opened in it, so any component can navigate and logging out can reset it. **Views are grouped into sections**, and `SECTION_OF` is where a new view declares itself; only structure lives there, labels and glyphs being `components/Sections`'. **A section is switched to rather than navigated to**, so each resumes the view it was last on.
-- `PresenceService` is the odd one: the only service whose state is mostly *outbound*. It narrows the player's several-times-a-second notifications down to the changes Discord would render and sends `null` for a pause (there is no paused presence — see `src/bun/CLAUDE.md`). **The on/off switch is the app's, not bun's** — a user preference, so it is persisted here and announced to a bun process that keeps no copy. That announcement is a request, not a push: a track update that goes missing is corrected by the next one, a switch that goes missing is not.
+- `UninstallService` one service that fetch on component mount rather than off session change, and ask once: whether this copy installed one is fact about computer, so logout leave it alone.
+- `NavigationService` hold current view and item opened in it, so any component can navigate and logout can reset it. **Views grouped into sections**, and `SECTION_OF` where new view declare self; only structure live there, labels and glyphs being `components/Sections`'. **Section switched to rather than navigated to**, so each resume view last on.
+- `PresenceService` odd one: only service whose state mostly *outbound*. Narrow player several-times-a-second notification down to change Discord would render, send `null` for pause (no paused presence — see `src/bun/CLAUDE.md`). **On/off switch app's, not bun's** — user preference, so persisted here and announced to bun process that keep no copy. That announcement request, not push: track update that go missing corrected by next one, switch that go missing not.
