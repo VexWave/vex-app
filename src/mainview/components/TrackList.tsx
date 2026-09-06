@@ -19,7 +19,6 @@ import { useTrackActions } from "@/hooks/useTrackActions";
 import { useUploads } from "@/hooks/useUploads";
 import { formatTime, trackCountLabel } from "@/lib/utils";
 
-/** Case-insensitive "does any of these fields contain the query" test. */
 function matches(query: string, ...fields: (string | undefined)[]): boolean {
 	if (!query) return true;
 	const needle = query.toLowerCase();
@@ -30,19 +29,12 @@ export function TrackList() {
 	const { state } = usePlayer();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
-	// For the rows' "Go to artist" entry: the ids a track carries have to be
-	// resolved against the artist list to become somewhere to navigate.
 	const { artists } = useArtists();
 	const { uploads } = useUploads();
 	const { imports } = useImports();
-	// Edit/delete/playlist actions and the dialogs they open, rendered once
-	// for the whole list; the row menus just call into them.
 	const actions = useTrackActions();
-	// Purely a view filter over the library list — it never trims the list
-	// itself, so playback and the numbering keep using the library index.
 	const [query, setQuery] = useState("");
 	const tracks = library.tracks;
-	// Playing a library row makes the whole library the queue, in its order.
 	const playTrackAt = useCallback(
 		(index: number) => libraryService.play(index),
 		[],
@@ -52,8 +44,6 @@ export function TrackList() {
 		() => tracks.reduce((sum, track) => sum + track.durationSec, 0),
 		[tracks],
 	);
-	// Pair each track with its library index *before* filtering: the row plays
-	// `index`, so a filtered-list position would start the wrong track.
 	const visible = useMemo(
 		() =>
 			tracks
@@ -70,9 +60,6 @@ export function TrackList() {
 		matches(query, upload.title),
 	);
 
-	// The now-playing highlight belongs to the collection the queue mirrors:
-	// a track playing from a playlist is that playlist's business, not the
-	// library row's, even though both render the same track.
 	const ownsQueue = state.queueContextId === LIBRARY_QUEUE_CONTEXT;
 
 	const isEmpty =
@@ -82,10 +69,6 @@ export function TrackList() {
 		visible.length === 0 &&
 		visibleImports.length === 0 &&
 		visibleUploads.length === 0;
-	// Before the first read lands there is nothing to say about the library yet,
-	// so it spins rather than claiming to be empty — same as the artists and
-	// playlists views. `isEmpty`, not the track count: an upload or import in
-	// flight is something to show, and a read fires while both are pending.
 	const firstLoad = library.loading && isEmpty;
 
 	return (
@@ -111,9 +94,6 @@ export function TrackList() {
 					<Loader2 className="h-6 w-6 animate-spin" />
 				</div>
 			) : isEmpty ? (
-				// An empty library is where Discover is most worth offering. The button
-				// takes its label and glyph from the section table, so it names the
-				// same place the switch's segment does.
 				<EmptyState
 					framed
 					icon={<Music className="h-9 w-9" />}
@@ -151,10 +131,6 @@ export function TrackList() {
 						{visible.map(({ track, index }) => {
 							const isCurrent =
 								ownsQueue && track.id === state.currentTrack?.id;
-							// The row's server-side facts: its id (playlist membership
-							// is keyed by it) and its artist ids. Both keep their
-							// identity until the next library read, so handing them
-							// to a memoized row costs it no re-renders.
 							const remote = libraryService.getRemote(track.id);
 							return (
 								<li key={track.id}>

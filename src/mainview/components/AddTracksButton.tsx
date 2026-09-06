@@ -6,8 +6,6 @@ import { HeaderAction } from "@/components/HeaderAction";
 export function AddTracksButton() {
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	// Picked files are uploaded to the server; they appear in the queue as
-	// streaming tracks once the upload completes.
 	const handleFiles = (files: FileList | null) => {
 		if (!files || files.length === 0) return;
 		uploadService.enqueue(files);

@@ -11,17 +11,6 @@ import { ContextMenuSeparator } from "@/components/ui/context-menu";
 import type { RemoteArtist, RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
-/**
- * A library row: the shared TrackRow plus the full set of track actions.
- * Playing it starts the whole library at this track's index.
- *
- * Memoized: TrackList re-renders on every player timeupdate and on every
- * import/upload progress tick, and without this each of those rebuilt every
- * row (incl. a Radix ContextMenu apiece). All props are referentially stable
- * across those ticks except the booleans, which only change for rows
- * entering/leaving the current-track state (the `playlists` array and the
- * callbacks only change on the rare library/playlist refresh).
- */
 export const LibraryTrackRow = memo(function LibraryTrackRow({
 	track,
 	index,
@@ -38,9 +27,7 @@ export const LibraryTrackRow = memo(function LibraryTrackRow({
 	onOpenArtist,
 }: {
 	track: Track;
-	/** Position in the library — what playback addresses, not the row number. */
 	index: number;
-	/** The track's linked artist ids, for the "Go to artist" entry. */
 	artistIds: readonly number[] | undefined;
 	isCurrent: boolean;
 	showBars: boolean;

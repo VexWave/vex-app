@@ -13,7 +13,6 @@ import type { PlayerRPC, RpcFailure } from "../shared/rpcSchema";
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 
-// Check if Vite dev server is running for HMR
 async function getMainViewUrl(): Promise<string> {
 	const channel = await Updater.localInfo.channel();
 	if (channel === "dev") {
@@ -30,16 +29,9 @@ async function getMainViewUrl(): Promise<string> {
 	return "views://mainview/index.html";
 }
 
-// Create the main application window
 const url = await getMainViewUrl();
 
 const api = new ApiClient();
-// A 401 on a stream request means the token is dead: drop it bun-side and
-// push the expiry to the webview (media errors carry no HTTP status, so the
-// webview can't detect this itself). `rpc` is initialized below; streams
-// can't run before it exists because logging in requires the RPC.
-// Explicit types break the streamProxy ↔ importer inference cycle (each one's
-// constructor closes over the other).
 const streamProxy: StreamProxy = new StreamProxy(
 	api,
 	() => {
@@ -48,23 +40,12 @@ const streamProxy: StreamProxy = new StreamProxy(
 			reason: "Session expired — please log in again.",
 		});
 	},
-	// Forward reference: import files are only requested after an import
-	// finished, so `importer` exists long before this resolver ever runs.
 	(importId) => importer.filePathFor(importId),
 );
 
-// Same forward-reference pattern as StreamProxy: progress messages only flow
-// after the webview kicks off an install over RPC, so `rpc` exists by then.
 const binaryManager = new BinaryManager((msg) => rpc.send.binaryProgress(msg));
 binaryManager.startUpdateCheckIfInstalled();
 
-// Cover URLs are built against the live backend address: Discord fetches
-// activity images from its own servers, so it needs the backend's real
-// (public) URL rather than the loopback proxy one the webview uses.
-//
-// Nothing starts it here: the webview owns the setting and switches it on. The
-// forward reference to `rpc` is the same pattern as elsewhere — an unasked-for
-// status can only follow a connection the webview asked for.
 const discordPresence = new DiscordPresence(
 	() => api.auth?.baseUrl ?? null,
 	(status) => rpc.send.presenceStatus(status),
@@ -82,14 +63,8 @@ const uninstaller = new Uninstaller(
 	binaryManager.isSupported ? binaryManager.binDir : null,
 );
 
-/** How long the uninstall's answer has to reach the webview before the app goes. */
 const QUIT_DELAY_MS = 500;
 
-/**
- * Why the yt-dlp updater can't run, or null when it can. Windows refuses to
- * overwrite a running exe, so the updater excludes every spawner of it — this is
- * the one place that knows the full set, and a new spawner belongs here.
- */
 function ytDlpBusyReason(): string | null {
 	if (importer.isActive) {
 		return "A URL import is running — try again when it's done.";
@@ -100,8 +75,6 @@ function ytDlpBusyReason(): string | null {
 	return null;
 }
 
-/** The other direction of the same exclusion: nothing may spawn yt-dlp while
- * the binaries are being replaced on disk. */
 function unlessInstalling<T>(run: () => T): T | RpcFailure {
 	return binaryManager.isBusy
 		? { ok: false, error: "Components are updating — try again in a moment." }
@@ -109,22 +82,16 @@ function unlessInstalling<T>(run: () => T): T | RpcFailure {
 }
 
 const rpc = BrowserView.defineRPC<PlayerRPC>({
-	// Default is 1s; logins and multi-MB uploads need far more.
+	// Electrobun's default is 1s; logins and multi-MB uploads need far more.
 	maxRequestTime: 120_000,
 	handlers: {
 		requests: {
 			login: (params) => api.login(params),
 			restoreSession: (params) => api.restoreSession(params),
-			// Local sign-out: forget the session bun-side. The server token isn't
-			// revoked (the webview just drops its persisted copy); the cache is
-			// left intact so re-logging in with the same token keeps its downloads
-			// (StreamProxy wipes it only on an auth-key change).
 			logout: () => {
 				api.expireSession();
 				return { ok: true as const };
 			},
-			// `streamProxy` satisfies `ProxyUrls` structurally: what crosses to
-			// the webview is loopback URLs, never the backend's own.
 			getLibrary: () => api.getLibrary(streamProxy),
 			uploadTrack: (params) => api.uploadTrack(params),
 			deleteTrack: async (params) => {
@@ -160,17 +127,11 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
 			setPresenceEnabled: ({ enabled }) => discordPresence.setEnabled(enabled),
 			canUninstall: async () => ({ removable: await uninstaller.removable() }),
-			// The yt-dlp updater's exclusions, for the same reason: a spawned
-			// yt-dlp holds an executable open inside a directory about to go.
 			uninstallApp: async () => {
 				const busy = ytDlpBusyReason();
 				if (busy) return { ok: false as const, error: busy };
 				return unlessInstalling(async () => {
 					const result = await uninstaller.start();
-					// The helper can't finish until this process releases its files, so
-					// going down is part of the removal. `process.exit` rather than
-					// `app.quit()`, whose five-second shutdown wait has nothing left to
-					// do here.
 					if (result.ok) setTimeout(() => process.exit(0), QUIT_DELAY_MS);
 					return result;
 				});
@@ -198,19 +159,11 @@ export const mainWindow = new BrowserWindow({
 	rpc,
 });
 
-// Dark title bar + window icon on Windows; both are outside Electrobun's API.
 applyWindowChrome(mainWindow, WINDOW_TITLE);
 
-// Windows + bundled CEF paints its first frame before CEF has settled on the
-// monitor's device scale factor, so on HiDPI displays (scaling != 100%) the
-// initial layout is "zoomed in" with the window edges clipped until the first
-// manual resize forces CEF to recompute its scale against the real client rect.
-// Nudge the window size by 1px and back to trigger that recompute before the
-// user sees it. Timed off the webview's dom-ready (the page's load event, i.e.
-// CEF is actually rendering) rather than a fixed delay — on slow starts a
-// timer fires before CEF is up and the nudge does nothing. See the DPI gotcha
-// in CLAUDE.md and electrobun issue #324 (launcher doesn't declare DPI
-// awareness).
+// Bundled CEF paints its first frame before it settles on the monitor scale, so
+// HiDPI comes up zoomed and clipped until a resize forces the recompute.
+// electrobun#324: the launcher declares no DPI awareness.
 if (process.platform === "win32") {
 	const nudge = () => {
 		const { width, height } = mainWindow.getSize();
@@ -219,12 +172,10 @@ if (process.platform === "win32") {
 	};
 	let domReady = false;
 	mainWindow.webview.on("dom-ready", () => {
-		if (domReady) return; // re-emitted on full reloads (dev HMR)
+		if (domReady) return;
 		domReady = true;
 		setTimeout(nudge, 50);
 	});
-	// Safety net if dom-ready never arrives (e.g. the page failed to load and
-	// gets fixed later); skipped once the event has done the real nudge.
 	setTimeout(() => {
 		if (!domReady) nudge();
 	}, 2000);

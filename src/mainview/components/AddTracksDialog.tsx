@@ -17,12 +17,6 @@ import { useLibrary } from "@/hooks/useLibrary";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
-/**
- * Searchable library picker for editing the open playlist's membership. A
- * track can be in a playlist at most once, so each row is a toggle: clicking
- * adds the track, clicking again removes it. Every click applies immediately,
- * so the dialog can stay open while several tracks are added.
- */
 export function AddTracksDialog({
 	playlist,
 	open,

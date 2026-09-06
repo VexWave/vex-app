@@ -17,7 +17,6 @@ import { formatTime, trackCountLabel } from "@/lib/utils";
 import type { RemoteArtist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
-/** The opened artist: banner with avatar/meta/actions plus its tracks. */
 export function ArtistDetail({
 	artist,
 	onBack,
@@ -33,8 +32,6 @@ export function ArtistDetail({
 	const { playlists } = usePlaylists();
 	const actions = useTrackActions();
 
-	// tracksOf projects the library snapshot onto this artist; `library.tracks`
-	// is in the deps purely as the recompute trigger for that read.
 	const tracks = useMemo(
 		() => artistService.tracksOf(artist),
 		[artist, library.tracks],
@@ -44,8 +41,6 @@ export function ArtistDetail({
 		[tracks],
 	);
 
-	// Stable row handlers — they only change when the artist does, so the rows
-	// stay memoized through the per-second timeupdate re-renders.
 	const playRow = useCallback(
 		(rowIndex: number) => artistService.play(artist, rowIndex),
 		[artist],
@@ -55,10 +50,6 @@ export function ArtistDetail({
 		[artist],
 	);
 
-	// Whether this artist is what the queue mirrors — then the Play button
-	// becomes a pause/resume toggle instead of restarting from the top, and the
-	// rows may mark the current track (the now-playing highlight belongs to the
-	// collection the queue mirrors, not to every view of the track).
 	const ownsQueue = state.queueContextId === artistQueueContext(artist.id);
 
 	return (
@@ -109,8 +100,6 @@ export function ArtistDetail({
 				<ScrollArea className="min-h-0 flex-1">
 					<ul className="flex flex-col gap-1 p-2">
 						{tracks.map((track, rowIndex) => {
-							// A track carries an artist at most once, so within the
-							// owning artist the id match is unambiguous.
 							const isCurrent =
 								ownsQueue && track.id === state.currentTrack?.id;
 							return (

@@ -15,47 +15,19 @@ import { cn, countLabel } from "@/lib/utils";
 import type { ImportJob } from "@/api/ImportService";
 import type { MediaSearchResult, SearchSource } from "../../shared/rpcSchema";
 
-/**
- * The results grid, shared with the placeholders that stand in it while a search
- * runs — the two have to agree for the cards to land where the placeholders were.
- * A wider minimum than the playlist and artist grids: a sleeve holds its own
- * two-line title, which needs the room the label under a collection card takes
- * from the grid for free.
- */
 const RESULT_GRID = "grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-3 p-4";
 
-/** A result together with everything about it the search itself doesn't know. */
 interface ResultCard {
 	result: MediaSearchResult;
 	job: ImportJob | null;
 	downloadable: boolean;
 }
 
-/**
- * Search YouTube/SoundCloud through the bundled yt-dlp and download a hit
- * straight into the library. Downloading is the same URL import a pasted link
- * starts, so a finished download opens the upload-review dialog with title, cover
- * and creator prefilled — and shows up in the library's pending rows as well as
- * on the card it was started from.
- *
- * A section of its own rather than a view in the sidebar: it holds hits from a
- * platform, not a collection you own. Its section declares no aside (see
- * `components/Sections`), so the results take the whole window — and the switch
- * that reached them is also the way back, which is why nothing here duplicates
- * it. It can be left mid-download without consequence: the job belongs to
- * `ImportService` and keeps reporting into the library's pending rows, and coming
- * back finds the same results, since `DiscoverService` outlives the view.
- */
 export function DiscoverView() {
 	const { discover, service } = useDiscover();
 	const { imports } = useImports();
-	// Seeded from the last search so leaving and coming back shows the query the
-	// results on screen belong to.
 	const [input, setInput] = useState(discover.query);
 
-	// A hit and its download are joined by URL — a search result carries no id an
-	// import knows — so each one's URL is normalized once here rather than per
-	// render. `imports` is in the deps as the recompute trigger for `jobFor`.
 	const cards = useMemo<ResultCard[]>(
 		() =>
 			discover.results.map((result) => {
@@ -79,8 +51,6 @@ export function DiscoverView() {
 	return (
 		<div className="flex h-full flex-col">
 			<div className="flex items-center gap-3 px-4 py-2.5">
-				{/* The same plain heading every view wears — the switch already names
-				    this one in the app bar, glyph and all. */}
 				<h2 className="shrink-0 text-sm font-semibold">Discover</h2>
 				{discover.results.length > 0 && (
 					<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -89,8 +59,6 @@ export function DiscoverView() {
 				)}
 				<form className="ml-auto flex items-center gap-2" onSubmit={handleSubmit}>
 					<SourceToggle value={discover.source} onChange={service.setSource} />
-					{/* Inside the form, so Enter submits: each search spawns a yt-dlp
-					    run, which is too expensive to fire off per keystroke. */}
 					<SearchInput
 						value={input}
 						onChange={setInput}
@@ -118,7 +86,6 @@ export function DiscoverView() {
 			) : cards.length > 0 ? (
 				<ResultGrid cards={cards} onDownload={service.download} />
 			) : discover.error ? (
-				// The banner above already carries the reason.
 				<EmptyState
 					icon={<AlertCircle className="h-8 w-8" />}
 					title="That search didn't come back."
@@ -172,11 +139,6 @@ function ResultGrid({
 	);
 }
 
-/**
- * The platform switch: two segments in one recessed track. Pressed buttons rather
- * than radios — arrow keys don't move between them, and claiming a radio group's
- * semantics would promise that they do.
- */
 function SourceToggle({
 	value,
 	onChange,
@@ -206,9 +168,6 @@ function SourceToggle({
 								: "text-muted-foreground hover:text-foreground",
 						)}
 					>
-						{/* The mark carries its brand colour only on the selected
-						    segment: two saturated logos side by side would compete with
-						    each other for the eye instead of showing which one is on. */}
 						<Icon className={cn("h-3.5 w-3.5", active && colorClass)} />
 						{label}
 					</button>
@@ -218,10 +177,6 @@ function SourceToggle({
 	);
 }
 
-/**
- * The grid's own loading state rather than a spinner: the placeholders land in
- * the same grid the results will, so nothing jumps when they arrive.
- */
 function ResultSkeletons() {
 	return (
 		<div className="min-h-0 flex-1 overflow-hidden">

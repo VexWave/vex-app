@@ -17,25 +17,6 @@ import { cn } from "@/lib/utils";
 import type { RemoteArtist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
-/**
- * One row of the open playlist's ordered track list: the shared TrackRow with
- * the membership actions only a playlist has — reordering and removal — and
- * the grip that drags it to a new position. Removal unlinks the track from
- * this playlist; deleting it from the server is the separate entry below,
- * which is the one that gets the destructive styling.
- *
- * The row owns its `<li>` rather than the list rendering one around it, so the
- * sortable ref lands on a direct child of the `<ul>`: `restrictToParentElement`
- * bounds the drag by the *parent element* of the node it is attached to, and a
- * node nested inside the `<li>` would be pinned to its own row.
- *
- * Memoized for the same reason as the other rows: the detail view re-renders
- * on every player timeupdate, and this keeps those ticks from rebuilding every
- * row (incl. a Radix ContextMenu apiece). All props are referentially stable
- * across ticks except the booleans on rows entering/leaving the current-track
- * state. `useSortable` opts the row back into re-rendering while a drag is in
- * progress, which is when it has to move.
- */
 export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 	track,
 	rowIndex,
@@ -55,9 +36,7 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 }: {
 	track: Track;
 	rowIndex: number;
-	/** Server-side track id — membership edits are addressed by it. */
 	serverId: string;
-	/** The track's linked artist ids, for the "Go to artist" entry. */
 	artistIds: readonly number[] | undefined;
 	artists: RemoteArtist[];
 	isCurrent: boolean;
@@ -85,15 +64,11 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 		<li
 			ref={setNodeRef}
 			style={{
-				// Translate only: the rows are uniform, and letting dnd-kit's
-				// scale terms through would stretch the one being dragged.
 				transform: CSS.Translate.toString(transform),
 				transition,
 			}}
 			className={cn(
 				"rounded-lg",
-				// The dragged row travels over its neighbours, so it needs to
-				// stack above them and stop being see-through while it does.
 				isDragging && "relative z-10 bg-accent shadow-lg ring-1 ring-border",
 			)}
 		>
@@ -109,16 +84,12 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 						ref={setActivatorNodeRef}
 						type="button"
 						aria-label={`Reorder ${track.title}`}
-						// touch-none keeps the pointer sensor from losing the drag
-						// to the scroll container's own panning. The negative margin
-						// eats into the row's gap-3, which is wider than this pair of
-						// left-hand columns wants between them.
 						className={cn(
 							"-mr-1.5 flex h-7 w-5 shrink-0 touch-none cursor-grab items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
 							isDragging && "cursor-grabbing text-foreground",
 						)}
-						// The row plays on click; a grip that was pressed but not
-						// dragged must not count as one.
+						// The row plays on click; a grip pressed but not dragged must not count
+						// as one.
 						onClick={(e) => e.stopPropagation()}
 						{...attributes}
 						{...listeners}

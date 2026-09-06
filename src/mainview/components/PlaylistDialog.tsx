@@ -15,23 +15,11 @@ import { blobToBase64, tooLargeMessage } from "@/lib/utils";
 import { MAX_IMAGE_BYTES, MAX_NAME_LENGTH } from "../../shared/limits";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
 
-/**
- * Cover editing is three-state, same as ArtistDialog's avatar: leave the
- * existing image untouched, replace it with a picked file, or remove it.
- * `removed` sends `image: null`; `unchanged` omits the field entirely. In
- * create mode there is nothing to remove, so only `unchanged` and `new` occur.
- */
 type ImageEdit =
 	| { kind: "unchanged" }
 	| { kind: "new"; file: File }
 	| { kind: "removed" };
 
-/**
- * Create a new playlist or edit an existing one (`playlist === null` →
- * create). Name is required; the cover is uploaded as raw image bytes.
- * `seedTrackIds` pre-fills a created playlist's track list (the library
- * context menu's "New playlist…" passes the right-clicked track).
- */
 export function PlaylistDialog({
 	playlist,
 	seedTrackIds,
@@ -51,7 +39,6 @@ export function PlaylistDialog({
 	const [error, setError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	// Fresh form seeded from the playlist (if any) every time the dialog opens.
 	useEffect(() => {
 		if (!open) return;
 		setName(playlist?.name ?? "");
@@ -60,9 +47,6 @@ export function PlaylistDialog({
 		setError(null);
 	}, [open, playlist]);
 
-	// Preview follows the image edit: a picked file gets an object URL (revoked
-	// on change/unmount), removal shows the fallback, unchanged shows the
-	// current cover (if any).
 	useEffect(() => {
 		if (image.kind === "new") {
 			const url = URL.createObjectURL(image.file);
@@ -72,9 +56,6 @@ export function PlaylistDialog({
 		setPreview(image.kind === "removed" ? null : (playlist?.imageUrl ?? null));
 	}, [image, playlist]);
 
-	// A cover over the server's ceiling is refused at the picker, keeping the
-	// previous one selected: the alternative is encoding it, sending it, and
-	// answering with a 413 after the wait.
 	const pickImage = (file: File) => {
 		const tooLarge = tooLargeMessage(file.size, MAX_IMAGE_BYTES, "image");
 		if (tooLarge) {
@@ -86,8 +67,6 @@ export function PlaylistDialog({
 	};
 
 	const removeImage = () => {
-		// Removing a playlist that has no cover is a no-op edit — revert to
-		// unchanged rather than sending a pointless `image: null`.
 		setImage(playlist?.imageUrl ? { kind: "removed" } : { kind: "unchanged" });
 	};
 
@@ -101,7 +80,6 @@ export function PlaylistDialog({
 		setError(null);
 		setSubmitting(true);
 
-		// undefined = unchanged/no cover; null = remove; string = new bytes.
 		let imageBase64: string | null | undefined;
 		if (image.kind === "new") {
 			try {
@@ -124,7 +102,6 @@ export function PlaylistDialog({
 			: await playlistService.create({
 					name: trimmedName,
 					trackIds: seedTrackIds,
-					// create has no null state; only a picked file produces bytes.
 					imageBase64: imageBase64 ?? undefined,
 				});
 		setSubmitting(false);
@@ -205,7 +182,6 @@ export function PlaylistDialog({
 							onChange={(e) => {
 								const file = e.target.files?.[0];
 								if (file) pickImage(file);
-								// Reset so re-picking the same file fires onChange again.
 								e.target.value = "";
 							}}
 						/>

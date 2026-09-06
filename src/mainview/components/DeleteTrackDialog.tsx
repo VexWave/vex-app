@@ -2,7 +2,6 @@ import { libraryService } from "@/api/LibraryService";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type { Track } from "@/player/types";
 
-/** Confirmation before permanently deleting a track from the server. */
 export function DeleteTrackDialog({
 	track,
 	open,

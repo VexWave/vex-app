@@ -14,16 +14,6 @@ import {
 import type { RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
-/**
- * A row of an artist's tracks: the library row's actions plus "Remove from
- * this artist", which unlinks the track from the artist instead of deleting
- * anything — the artist-page counterpart of a playlist row's "Remove from
- * playlist".
- *
- * Memoized for the same reason as the other rows: the detail view re-renders
- * on every player timeupdate, and this keeps those ticks from rebuilding every
- * row (incl. a Radix ContextMenu apiece).
- */
 export const ArtistTrackRow = memo(function ArtistTrackRow({
 	track,
 	rowIndex,

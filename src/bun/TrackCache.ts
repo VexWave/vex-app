@@ -1,25 +1,14 @@
-/** A fully-downloaded track's audio, kept in memory for instant replays. */
 export interface CachedTrack {
-	// The explicit backing-buffer type keeps `bytes` (and its subarray views)
-	// assignable to Response's BodyInit, which rejects SharedArrayBuffer views.
 	bytes: Uint8Array<ArrayBuffer>;
 	contentType: string;
 }
 
-/**
- * Byte-bounded LRU over complete track payloads. Only whole files are ever
- * stored (partial downloads are useless for Range serving), so a hit can
- * answer any Range request without touching the backend. Map iteration order
- * doubles as the recency order: `get` re-inserts the entry, so the first key
- * is always the least recently used.
- */
 export class TrackCache {
 	private readonly entries = new Map<string, CachedTrack>();
 	private totalBytes = 0;
 
 	constructor(private readonly maxBytes: number) {}
 
-	/** Whether a payload of this size is admissible at all. */
 	fits(byteLength: number): boolean {
 		return byteLength <= this.maxBytes;
 	}
@@ -58,14 +47,8 @@ export class TrackCache {
 	}
 }
 
-/**
- * Serves a cached track the way the backend would: 206 + content-range for a
- * satisfiable Range, 416 for an out-of-bounds one, plain 200 otherwise.
- * Multi-part ranges fall back to the full body (a valid answer per RFC 9110;
- * Chromium's media loader only ever sends single ranges anyway). Unlike the
- * proxied path, content-length is safe here — the bytes are complete and
- * local, so the declared length can't mismatch what gets delivered.
- */
+// Multi-part ranges fall back to the full body: a valid answer per RFC 9110,
+// and Chromium's media loader only ever sends single ranges.
 export function respondFromCache(
 	entry: CachedTrack,
 	rangeHeader: string | null,
@@ -94,7 +77,6 @@ export function respondFromCache(
 	});
 }
 
-/** null → ignore the header and serve the full body. */
 function parseRange(
 	header: string,
 	size: number,
@@ -102,7 +84,6 @@ function parseRange(
 	const match = header.match(/^bytes=(\d*)-(\d*)$/);
 	if (!match || (match[1] === "" && match[2] === "")) return null;
 	if (match[1] === "") {
-		// Suffix form: last N bytes.
 		const suffixLength = Number(match[2]);
 		if (suffixLength === 0) return "unsatisfiable";
 		return { start: Math.max(0, size - suffixLength), end: size - 1 };

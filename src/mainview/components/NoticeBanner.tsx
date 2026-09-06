@@ -1,10 +1,6 @@
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * `ErrorBanner`'s line for something worth confirming: a finished download
- * lands in a folder the user isn't looking at. The caller takes it away again.
- */
 export function NoticeBanner({
 	notice,
 	className,

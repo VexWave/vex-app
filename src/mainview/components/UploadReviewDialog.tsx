@@ -18,22 +18,11 @@ import { useUploads } from "@/hooks/useUploads";
 import { tooLargeMessage } from "@/lib/utils";
 import { MAX_IMAGE_BYTES, MAX_NAME_LENGTH } from "../../shared/limits";
 
-/**
- * Per-file review step shown before uploading picked/dropped audio. One dialog
- * item at a time (the head of the staged queue); confirming or skipping advances
- * to the next. The dialog stays mounted across items — only the inner form
- * remounts (keyed by file id) — so there's no close/reopen flicker in a batch.
- * Esc/X cancels the whole remaining batch; an outside click is ignored so a
- * stray click can't discard it.
- */
 export function UploadReviewDialog() {
 	const { staged, reviewedCount } = useUploads();
 	const head = staged[0];
 	const hasBatch = head !== undefined;
 
-	// Re-read the library once when a batch opens, so a proposed import artist
-	// can be matched against the freshest artist list (and any artist created
-	// just before shows up).
 	const prevHasBatch = useRef(false);
 	useEffect(() => {
 		if (hasBatch && !prevHasBatch.current) void libraryData.refresh();
@@ -79,15 +68,12 @@ function ReviewForm({
 	const suggestion = item.suggestedArtist;
 	const [title, setTitle] = useState(item.title);
 	const [coverBlob, setCoverBlob] = useState<Blob | null>(item.coverBlob);
-	// Whether the proposed artist is opted in; on by default.
 	const [linkArtist, setLinkArtist] = useState(true);
 	const [preview, setPreview] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	// Object-URL preview for the current cover (embedded blob or picked file),
-	// revoked when the cover changes or the form unmounts.
 	useEffect(() => {
 		if (!coverBlob) {
 			setPreview(null);
@@ -98,9 +84,6 @@ function ReviewForm({
 		return () => URL.revokeObjectURL(url);
 	}, [coverBlob]);
 
-	// A cover over the server's ceiling is refused at the picker, keeping the
-	// embedded one: the alternative is encoding it, sending it, and answering
-	// with a 413 after the upload's wait.
 	const pickCover = (file: File) => {
 		const tooLarge = tooLargeMessage(file.size, MAX_IMAGE_BYTES, "image");
 		if (tooLarge) {
@@ -111,8 +94,6 @@ function ReviewForm({
 		setCoverBlob(file);
 	};
 
-	/** Validate + confirm the head; resolves/creates the opted-in artist first.
-	 * Returns false (and shows an error) on any failure. */
 	const confirmHead = async (): Promise<boolean> => {
 		const trimmed = title.trim();
 		if (!trimmed) {

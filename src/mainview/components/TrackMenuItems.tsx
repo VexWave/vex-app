@@ -12,14 +12,6 @@ import { useDownloads } from "@/hooks/useDownloads";
 import type { RemoteArtist, RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
-/**
- * The track actions shared by more than one list's row menu. Every list that
- * shows library tracks offers the same edit/playlists/delete entries, so they
- * live here once and each row (LibraryTrackRow, ArtistTrackRow, …) composes
- * the ones that make sense for it plus its own.
- */
-
-/** Open the track's edit dialog (title, cover, artists). */
 export function TrackEditItem({ onSelect }: { onSelect: () => void }) {
 	return (
 		<ContextMenuItem onSelect={onSelect}>
@@ -29,21 +21,11 @@ export function TrackEditItem({ onSelect }: { onSelect: () => void }) {
 	);
 }
 
-/**
- * Open the page of an artist this track is credited to — the way from a track
- * back to the rest of that artist's music. Renders nothing when the track has
- * no artists, a single item when it has one, and a submenu to pick from when
- * it has several.
- *
- * The track names its artists by id, and both sides come from one read, so
- * every link resolves to an artist in `artists`.
- */
 export function TrackArtistItems({
 	artistIds,
 	artists,
 	onOpenArtist,
 }: {
-	/** The track's linked artist ids (RemoteTrack.artistIds). */
 	artistIds: readonly number[] | undefined;
 	artists: RemoteArtist[];
 	onOpenArtist: (artistId: number) => void;
@@ -80,10 +62,6 @@ export function TrackArtistItems({
 	);
 }
 
-/**
- * Playlist membership as a submenu of checkboxes, plus a "New playlist…"
- * entry that seeds a fresh playlist with this track.
- */
 export function TrackPlaylistsSubmenu({
 	track,
 	playlists,
@@ -113,8 +91,6 @@ export function TrackPlaylistsSubmenu({
 						<ContextMenuCheckboxItem
 							key={playlist.id}
 							checked={isMember}
-							// Keep the menu open so several playlists can be
-							// (un)checked in one go.
 							onSelect={(e) => e.preventDefault()}
 							onCheckedChange={() => onToggle(track, playlist.id, isMember)}
 						>
@@ -127,13 +103,6 @@ export function TrackPlaylistsSubmenu({
 	);
 }
 
-/**
- * Keep a copy of the track on this machine. Unlike its neighbours this item
- * reaches its service itself instead of taking a callback: a row's menu content
- * is only mounted while that menu is open, so the subscription costs nothing in
- * a list of thousands and no row gains a prop it would have to stay memoized
- * across.
- */
 export function TrackDownloadItem({ track }: { track: Track }) {
 	const { activeIds } = useDownloads();
 	const running = activeIds.includes(track.id);
@@ -148,7 +117,6 @@ export function TrackDownloadItem({ track }: { track: Track }) {
 	);
 }
 
-/** Delete the track from the server — destructive, so it goes last. */
 export function TrackDeleteItem({ onSelect }: { onSelect: () => void }) {
 	return (
 		<ContextMenuItem

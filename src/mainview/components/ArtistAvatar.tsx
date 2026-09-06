@@ -1,16 +1,6 @@
 import { Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * An artist's round avatar, falling back to their initial and then to the shared
- * artists glyph when there is no image. Takes the URL rather than the artist so
- * it also fits the import suggestion's data URL and a search hit's creator, and
- * sizes itself from `className` — every place an artist appears (grid card,
- * detail header, pickers, Discover card) draws the same circle at its own size.
- *
- * A span, not a div: several of those places are inside a `<button>`, which
- * may only contain phrasing content.
- */
 export function ArtistAvatar({
 	imageUrl,
 	initial,
@@ -18,8 +8,6 @@ export function ArtistAvatar({
 	iconClassName,
 }: {
 	imageUrl?: string;
-	/** Shown in place of the glyph when there is no image; takes its size from
-	 * the circle's own font size. */
 	initial?: string;
 	className?: string;
 	iconClassName?: string;

@@ -15,23 +15,18 @@ export type BinaryPhase =
 export interface BinaryProgressInfo {
 	step: BinaryInstallStep;
 	receivedBytes: number;
-	/** null = server sent no content-length (indeterminate bar). */
 	totalBytes: number | null;
 	part: number;
 	partCount: number;
 	done: boolean;
 }
 
-/** Immutable snapshot of the managed-binaries state for the React layer. */
 export interface BinariesState {
 	phase: BinaryPhase;
 	missing: BinaryName[];
-	/** Per-binary progress while phase === "installing". */
 	progress: Partial<Record<BinaryName, BinaryProgressInfo>>;
-	/** Fatal status/install error shown on the blocking setup screen. */
 	error: string | null;
 
-	// yt-dlp update hint (non-blocking banner in the player UI)
 	updateAvailable: boolean;
 	latestVersion: string | null;
 	updating: boolean;
@@ -40,13 +35,6 @@ export interface BinariesState {
 	updateDismissed: boolean;
 }
 
-/**
- * Tracks the externally downloaded binaries (yt-dlp, ffmpeg, deno) that the
- * bun-side BinaryManager owns. The blocking setup screen renders off `phase`;
- * the yt-dlp update banner renders off the `update*` fields. Install/update
- * RPCs only start bun-side runs — progress and completion arrive as pushed
- * `binaryProgress` messages.
- */
 export class BinaryService {
 	private subscribers = new Set<() => void>();
 	private snapshot: BinariesState = {
@@ -63,8 +51,6 @@ export class BinaryService {
 	};
 	private updateCheckDone = false;
 
-	// --- useSyncExternalStore contract (arrow fns keep `this` bound) ---
-
 	subscribe = (onChange: () => void): (() => void) => {
 		this.subscribers.add(onChange);
 		return () => this.subscribers.delete(onChange);
@@ -72,7 +58,6 @@ export class BinaryService {
 
 	getSnapshot = (): BinariesState => this.snapshot;
 
-	/** Disk-only status poll; flips the gate to "ready" or "missing". */
 	async refreshStatus(): Promise<void> {
 		let result;
 		try {
@@ -90,7 +75,6 @@ export class BinaryService {
 		}
 		if (result.missing.length === 0) {
 			this.update({ phase: "ready", missing: [], progress: {}, error: null });
-			// One best-effort check per app run, once the binaries exist.
 			if (!this.updateCheckDone) {
 				this.updateCheckDone = true;
 				void this.checkForUpdate();
@@ -100,7 +84,6 @@ export class BinaryService {
 		}
 	}
 
-	/** Kicks off the bun-side install of everything currently missing. */
 	async install(): Promise<void> {
 		const { phase, missing } = this.snapshot;
 		if (phase !== "missing" && phase !== "error") return;
@@ -127,7 +110,6 @@ export class BinaryService {
 		}
 	}
 
-	/** Re-check what's still missing, then install just that. */
 	async retry(): Promise<void> {
 		await this.refreshStatus();
 		if (this.snapshot.phase === "missing") await this.install();
@@ -147,7 +129,6 @@ export class BinaryService {
 		}
 	}
 
-	/** Best-effort; bun already swallows offline/rate-limit failures. */
 	async checkForUpdate(): Promise<void> {
 		try {
 			const result = await bun.checkYtDlpUpdate();
@@ -158,20 +139,13 @@ export class BinaryService {
 				});
 			}
 		} catch {
-			// Silent — the hint is optional.
 		}
 	}
 
-	/** Hides the update banner for the rest of this app run. */
 	dismissUpdate(): void {
 		this.update({ updateDismissed: true });
 	}
 
-	/**
-	 * Routes by phase, not binary name: during the blocking install the
-	 * messages drive the setup screen; otherwise a run can only be the
-	 * user-triggered yt-dlp update, which drives the banner.
-	 */
 	handleProgress(msg: BinaryProgressMessage): void {
 		if (this.snapshot.phase === "installing") {
 			switch (msg.type) {
@@ -202,7 +176,6 @@ export class BinaryService {
 					break;
 				}
 				case "finished":
-					// The disk status is the source of truth for opening the gate.
 					void this.refreshStatus();
 					break;
 				case "failed":
@@ -247,12 +220,10 @@ export class BinaryService {
 	}
 }
 
-/** App-wide singleton — install progress must survive component unmounts. */
 export const binaryService = new BinaryService();
 
 onBunMessage("binaryProgress", (msg) => {
 	binaryService.handleProgress(msg);
 });
 
-// Startup disk check: decides whether the blocking setup screen appears.
 void binaryService.refreshStatus();

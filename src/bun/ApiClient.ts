@@ -28,7 +28,6 @@ import type {
 	UploadTrackParams,
 } from "../shared/rpcSchema";
 
-/** How server ids become the loopback proxy URLs the webview loads. */
 export interface ProxyUrls {
 	urlForTrack(id: string): string;
 	urlForTrackImage(id: string, version?: string): string;
@@ -36,10 +35,6 @@ export interface ProxyUrls {
 	urlForPlaylistImage(id: number, version?: string): string;
 }
 
-// `src/shared/limits.ts` and the contract are the same fence in different units,
-// and the webview checks payload sizes against the copy it can import. If the
-// two stop agreeing it would wave through payloads the server rejects — so a
-// disagreement is a startup failure here rather than a surprise mid-upload.
 if (
 	base64Length(MAX_AUDIO_BYTES) > MAX_AUDIO_BASE64 ||
 	base64Length(MAX_IMAGE_BYTES) > MAX_IMAGE_BASE64
@@ -52,44 +47,27 @@ if (
 function createClient(baseUrl: string, token?: string) {
 	return initClient(ApiContract, {
 		baseUrl,
-		// Raw token per the contract's `authorization` header; if the backend
-		// ever wants a `Bearer ` prefix this is the one place to add it.
 		baseHeaders: token ? { authorization: token } : {},
 	});
 }
 
-/**
- * All server I/O lives here in the bun process: no webview CORS issues, and the
- * session token is used only from here. The token is handed to the webview once
- * (on login) purely so it can be persisted for restart; see
- * `login`/`restoreSession`.
- */
 export class ApiClient {
-	// Single source of truth for auth state; the client is derived from
-	// baseUrl+token once at login so the two can never diverge.
 	private session: {
 		baseUrl: string;
 		token: string;
 		client: ReturnType<typeof createClient>;
 	} | null = null;
 
-	/** Server address + token for the stream proxy; null when logged out. */
 	get auth(): { baseUrl: string; token: string } | null {
 		if (!this.session) return null;
 		const { baseUrl, token } = this.session;
 		return { baseUrl, token };
 	}
 
-	/** Drops the session, e.g. when the server rejects the token (401). */
 	expireSession(): void {
 		this.session = null;
 	}
 
-	/**
-	 * Re-establishes a session from a token the webview persisted, without a
-	 * login round-trip. The token isn't checked here — the next authenticated
-	 * call validates it (a 401 there falls back to the login screen).
-	 */
 	restoreSession(params: RestoreSessionParams): RpcResult {
 		const { baseUrl, token } = params;
 		this.session = { baseUrl, token, client: createClient(baseUrl, token) };
@@ -123,7 +101,6 @@ export class ApiClient {
 			const res = await client.postTrack({
 				body: {
 					title: params.title,
-					// Already an integer (the webview rounds the tag's float seconds).
 					duration: params.durationMs,
 					data: params.dataBase64,
 					cover: params.coverBase64,
@@ -164,7 +141,6 @@ export class ApiClient {
 					id: params.id,
 					title: params.title,
 					artistIds: params.artistIds,
-					// undefined drops off the wire (unchanged); null survives (remove).
 					cover: params.coverBase64,
 				},
 			});
@@ -180,25 +156,6 @@ export class ApiClient {
 		}
 	}
 
-	/**
-	 * The caller's whole library in one read — tracks, artists and playlists
-	 * from a single server snapshot, which is what lets the webview treat the
-	 * three as agreeing with each other.
-	 *
-	 * `urls` maps server ids to the loopback proxy URLs the webview loads, so
-	 * complete Remote* values are assembled in one place. An image URL stays
-	 * undefined where the server sent none, and where it did, the content
-	 * version it names rides along to the proxy URL (see `imageVersion`) —
-	 * dropping that silently returns every image to the route's uncached path.
-	 *
-	 * The server's track order (oldest first) is passed through untouched: it is
-	 * what tells the webview which tracks are the recent uploads.
-	 *
-	 * The artist names are deliberately not joined in here. Both sides are in
-	 * hand, but sending a name per link would re-duplicate on the wire exactly
-	 * what one read removed, and would leave the webview holding names it can't
-	 * resolve back to an artist. `artistIds` goes across; the webview joins.
-	 */
 	async getLibrary(urls: ProxyUrls): Promise<GetLibraryResult> {
 		const client = this.session?.client;
 		if (!client) {
@@ -278,7 +235,6 @@ export class ApiClient {
 				body: {
 					id: params.id,
 					name: params.name,
-					// undefined drops off the wire (unchanged); null survives (remove).
 					image: params.imageBase64,
 				},
 			});
@@ -345,7 +301,6 @@ export class ApiClient {
 					id: params.id,
 					name: params.name,
 					trackIds: params.trackIds,
-					// undefined drops off the wire (unchanged); null survives (remove).
 					image: params.imageBase64,
 				},
 			});
@@ -377,33 +332,17 @@ export class ApiClient {
 	}
 }
 
-/**
- * What to tell the user when the address never answered. A rejected certificate
- * reaches `fetch` as a connection failure like any other, and calling that a
- * server that isn't running points at the wrong half of the problem.
- */
 function unreachable(baseUrl: string, err: unknown): string {
 	const code = (err as { code?: unknown })?.code;
 	const detail = `${typeof code === "string" ? code : ""} ${
 		err instanceof Error ? err.message : ""
 	}`;
-	// Node's TLS failures all name a cert or the protocol in one of the two.
 	if (/cert|ssl|tls/i.test(detail)) {
 		return `Cannot reach ${baseUrl} — its certificate was rejected.`;
 	}
 	return `Cannot reach ${baseUrl} — is the server running?`;
 }
 
-/**
- * Turns any non-200 response into the failure the webview reports.
- *
- * `413` and `429` are produced by the server's request pipeline rather than by
- * an endpoint, so every route can answer with them however its handler behaves —
- * which is why they are mapped here once instead of per call site. Everything
- * else keeps the server's own message, since only it knows what went wrong.
- *
- * `payload` names which ceiling a 413 hit, for routes that carry bytes.
- */
 function failure(
 	res: { status: number; body: unknown; headers: Headers },
 	fallback: string,
@@ -424,11 +363,6 @@ function failure(
 	if (res.status === 413 && payload) {
 		const limit = payload === "audio" ? MAX_AUDIO_BYTES : MAX_IMAGE_BYTES;
 		const what = payload === "audio" ? "track" : "image";
-		// The webview refuses anything over the contract's ceilings before it is
-		// encoded, so a 413 still arriving means this server holds a tighter line
-		// than the contract does — which is why the message can't quote a ceiling
-		// as *its* limit, and why the server's own message goes first. Ours names
-		// only what this app allows, which stays true whatever the server's is.
 		return {
 			ok: false,
 			status: res.status,
@@ -441,17 +375,11 @@ function failure(
 	return { ok: false, status: res.status, error: errorText(res.body, fallback) };
 }
 
-/**
- * The wait a 429 asks for. The contract states `Retry-After` in seconds; an
- * HTTP-date (which the header also allows) yields no delay rather than a wrong
- * one — the caller then says "wait a moment" instead of naming a bogus number.
- */
 function retryAfterSeconds(headers: Headers): number | undefined {
 	const value = Number(headers.get("retry-after"));
 	return Number.isFinite(value) && value > 0 ? Math.ceil(value) : undefined;
 }
 
-/** 45 → "45 seconds"; 900 → "15 minutes". */
 function formatDelay(seconds: number): string {
 	if (seconds < 60) {
 		return `${seconds} second${seconds === 1 ? "" : "s"}`;
@@ -460,11 +388,6 @@ function formatDelay(seconds: number): string {
 	return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-/**
- * 78643200 → "75.0 MB". One decimal, matching how the webview states the same
- * ceilings — and a limit of 7.5 MiB rounded to whole megabytes would claim 8,
- * sending the user back with a file that fails again.
- */
 function megabytes(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

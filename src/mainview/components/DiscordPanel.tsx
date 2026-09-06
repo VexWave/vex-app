@@ -3,16 +3,6 @@ import { usePresence } from "@/hooks/usePresence";
 import { cn } from "@/lib/utils";
 import type { PresenceStatus } from "../../shared/rpcSchema";
 
-/**
- * The Discord Rich Presence: a switch, and a mark beside it saying where the
- * integration stands.
- *
- * The mark is there because the integration is silent by design — Discord not
- * running is the ordinary case — so without it the switch would have no visible
- * effect at all until a client happened to be up and a track happened to be
- * playing. A refusal earns a row as well as a mark: it is the one state the user
- * can usually do something about.
- */
 export function DiscordPanel() {
 	const { presence, service } = usePresence();
 	const refusal =
@@ -26,8 +16,6 @@ export function DiscordPanel() {
 			description="Show what you're listening to on your Discord profile."
 			action={(labelling) => (
 				<div className="flex items-center gap-3">
-					{/* Only while it is on: switched off, the switch has already said
-					    everything there is to say. */}
 					{presence.enabled && <ConnectionMark status={presence.status} />}
 					<Toggle
 						checked={presence.enabled}
@@ -53,12 +41,6 @@ const MARK_LABELS: Record<PresenceStatus["connection"], string> = {
 	refused: "Discord refused",
 };
 
-/**
- * Where the integration stands. Brightness, not hue: this palette is neutral
- * apart from the violet navigation accent and holds no colour that means "good"
- * or "bad", so a green dot — or a red one for a refusal — would be invented for
- * this line alone.
- */
 function ConnectionMark({ status }: { status: PresenceStatus }) {
 	const live = status.connection === "connected";
 	return (

@@ -7,14 +7,6 @@ export interface LibraryDataState extends RemoteLibrary {
 	error: string | null;
 }
 
-/**
- * The only thing in the app that reads the library: one `getLibrary` answers
- * with tracks, artists and playlists from one server snapshot, so the three
- * cannot disagree — true only while nothing else fetches a slice of its own.
- *
- * Emptied on logout: stream URLs are valid only against the session that
- * produced them.
- */
 export class LibraryData {
 	private subscribers = new Set<() => void>();
 	private snapshot: LibraryDataState = {
@@ -35,7 +27,7 @@ export class LibraryData {
 			if (status === "loggedIn") {
 				void this.refresh();
 			} else if (status === "loggedOut") {
-				this.fetchSeq += 1; // drop in-flight results from the old session
+				this.fetchSeq += 1;
 				this.update({
 					tracks: [],
 					artists: [],
@@ -47,8 +39,6 @@ export class LibraryData {
 		});
 	}
 
-	// --- useSyncExternalStore contract (arrow fns keep `this` bound) ---
-
 	subscribe = (onChange: () => void): (() => void) => {
 		this.subscribers.add(onChange);
 		return () => this.subscribers.delete(onChange);
@@ -56,11 +46,6 @@ export class LibraryData {
 
 	getSnapshot = (): LibraryDataState => this.snapshot;
 
-	/**
-	 * `true` once a fresh payload is applied, or once a newer refresh has
-	 * superseded this one; `false` only if the read failed. An upload waits on
-	 * it before dropping its pending placeholder.
-	 */
 	async refresh(): Promise<boolean> {
 		const seq = ++this.fetchSeq;
 		this.update({ loading: true, error: null });
@@ -68,7 +53,7 @@ export class LibraryData {
 		try {
 			result = await bun.getLibrary();
 		} catch (err) {
-			if (seq !== this.fetchSeq) return true; // a newer refresh will apply
+			if (seq !== this.fetchSeq) return true;
 			this.update({
 				loading: false,
 				error:
@@ -76,7 +61,7 @@ export class LibraryData {
 			});
 			return false;
 		}
-		if (seq !== this.fetchSeq) return true; // a newer refresh will apply
+		if (seq !== this.fetchSeq) return true;
 		if (!result.ok) {
 			if (result.status === 401) {
 				sessionService.markExpired("Session expired — please log in again.");
@@ -94,13 +79,10 @@ export class LibraryData {
 		return true;
 	}
 
-	// A patch that only moves `loading` leaves the three arrays identical, so
-	// subscribers can rebuild off array identity rather than off every notify.
 	private update(patch: Partial<LibraryDataState>): void {
 		this.snapshot = { ...this.snapshot, ...patch };
 		this.subscribers.forEach((notify) => notify());
 	}
 }
 
-/** App-wide singleton — the library must survive component unmounts. */
 export const libraryData = new LibraryData();

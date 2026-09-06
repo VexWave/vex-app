@@ -6,15 +6,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { RemoteArtist } from "../../shared/rpcSchema";
 
-/** Above this many artists, a filter input is shown to keep the list usable. */
 const FILTER_THRESHOLD = 8;
 
-/**
- * A checklist of artists with avatar + name, selected by a `Set<number>` of
- * ids. Shared by the upload review dialog and the manage-artists dialog so
- * artist assignment looks identical wherever it happens. Above a threshold it
- * grows a filter input; the list scrolls within a height set via `className`.
- */
 export function ArtistMultiSelect({
 	artists,
 	selected,
@@ -54,7 +47,6 @@ export function ArtistMultiSelect({
 					onChange={(e) => setFilter(e.target.value)}
 					disabled={disabled}
 					placeholder="Filter artists…"
-					// Swallow Enter so filtering never submits a surrounding form.
 					onKeyDown={(e: KeyboardEvent) => {
 						if (e.key === "Enter") e.preventDefault();
 					}}

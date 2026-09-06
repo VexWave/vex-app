@@ -1,20 +1,8 @@
 import type { ReactNode } from "react";
 import type { SearchSource } from "../../shared/rpcSchema";
 
-/**
- * How each searchable platform presents itself: its name, its brand mark and its
- * brand colour, in one table so adding a platform is one edit in one place.
- *
- * The marks are vendored from Simple Icons (CC0), the same way the shadcn
- * components and the wordmark font are — the app ships offline, and lucide (every
- * other icon here) carries no brand marks at all. They are *filled* paths, unlike
- * lucide's stroked ones, so they take `fill` from `currentColor` and ignore stroke
- * width, and they size themselves from `className` like every other icon.
- *
- * The colours are whole class names rather than hex values in a `style` because
- * Tailwind only generates what it can read in the source; a hex assembled at
- * runtime would come out unstyled.
- */
+// Colours are whole class names, not hex in a style: Tailwind only generates
+// what it can read in the source.
 export const PLATFORMS: Record<
 	SearchSource,
 	{
@@ -31,11 +19,6 @@ export const PLATFORMS: Record<
 	},
 };
 
-/**
- * The platforms in the order the source toggle offers them. Derived from the
- * table's keys so a platform can't be added to it and still be missing from the
- * UI — the failure the compiler cannot catch on a hand-written list.
- */
 export const PLATFORM_ORDER = Object.keys(PLATFORMS) as SearchSource[];
 
 function YouTubeIcon({ className }: { className?: string }) {

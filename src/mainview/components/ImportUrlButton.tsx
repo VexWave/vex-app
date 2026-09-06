@@ -13,12 +13,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-/**
- * Header button + dialog for importing a track from a YouTube/SoundCloud URL.
- * Submitting starts a bun-side yt-dlp job and closes the dialog; the download
- * shows as a pending row in the track list, and the finished file opens the
- * regular upload-review dialog with title/cover prefilled from the page.
- */
 export function ImportUrlButton() {
 	const [open, setOpen] = useState(false);
 	const [url, setUrl] = useState("");
@@ -66,8 +60,6 @@ export function ImportUrlButton() {
 							</DialogDescription>
 						</DialogHeader>
 
-						{/* type="text": native url validation would reject scheme-less
-						    input that parseImportUrl accepts ("youtube.com/…"). */}
 						<Input
 							autoFocus
 							type="text"

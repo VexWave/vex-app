@@ -71,11 +71,6 @@ function InstallRow({
 	);
 }
 
-/**
- * Hard gate shown before login while required external binaries are missing.
- * The download only starts on user request; progress streams in from the bun
- * process via BinaryService.
- */
 export function BinarySetupScreen() {
 	const { binaries, service } = useBinaries();
 	const { phase } = binaries;

@@ -5,12 +5,6 @@ import { useArtists } from "@/hooks/useArtists";
 import { findMatchingArtist } from "@/lib/artistMatch";
 import { cn } from "@/lib/utils";
 
-/**
- * A single opt-in artist proposal: a compact checkbox row with avatar, name, and
- * a status chip. Matches the proposal against the library itself so it can show
- * the avatar the import fetched (or, for an artist already known, that artist's
- * own) and say whether confirming will link an existing artist or create one.
- */
 export function ArtistSuggestion({
 	suggestion,
 	checked,
@@ -24,8 +18,6 @@ export function ArtistSuggestion({
 }) {
 	const { artists: artistState } = useArtists();
 	const matched = findMatchingArtist(suggestion.name, artistState.artists);
-	// The fetched bytes are already base64, so a data URL avoids a Blob and the
-	// object-URL lifecycle that would come with it.
 	const imageUrl = suggestion.imageBase64
 		? `data:${suggestion.imageMime ?? "image/jpeg"};base64,${suggestion.imageBase64}`
 		: matched?.imageUrl;

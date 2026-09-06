@@ -2,12 +2,6 @@ import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-/**
- * The app's list filter: a search field with a leading icon and a clear button
- * that appears once something is typed. Every list that filters (library,
- * artists, the playlist track picker) uses this one so they look and behave
- * alike; the width comes from `className`.
- */
 export function SearchInput({
 	value,
 	onChange,
@@ -19,7 +13,6 @@ export function SearchInput({
 	value: string;
 	onChange: (value: string) => void;
 	placeholder?: string;
-	/** Accessible name — the field has no visible label. */
 	label: string;
 	className?: string;
 	autoFocus?: boolean;

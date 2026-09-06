@@ -26,10 +26,8 @@ import type { RemoteArtist } from "../../shared/rpcSchema";
 export function ArtistsView() {
 	const { artists: state, service } = useArtists();
 	const { view, service: navigation } = useNavigation();
-	// The cards' play buttons mirror playback: a playing artist shows pause.
 	const { state: playerState } = usePlayer();
 	const [dialogOpen, setDialogOpen] = useState(false);
-	// The artist being edited, or null when the dialog is in "create" mode.
 	const [editing, setEditing] = useState<RemoteArtist | null>(null);
 	const [pendingDelete, setPendingDelete] = useState<RemoteArtist | null>(null);
 	const [query, setQuery] = useState("");
@@ -43,18 +41,12 @@ export function ArtistsView() {
 		setDialogOpen(true);
 	};
 
-	// Always render the *fresh* snapshot of the opened artist; if it was
-	// deleted (here or server-side), fall back to the grid.
 	const openId = openIdOf(view);
 	const open =
 		openId !== null
 			? (state.artists.find((artist) => artist.id === openId) ?? null)
 			: null;
 
-	// The open id lives in the app's navigation state, so when the artist behind
-	// it vanishes (deleted by another client, or the id outlived its session)
-	// the navigation state must be told — otherwise the sidebar would keep
-	// marking a detail view the grid has already replaced.
 	useEffect(() => {
 		if (openId !== null && open === null) navigation.openArtist(null);
 	}, [openId, open, navigation]);
@@ -121,25 +113,12 @@ export function ArtistsView() {
 						/>
 					) : (
 						<ScrollArea className="min-h-0 flex-1">
-							{/* Same track sizing as the playlist grid, so both read as
-							    one system. auto-fill adds a column as soon as the
-							    minimum fits again, which keeps the cards near that
-							    minimum instead of letting `1fr` stretch a handful of
-							    them across the window. */}
 							<ul className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2 p-4">
 								{visible.map((artist) => {
-									// The queue already mirrors this artist → its button
-									// shows pause (playOrToggle resumes instead of
-									// restarting), and the avatar wears the sidebar's
-									// now-playing ring.
 									const ownsQueue =
 										playerState.queueContextId ===
 										artistQueueContext(artist.id);
 									const playing = ownsQueue && playerState.isPlaying;
-									// An index lookup, not a pass over the library —
-									// LibraryService keys it by artist id. The read that
-									// rebuilds that index republishes the artist list
-									// above, so the count never lags it.
 									const count = artistService.tracksOf(artist).length;
 									return (
 										<li key={artist.id}>

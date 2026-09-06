@@ -1,18 +1,6 @@
 import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-/**
- * One titled panel of rows. Faintly darker than the main area it sits in rather
- * than lighter: `background` is below `card` in the dark theme, so the same
- * bordered box reads as recessed here and as raised in the light one — either
- * way as a surface of its own, which a second `card` on top of `card` would not.
- *
- * `action` is a control governing the whole group, sitting in its header — the
- * one place a switch can go when what it switches is the panel rather than any
- * row in it. It takes the heading and its description as its labelling, the same
- * shape a row hands its own control. A panel whose whole setting is that switch
- * has no rows to draw, and draws none rather than an empty strip under itself.
- */
 export function Group({
 	title,
 	description,
@@ -53,21 +41,11 @@ export function Group({
 	);
 }
 
-/**
- * The aria attributes tying a control to the text beside it. Handed to the
- * control rather than wrapped around it: a `<label>` only labels a real form
- * control, and every control here is a button wearing a widget role.
- */
 export interface Labelling {
 	"aria-labelledby": string;
 	"aria-describedby"?: string;
 }
 
-/**
- * A label, an optional line explaining it, and the control they belong to. The
- * control is optional: a row can be there to say something rather than to set
- * something, which has the same shape and nothing to draw on the right.
- */
 export function SettingRow({
 	label,
 	hint,
@@ -108,13 +86,6 @@ export function SettingRow({
 	);
 }
 
-/**
- * An on/off switch drawn as a raised pill in the groove it slides in. The groove
- * is a black wash and an inset shadow rather than a darker token, since nothing
- * in the palette reads as *cut into* a surface but low-alpha black darkens
- * whatever it is over. On, the track lights `primary` and the knob turns to
- * `background`, so the two never approach each other's colour in either theme.
- */
 export function Toggle({
 	checked,
 	onChange,
@@ -137,8 +108,6 @@ export function Toggle({
 			)}
 			{...labelling}
 		>
-			{/* 2px of track showing on either side: 20px of knob and 22px of travel
-			    inside 44px. */}
 			<span
 				aria-hidden="true"
 				className={cn(

@@ -8,17 +8,6 @@ import { useLibrary } from "@/hooks/useLibrary";
 import { cn } from "@/lib/utils";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
 
-/**
- * One playlist in the sidebar: cover (wearing the NowPlayingRing while its
- * collection is the queue), name, and a play/pause button that fades in at
- * the right edge. Clicking the row opens the playlist's detail view.
- *
- * Memoized: the sidebar re-renders on every player timeupdate, and this
- * keeps those ticks from rebuilding every row. All props are referentially
- * stable across ticks except the booleans on rows entering/leaving the
- * active/playing states; the library is subscribed to *here* (for the cover
- * collage) so its changes still reach the row through the memo.
- */
 export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 	playlist,
 	active,
@@ -27,17 +16,12 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 	onOpen,
 }: {
 	playlist: RemotePlaylist;
-	/** The main area is showing this playlist's detail view. */
 	active: boolean;
-	/** The play queue mirrors this playlist (playing or paused). */
 	ownsQueue: boolean;
-	/** ownsQueue and audio is running — sets the ring's arc orbiting. */
 	playing: boolean;
 	onOpen: (playlistId: number) => void;
 }) {
 	const { library } = useLibrary();
-	// tracksOf joins against the library snapshot; `library.tracks` is in the
-	// deps purely as the recompute trigger for that read.
 	const tracks = useMemo(
 		() => playlistService.tracksOf(playlist),
 		[playlist, library.tracks],
@@ -49,7 +33,6 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 			tabIndex={0}
 			onClick={() => onOpen(playlist.id)}
 			onKeyDown={(e) => {
-				// Ignore keys bubbling from the play button — it handles its own.
 				if (e.target !== e.currentTarget) return;
 				if (e.key === "Enter" || e.key === " ") {
 					e.preventDefault();
@@ -62,7 +45,6 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 				active ? "bg-accent" : "hover:bg-accent/50",
 			)}
 		>
-			{/* Same accent rail as the nav items above. */}
 			<span
 				aria-hidden="true"
 				className={cn(
@@ -71,9 +53,6 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 				)}
 			/>
 			<div className="relative h-7 w-7 shrink-0">
-				{/* The player indicator: ringed while this playlist owns the
-				    queue, the arcs orbiting only during actual playback. Always
-				    mounted so state changes fade instead of popping. */}
 				<NowPlayingRing ownsQueue={ownsQueue} playing={playing} />
 				<PlaylistCover
 					playlist={playlist}
@@ -85,8 +64,6 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 			<span
 				className={cn(
 					"min-w-0 flex-1 truncate text-sm font-medium transition-colors",
-					// The primary tint marks the queue's playlist even while
-					// paused; the ring's arc only orbits during actual playback.
 					ownsQueue
 						? "text-primary"
 						: active
@@ -96,9 +73,6 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 			>
 				{playlist.name}
 			</span>
-			{/* Fades in at the right edge; while the playlist owns a paused
-			    queue it resumes instead of restarting. Empty playlists get no
-			    button (nothing to start). */}
 			{tracks.length > 0 && (
 				<Button
 					variant="ghost"

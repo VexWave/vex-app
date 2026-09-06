@@ -3,17 +3,11 @@ import { Pause, Pencil, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-/**
- * The edit/delete pair a card reveals in its corner. Both stop the click from
- * reaching the card behind them, which would otherwise open the collection on
- * the way to its dialog.
- */
 export function CollectionCardActions({
 	name,
 	onEdit,
 	onDelete,
 }: {
-	/** The collection's name, for the buttons' accessible labels. */
 	name: string;
 	onEdit: () => void;
 	onDelete: () => void;
@@ -48,16 +42,6 @@ export function CollectionCardActions({
 	);
 }
 
-/**
- * One card in a collection grid — a playlist, an artist. Artwork with a
- * play/pause button that fades in over it, the collection's name and a meta
- * line, plus hover-revealed actions in the corner; clicking anywhere else
- * opens the collection.
- *
- * `shape` follows the artwork the caller renders: round artwork (an artist)
- * centres its label and tucks the play button inside the circle, square
- * artwork (a playlist) keeps both flush with the cover's edge.
- */
 export function CollectionCard({
 	artwork,
 	name,
@@ -74,13 +58,10 @@ export function CollectionCard({
 	name: string;
 	meta: string;
 	shape?: "square" | "round";
-	/** The play queue mirrors this collection — tints the name, like the sidebar. */
 	ownsQueue?: boolean;
-	/** ownsQueue and audio is running — the button shows pause and stays visible. */
 	playing?: boolean;
 	playLabel: string;
 	onOpen: () => void;
-	/** Omitted for an empty collection: there is nothing to start. */
 	onPlay?: () => void;
 	actions?: ReactNode;
 }) {
@@ -91,8 +72,8 @@ export function CollectionCard({
 			tabIndex={0}
 			onClick={onOpen}
 			onKeyDown={(e) => {
-				// Keys on the inner play/action buttons bubble here; without this
-				// guard, activating one would also open the collection.
+				// Keys on the inner buttons bubble here; without the guard one would also
+				// open the collection.
 				if (e.target !== e.currentTarget) return;
 				if (e.key === "Enter" || e.key === " ") {
 					e.preventDefault();

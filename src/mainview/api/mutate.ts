@@ -3,11 +3,6 @@ import { sessionService } from "./SessionService";
 
 export type MutationResult = { ok: true } | { ok: false; error: string };
 
-/**
- * One server write reduced to an error string. A 401 drops the app to the
- * login screen on the way past; `fallback` speaks when the RPC threw and there
- * is no server message to quote.
- */
 export async function mutate(
 	send: () => Promise<{ ok: true } | RpcFailure>,
 	fallback: string,

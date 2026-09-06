@@ -21,13 +21,9 @@ import { formatTime } from "@/lib/utils";
 export function PlayerBar() {
 	const { state, controller } = usePlayer();
 	const hasTrack = state.currentTrack !== null;
-	// The transport stays live for as long as there is a queue, not just while
-	// a track is loaded: a queue that ran to its end under repeat "off" unloads
-	// the player, and Play has to be clickable to start it over.
 	const hasQueue = state.tracks.length > 0;
 
 	return (
-		// `relative isolate` scopes the backdrop's negative z-index to this bar.
 		<footer className="relative isolate grid grid-cols-[1fr_2fr_1fr] items-center gap-4 border-t bg-card px-4 py-3">
 			<CoverBackdrop
 				coverUrl={state.currentTrack?.coverUrl}
@@ -35,7 +31,6 @@ export function PlayerBar() {
 				isPlaying={state.isPlaying}
 			/>
 
-			{/* Current track mini info */}
 			<div className="flex min-w-0 items-center gap-3">
 				<div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
 					{state.currentTrack?.coverUrl ? (
@@ -58,7 +53,6 @@ export function PlayerBar() {
 				</div>
 			</div>
 
-			{/* Transport + seek */}
 			<div className="flex flex-col items-center gap-1.5">
 				<div className="flex items-center gap-1">
 					<Button
@@ -135,7 +129,6 @@ export function PlayerBar() {
 				</div>
 			</div>
 
-			{/* Effects + volume */}
 			<div className="flex items-center justify-end gap-2">
 				<PlaybackEffects />
 				<Button

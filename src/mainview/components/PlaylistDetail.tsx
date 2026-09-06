@@ -37,19 +37,9 @@ import { useTrackActions } from "@/hooks/useTrackActions";
 import { formatTime, trackCountLabel } from "@/lib/utils";
 import type { RemotePlaylist } from "../../shared/rpcSchema";
 
-/*
- * Sensor options live out here because `useSensor` memoizes on the options
- * object's identity: fresh literals would hand DndContext a new sensor array
- * every render, which changes the context value every row's `useSortable`
- * subscribes to. Context updates bypass memo(), so on a view that re-renders
- * once a second while playing that would rebuild every row on every tick.
- */
-// A small distance before a drag begins, so pressing the grip and letting go
-// stays a click rather than a zero-length reorder.
 const POINTER_OPTIONS = { activationConstraint: { distance: 4 } };
 const KEYBOARD_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates };
 
-/** The opened playlist: banner with cover/meta/actions plus its track rows. */
 export function PlaylistDetail({
 	playlist,
 	onBack,
@@ -62,20 +52,10 @@ export function PlaylistDetail({
 	const { state } = usePlayer();
 	const { library } = useLibrary();
 	const { playlists } = usePlaylists();
-	// For the rows' "Go to artist" entry: the names a track carries have to be
-	// resolved against the artist list to become somewhere to navigate.
 	const { artists } = useArtists();
 	const [addOpen, setAddOpen] = useState(false);
-	// Edit/delete actions and the dialogs they open, rendered once for the whole
-	// list; the row menus just call into them.
 	const actions = useTrackActions();
 
-	// Join the ordered trackIds against the library, one index lookup each.
-	// `position` is the index into trackIds (only used for the move-bound
-	// checks); the row index is the position in the *joined* list (what
-	// playback addresses) — they diverge only while a dangling id awaits the
-	// next read. `library.tracks` is in the deps purely as that read's
-	// recompute trigger.
 	const rows = useMemo(
 		() =>
 			playlist.trackIds.flatMap((serverId, position) => {
@@ -85,8 +65,6 @@ export function PlaylistDetail({
 		[playlist, library.tracks],
 	);
 
-	// Stable row handlers — they only change on the (rare) playlists refresh,
-	// so the memoized rows survive the per-second timeupdate re-renders.
 	const playRow = useCallback(
 		(rowIndex: number) => playlistService.play(playlist, rowIndex),
 		[playlist],
@@ -110,8 +88,6 @@ export function PlaylistDetail({
 	const handleDragEnd = useCallback(
 		({ active, over }: DragEndEvent) => {
 			if (!over || active.id === over.id) return;
-			// dnd-kit widens a sortable id to `string | number`; these came from
-			// `sortableIds`, so they are the rows' own track ids.
 			playlistService.reorderTrack(
 				playlist.id,
 				String(active.id),
@@ -125,10 +101,6 @@ export function PlaylistDetail({
 		() => rows.reduce((sum, row) => sum + row.track.durationSec, 0),
 		[rows],
 	);
-	// Whether this playlist is what the queue mirrors — then the Play button
-	// becomes a pause/resume toggle instead of restarting from the top, and
-	// the rows may mark the current track (the now-playing highlight belongs
-	// to the collection the queue mirrors, not to every view of the track).
 	const ownsQueue = state.queueContextId === playlistQueueContext(playlist.id);
 	const playing = ownsQueue && state.isPlaying;
 
@@ -188,8 +160,6 @@ export function PlaylistDetail({
 				/>
 			) : (
 				<ScrollArea className="min-h-0 flex-1">
-					{/* Rows may only trade places within the list, so the drag is
-					    pinned to the vertical axis and to the <ul>'s box. */}
 					<DndContext
 						sensors={sensors}
 						collisionDetection={closestCenter}
@@ -202,8 +172,6 @@ export function PlaylistDetail({
 						>
 							<ul className="flex flex-col gap-1 p-2">
 								{rows.map(({ track, serverId, position }, rowIndex) => {
-									// A track is in a playlist at most once, so within the
-									// owning playlist the id match is unambiguous.
 									const isCurrent =
 										ownsQueue && track.id === state.currentTrack?.id;
 									return (
@@ -212,8 +180,6 @@ export function PlaylistDetail({
 											track={track}
 											rowIndex={rowIndex}
 											serverId={serverId}
-											// Keeps its identity until the next library
-											// read, so the memoized row is unaffected.
 											artistIds={libraryService.getRemote(track.id)?.artistIds}
 											artists={artists.artists}
 											isCurrent={isCurrent}

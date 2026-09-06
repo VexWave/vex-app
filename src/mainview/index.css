@@ -2,12 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/*
- * Outfit SemiBold, self-hosted for the "VexWave" wordmark only (Tailwind's
- * `font-wordmark`). The app ships offline, so the file is vendored under
- * assets/ rather than pulled from Google's CDN at runtime; it's the latin
- * subset at the single weight the wordmark uses.
- */
 @font-face {
 	font-family: "Outfit";
 	font-style: normal;
@@ -62,17 +56,11 @@
 		--ring: 0 0% 83.1%;
 	}
 
-	/*
-	 * The mark navigation puts on its selection, at the three lightnesses the
-	 * job needs: a core for the section switch's glow, an edge for the line
-	 * under it and the sidebar's badge wash, and one light enough to hold a
-	 * glyph beside a near-white label. Violet and not `primary`, which in this
-	 * theme is the same 98% as `foreground` — a glyph taking it comes out the
-	 * exact colour of the label next to it, which is no mark at all. Outside
-	 * the theme blocks because the accent is chosen against the app bar rather
-	 * than against the page, and so is the same violet either way.
-	 */
 	:root {
+		/* Violet, not primary: primary is the same 98% as foreground here,
+		   so a glyph taking it would come out the colour of the label beside
+		   it. Chosen against the app bar, not the page, so it sits outside
+		   the theme blocks. */
 		--nav: 270 88% 58%;
 		--nav-edge: 270 85% 66%;
 		--nav-bright: 270 82% 78%;
@@ -88,49 +76,6 @@
 	}
 }
 
-/*
- * Player-indicator ring (NowPlayingRing.tsx): a purple border floating
- * around the artwork of whichever collection owns the play queue — a
- * playlist's cover in the sidebar, an artist's avatar in the artists grid —
- * with two glowing arcs orbiting on opposite sides while audio runs.
- *
- * Two stacked ring elements, so each state can fade in and out on its own:
- * the base — a faint closed ring marking queue ownership — and the arcs,
- * which fade in over it on play and back out on pause. Both bands are real
- * borders, which leaves the inside genuinely transparent, so the gap shows
- * the row's own hover/active tint. The arcs' conic gradient masks that
- * border: the width comes from the border, and the sweep decides how much
- * of it shows at each angle. They orbit by animating the registered
- * --np-ring-angle inside that gradient — rotating the element itself would
- * rotate its rounded-square shape along with it.
- *
- * Two separate things keep the ring even, and it needs both. Blink snaps a
- * border width to whole device pixels at computed-value time, which is what
- * keeps the four sides of the band equally thick. That does nothing for the
- * *gap*: the ring's box is snapped independently of the artwork it wraps,
- * so the offset between them survives snapping only where it is already a
- * whole number of device pixels — hence rounding against --dpr below.
- * Wherever the artwork's own edge lands, round(edge − n) is round(edge) − n
- * only for integer n, and band and gap each have to be whole on their own
- * for that to hold, not merely their sum.
- *
- * On the arc layer the mask lives on a ::before while the drop-shadow sits
- * on the element itself: filter and mask on one element apply in
- * filter-then-mask order (the same reason a clip-path'd element's
- * drop-shadow gets clipped), so a shadow beside the mask would be computed
- * from the unmasked pie wedges and then erased with them. On the parent it
- * receives the already-masked arcs and glows around exactly those.
- *
- * Deliberately purple, not the `primary` token: primary is near-white in
- * the dark theme, and a thin white ring around a cover reads as a focus
- * outline rather than as playback. Its four violets are its own rather than
- * the `--nav` ramp above — base, arc, glow and the reduced-motion fallback
- * each sit behind a different amount of masking and blur.
- */
-
-/* CSS can't see the device pixel grid; lib/devicePixelRatio.ts publishes it
-   inline on <html>, where it beats this. Declared anyway so the stylesheet
-   is correct on its own — unscaled is the right guess if it never arrives. */
 :root {
 	--dpr: 1;
 }
@@ -148,13 +93,11 @@
 }
 
 .np-ring {
-	/* 2px nominal, landing on the nearest whole device pixel: 2 of them at
-	   100%, 3 at 125% and 150%, 4 at 175% and 200%. */
+	/* Nominal 2px landed on the nearest whole device pixel. */
 	--np-ring-width: calc(round(2px * var(--dpr), 1px) / var(--dpr));
 	--np-ring-gap: calc(round(2px * var(--dpr), 1px) / var(--dpr));
 	position: absolute;
 	inset: calc(-1 * (var(--np-ring-width) + var(--np-ring-gap)));
-	/* Cover radius (rounded-md) + the inset → concentric corners. */
 	border-radius: calc(
 		var(--radius) - 2px + var(--np-ring-width) + var(--np-ring-gap)
 	);
@@ -163,8 +106,6 @@
 	transition: opacity 0.4s ease;
 }
 
-/* Around a circular avatar (an artist) the concentric-corner math above has
-   nothing to match — a circle stays a circle however far the ring sits out. */
 .np-ring--round {
 	border-radius: 9999px;
 }
@@ -177,16 +118,10 @@
 	border: var(--np-ring-width) solid hsl(270 70% 65% / 0.35);
 }
 
-/* Only the glow — the masked arcs it wraps live on the ::before (see the
-   header comment for why they must be separate elements). */
 .np-ring--arc {
 	filter: drop-shadow(0 0 3px hsl(270 95% 65% / 0.7));
 }
 
-/* Two comets half a turn apart (peaks at 45° and 225°), each fading in
-   and out over its 90° span with a 90° rest between them. The parent has
-   neither border nor padding, so `inset: 0` puts this border box on the
-   parent's box and the band lands where the base ring's does. */
 .np-ring--arc::before {
 	content: "";
 	position: absolute;
@@ -202,8 +137,6 @@
 		transparent 270deg
 	);
 	animation: np-ring-spin 2.4s linear infinite;
-	/* Runs only while visible — paused, the idle rows' invisible arcs
-	   cost no repaints. */
 	animation-play-state: paused;
 }
 
@@ -212,7 +145,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	/* No orbit — playback brightens the closed ring instead. */
 	.np-ring--arc {
 		filter: none;
 	}

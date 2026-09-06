@@ -3,11 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useBinaries } from "@/hooks/useBinaries";
 
-/**
- * Non-blocking hint below the nav header when a newer yt-dlp release exists.
- * Follows the inline banner idiom of the error banners above the PlayerBar,
- * but in a non-destructive tint.
- */
 export function YtDlpUpdateBanner() {
 	const { binaries, service } = useBinaries();
 

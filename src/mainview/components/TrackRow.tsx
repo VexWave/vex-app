@@ -12,18 +12,6 @@ import { openRowMenu } from "@/lib/rowMenu";
 import { cn, formatTime } from "@/lib/utils";
 import type { Track } from "@/player/types";
 
-/**
- * One playable row: position, cover, title/artist, duration and a menu — the
- * shape every track list in the app uses. Which actions the menu offers is the
- * only thing that differs between a library, playlist or artist row, so it
- * arrives as `menu` from the thin wrapper around this (LibraryTrackRow,
- * PlaylistTrackRow, ArtistTrackRow).
- *
- * Those wrappers are the memoized layer — lists re-render on every player
- * timeupdate and on every import/upload progress tick — so this component is
- * only rebuilt when its row genuinely changed, and building the menu elements
- * eagerly costs nothing.
- */
 export function TrackRow({
 	track,
 	position,
@@ -35,19 +23,12 @@ export function TrackRow({
 	dragHandle,
 }: {
 	track: Track;
-	/** 1-based number at the left; the equalizer replaces it while playing. */
 	position: number;
 	isCurrent: boolean;
 	showBars: boolean;
 	onPlay: () => void;
-	/** The row's context-menu items. */
 	menu: ReactNode;
 	menuClassName?: string;
-	/**
-	 * Grip that starts a drag, shown ahead of the position for lists whose
-	 * order the user owns. Its column is only laid out when there is one, so
-	 * rows without stay flush left.
-	 */
 	dragHandle?: ReactNode;
 }) {
 	return (
@@ -58,8 +39,8 @@ export function TrackRow({
 					tabIndex={0}
 					onClick={onPlay}
 					onKeyDown={(e) => {
-						// Keys on the inner kebab button bubble here; without this
-						// guard, activating the menu would also play the row.
+						// Keys on the inner kebab bubble here; without the guard the row would
+						// also play.
 						if (e.target !== e.currentTarget) return;
 						if (e.key === "Enter" || e.key === " ") {
 							e.preventDefault();
@@ -72,7 +53,6 @@ export function TrackRow({
 						isCurrent ? "bg-accent" : "hover:bg-accent/60",
 					)}
 				>
-					{/* Same accent rail the sidebar uses for its active item. */}
 					<span
 						aria-hidden="true"
 						className={cn(

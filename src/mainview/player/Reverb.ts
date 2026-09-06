@@ -7,19 +7,8 @@ import {
 } from "./audioGraph";
 import { buildImpulse, LARGE, SMALL, type Room } from "./roomImpulse";
 
-/**
- * The most the slider will send, as a gain on the wet branch. The responses are
- * scaled to unit energy, so a wet gain of 1 hands back about the power it was
- * given; half of that puts the room a steady 6 dB under the track at the top of
- * the travel — drenched, with the track still plainly in front of it.
- */
 const WET_MAX = 0.5;
 
-/**
- * One room in the graph. Its response is built on the first change that makes it
- * audible, so a session that never touches the reverb never builds one, and kept
- * from then on — an `AudioBuffer` lives as long as the context it was made for.
- */
 class RoomBranch {
 	readonly gain: GainNode;
 	private readonly convolver: ConvolverNode;
@@ -32,7 +21,6 @@ class RoomBranch {
 		into: AudioNode,
 	) {
 		this.convolver = context.createConvolver();
-		// `roomImpulse` scales the responses to unit energy itself.
 		this.convolver.normalize = false;
 		this.gain = context.createGain();
 		input.connect(this.convolver).connect(this.gain).connect(into);
@@ -40,23 +28,12 @@ class RoomBranch {
 
 	load(): void {
 		this.impulse ??= buildImpulse(this.context, this.room);
-		// Assigning `buffer` resets the convolver's state, and this runs on every
-		// frame of a dragged slider: the guard is what carries the tail through a
-		// drag.
 		if (this.convolver.buffer !== this.impulse) {
 			this.convolver.buffer = this.impulse;
 		}
 	}
 }
 
-/**
- *     input ─┬──────────────────────────────────► mix ─►
- *            ├─► small ─┐                          │
- *            └─► large ─┴─► wet ───────────────────┘
- *
- * The dry path is a bare connection, so the track reaches `mix` at full level
- * wherever the slider sits.
- */
 interface ReverbGraph {
 	context: AudioContext;
 	mix: GainNode;
@@ -79,10 +56,6 @@ function buildReverb(context: AudioContext, input: AudioNode): ReverbGraph {
 	};
 }
 
-/**
- * A room around the track, and the setting that describes it. The setting stands
- * whether or not there is a graph to apply it to; `attach` marries the two.
- */
 export class Reverb implements GraphStage {
 	private amount = 0;
 	private graph: ReverbGraph | null = null;
@@ -91,7 +64,6 @@ export class Reverb implements GraphStage {
 		return this.amount;
 	}
 
-	/** True if the setting moved, which is what the owner reports onwards. */
 	set(amount: number): boolean {
 		const next = clamp(amount, 0, 1, 0);
 		if (next === this.amount) return false;
@@ -108,23 +80,14 @@ export class Reverb implements GraphStage {
 		const graph = buildReverb(context, input);
 		this.graph = graph;
 		this.loadImpulses();
-		// As values, so the graph opens at the current setting rather than sliding
-		// there from the unity a GainNode comes up at — which on `wet` is fully wet.
 		this.writeLevels(graph, writeValue);
 		return graph.mix;
 	}
 
 	release(): void {
-		// The responses go with the nodes: an AudioBuffer belongs to the sample
-		// rate it was made at, and the next context is free to have another.
 		this.graph = null;
 	}
 
-	/**
-	 * Both rooms, whatever the slider reads: the morph has the far one fading in
-	 * from the moment the slider leaves the near one. Zero is silent on both, so a
-	 * response waits until there is something to hear.
-	 */
 	private loadImpulses(): void {
 		const graph = this.graph;
 		if (this.amount <= 0 || !graph) return;
@@ -132,17 +95,6 @@ export class Reverb implements GraphStage {
 		graph.large.load();
 	}
 
-	/**
-	 * The slider turns the space itself — `small`/`large` at constant power over
-	 * independent responses, so it lengthens from a room to a hall while holding
-	 * its level — while `wet` says how much of that comes back, on a quarter sine
-	 * so it climbs fastest where the slider leaves zero.
-	 *
-	 * The trim on `mix` is the one thing the dry signal feels. The wet return is
-	 * uncorrelated with what produced it, so the two add in power; dividing the bus
-	 * by that holds the whole mix at the level the track arrived at, for 1 dB
-	 * across the entire travel.
-	 */
 	private writeLevels(graph: ReverbGraph, write: ParamWriter): void {
 		const turn = (this.amount * Math.PI) / 2;
 		const wet = WET_MAX * Math.sin(turn);

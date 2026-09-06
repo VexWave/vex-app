@@ -25,12 +25,9 @@ import type { RemotePlaylist } from "../../shared/rpcSchema";
 export function PlaylistsView() {
 	const { playlists: state } = usePlaylists();
 	const { view, service: navigation } = useNavigation();
-	// The grid's play buttons mirror playback: a playing playlist shows pause.
 	const { state: playerState } = usePlayer();
-	// The collages and track counts are joined against the library.
 	const { library } = useLibrary();
 	const [dialogOpen, setDialogOpen] = useState(false);
-	// The playlist being edited, or null when the dialog is in "create" mode.
 	const [editing, setEditing] = useState<RemotePlaylist | null>(null);
 	const [pendingDelete, setPendingDelete] = useState<RemotePlaylist | null>(
 		null,
@@ -45,9 +42,6 @@ export function PlaylistsView() {
 		setDialogOpen(true);
 	};
 
-	// Joined once for the whole grid — per-card joins would be redone on every
-	// player timeupdate. `library.tracks` is in the deps purely as the
-	// recompute trigger for the snapshot tracksOf reads.
 	const tracksByPlaylist = useMemo(
 		() =>
 			new Map(
@@ -59,18 +53,12 @@ export function PlaylistsView() {
 		[state.playlists, library.tracks],
 	);
 
-	// Always render the *fresh* snapshot of the opened playlist; if it was
-	// deleted (here or server-side), fall back to the grid.
 	const openId = openIdOf(view);
 	const open =
 		openId !== null
 			? (state.playlists.find((playlist) => playlist.id === openId) ?? null)
 			: null;
 
-	// The open id lives in the app's navigation state, so when the playlist
-	// behind it vanishes (deleted by another client, or the id outlived its
-	// session) the navigation state must be told — otherwise the sidebar
-	// would keep marking a detail view the grid has already replaced.
 	useEffect(() => {
 		if (openId !== null && open === null) navigation.openPlaylist(null);
 	}, [openId, open, navigation]);
@@ -115,13 +103,9 @@ export function PlaylistsView() {
 						/>
 					) : (
 						<ScrollArea className="min-h-0 flex-1">
-							{/* Track sizing shared with the artists grid — see there. */}
 							<ul className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2 p-4">
 								{state.playlists.map((playlist) => {
 									const tracks = tracksByPlaylist.get(playlist.id) ?? [];
-									// The queue already mirrors this playlist → its button
-									// shows pause (playOrToggle resumes instead of
-									// restarting from the top).
 									const ownsQueue =
 										playerState.queueContextId ===
 										playlistQueueContext(playlist.id);
@@ -184,8 +168,6 @@ export function PlaylistsView() {
 				onConfirm={() => {
 					if (!pendingDelete) return;
 					void playlistService.remove(pendingDelete.id);
-					// Back to the grid right away — the vanished-playlist effect
-					// would only catch up after the refetch.
 					if (openId === pendingDelete.id) navigation.openPlaylist(null);
 				}}
 			/>

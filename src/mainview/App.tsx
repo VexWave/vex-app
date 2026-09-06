@@ -23,12 +23,6 @@ import { usePlayer } from "@/hooks/usePlayer";
 import { useSession } from "@/hooks/useSession";
 import type { MainViewName } from "@/api/NavigationService";
 
-/**
- * What each top-level view renders. A table rather than a conditional chain
- * because it is exhaustive over MainViewName: a view added to the union without a
- * component here is a compile error, where a chain's last `else` would quietly
- * render the wrong view.
- */
 const VIEWS: Record<MainViewName, ComponentType> = {
 	library: TrackList,
 	discover: DiscoverView,
@@ -41,32 +35,21 @@ function App() {
 	const { state } = usePlayer();
 	const { session } = useSession();
 	const { binaries } = useBinaries();
-	// LibraryService fetches the server library per login and clears the queue
-	// on logout; the component only renders its error state.
 	const { library } = useLibrary();
 	const downloads = useDownloads();
-	// Which view the main area shows, and which item it has opened — owned by
-	// NavigationService so any component can navigate (see useNavigation).
 	const { view, section } = useNavigation();
 	const MainViewComponent = VIEWS[view.name];
-	// The chrome the current section brings with it, if any (see Sections).
 	const { Aside } = SECTIONS[section];
 	const [isDragging, setIsDragging] = useState(false);
 
-	// Dropped files are uploaded to the server; they re-enter the queue as
-	// streaming tracks once the upload completes.
 	const handleDrop = (e: DragEvent) => {
 		e.preventDefault();
 		setIsDragging(false);
 		uploadService.enqueue(e.dataTransfer.files);
 	};
 
-	// Hard gate before login: the helper binaries (yt-dlp/ffmpeg/deno) must
-	// exist before anything else, so a fresh machine sets up first.
 	if (binaries.phase !== "ready") return <BinarySetupScreen />;
 
-	// A persisted token is still being replayed — show a splash rather than
-	// flashing the login form before the restore resolves.
 	if (session.restoring) {
 		return (
 			<div className="flex h-screen items-center justify-center bg-background text-foreground">
@@ -75,9 +58,6 @@ function App() {
 		);
 	}
 
-	// Blocking login: the player UI is only reachable with a live session.
-	// The player singleton survives this unmount, so a mid-session 401
-	// doesn't stop audio or lose the queue.
 	if (session.status !== "loggedIn") return <LoginScreen />;
 
 	return (
@@ -95,21 +75,9 @@ function App() {
 			<AppHeader />
 			<YtDlpUpdateBanner />
 
-			{/* Whether there is an aside at all is the section's to declare, never a
-			    breakpoint's: this is a fixed-size desktop window, and on HiDPI
-			    displays the CSS viewport can sit below Tailwind's `md`, where a
-			    responsively hidden sidebar would be unreachable. A section that
-			    brings none simply leaves the panel the whole window — nothing
-			    becomes unreachable, since the switch that got you there is still in
-			    the app bar. */}
 			<main className="flex min-h-0 flex-1 gap-4 p-4">
 				{Aside && <Aside />}
-				{/* min-w-0: a flex item's min-width is auto, so one nowrap track
-				    title would widen the panel past the window. */}
 				<div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
-					{/* Keyed by view so each one fades in as it arrives. The key costs
-					    no state: `MainViewComponent` changes with the same name, so
-					    React remounts the subtree at that point regardless. */}
 					<div
 						key={view.name}
 						className="h-full duration-200 animate-in fade-in motion-reduce:animate-none"

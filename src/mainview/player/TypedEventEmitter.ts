@@ -1,9 +1,5 @@
 export type Listener<T> = (payload: T) => void;
 
-/**
- * Minimal strongly-typed event emitter used as a base class by the player
- * core, so it stays framework-agnostic (no React, no DOM EventTarget quirks).
- */
 export class TypedEventEmitter<Events extends Record<string, unknown>> {
 	private listeners = new Map<keyof Events, Set<Listener<never>>>();
 

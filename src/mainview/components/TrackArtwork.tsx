@@ -1,14 +1,6 @@
 import { Music, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * A track's square cover with the shared music-note fallback — the artwork
- * every track list, picker and placeholder row draws.
- *
- * `hoverPlay` overlays a play glyph while the surrounding `group` is hovered,
- * which is what makes a row read as clickable; `highlighted` tints the ring on
- * the row that is currently playing.
- */
 export function TrackArtwork({
 	coverUrl,
 	className,

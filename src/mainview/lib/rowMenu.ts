@@ -1,9 +1,5 @@
-/**
- * Open a track row's context menu from a left-click on its kebab button:
- * Radix's ContextMenuTrigger listens for `contextmenu`, so we synthesize one
- * anchored at the button. Native right-click on the row keeps working
- * unchanged.
- */
+// Radix's ContextMenuTrigger listens for contextmenu, so a left-click on the
+// kebab synthesizes one anchored at the button.
 export function openRowMenu(button: HTMLElement) {
 	const rect = button.getBoundingClientRect();
 	button.dispatchEvent(

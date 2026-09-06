@@ -49,19 +49,12 @@ export function LoginScreen() {
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [validationError, setValidationError] = useState<string | null>(null);
-	// The timer below only forces the re-render; the time left is read from the
-	// clock during it, so the first render after a 429 already shows the real
-	// countdown rather than one based on whenever the last tick happened.
 	const [, tick] = useReducer((count: number) => count + 1, 0);
 
 	const loggingIn = session.status === "loggingIn";
 	const error = validationError ?? session.error;
-	// Server-imposed wait after a 429; the contract requires honouring it rather
-	// than letting the user retry straight into the throttle.
 	const remainingMs = Math.max(0, (session.retryAfter ?? 0) - Date.now());
 
-	// A clock only while one is actually running — an expired deadline needs no
-	// timer, and neither does the form in the common case.
 	useEffect(() => {
 		const endsAt = session.retryAfter;
 		if (endsAt === null) return;
@@ -103,8 +96,6 @@ export function LoginScreen() {
 				<CardContent>
 					<form className="flex flex-col gap-4" onSubmit={handleSubmit}>
 						<Field id="server" label="Server address">
-							{/* text, not url: a bad address is answered by the form's own
-							    message below, not by the browser's bubble. */}
 							<Input
 								id="server"
 								type="text"

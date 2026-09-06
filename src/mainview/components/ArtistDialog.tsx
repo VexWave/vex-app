@@ -16,22 +16,11 @@ import { blobToBase64, tooLargeMessage } from "@/lib/utils";
 import { MAX_IMAGE_BYTES, MAX_NAME_LENGTH } from "../../shared/limits";
 import type { RemoteArtist } from "../../shared/rpcSchema";
 
-/**
- * Avatar editing is three-state: leave the existing image untouched, replace it
- * with a picked file, or remove it. `removed` sends `image: null`; `unchanged`
- * omits the field entirely. In create mode there is nothing to remove, so only
- * `unchanged` (no avatar) and `new` occur.
- */
 type ImageEdit =
 	| { kind: "unchanged" }
 	| { kind: "new"; file: File }
 	| { kind: "removed" };
 
-/**
- * Create a new artist or edit an existing one (`artist === null` → create).
- * The avatar is uploaded as raw image bytes; in edit mode the current avatar
- * shows as a preview and can be replaced with a new file or removed entirely.
- */
 export function ArtistDialog({
 	artist,
 	open,
@@ -49,7 +38,6 @@ export function ArtistDialog({
 	const [error, setError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	// Fresh form seeded from the artist (if any) every time the dialog opens.
 	useEffect(() => {
 		if (!open) return;
 		setName(artist?.name ?? "");
@@ -58,9 +46,6 @@ export function ArtistDialog({
 		setError(null);
 	}, [open, artist]);
 
-	// Preview follows the image edit: a picked file gets an object URL (revoked
-	// on change/unmount), removal shows the fallback, unchanged shows the current
-	// avatar (if any).
 	useEffect(() => {
 		if (image.kind === "new") {
 			const url = URL.createObjectURL(image.file);
@@ -70,9 +55,6 @@ export function ArtistDialog({
 		setPreview(image.kind === "removed" ? null : (artist?.imageUrl ?? null));
 	}, [image, artist]);
 
-	// An avatar over the server's ceiling is refused at the picker, keeping the
-	// previous one selected: the alternative is encoding it, sending it, and
-	// answering with a 413 after the wait.
 	const pickImage = (file: File) => {
 		const tooLarge = tooLargeMessage(file.size, MAX_IMAGE_BYTES, "image");
 		if (tooLarge) {
@@ -84,8 +66,6 @@ export function ArtistDialog({
 	};
 
 	const removeImage = () => {
-		// Removing an artist that has no avatar is a no-op edit — revert to
-		// unchanged rather than sending a pointless `image: null`.
 		setImage(artist?.imageUrl ? { kind: "removed" } : { kind: "unchanged" });
 	};
 
@@ -99,7 +79,6 @@ export function ArtistDialog({
 		setError(null);
 		setSubmitting(true);
 
-		// undefined = unchanged/no avatar; null = remove; string = new bytes.
 		let imageBase64: string | null | undefined;
 		if (image.kind === "new") {
 			try {
@@ -117,7 +96,6 @@ export function ArtistDialog({
 			? await artistService.edit({ id: artist.id, name: trimmedName, imageBase64 })
 			: await artistService.create({
 					name: trimmedName,
-					// create has no null state; only a picked file produces bytes.
 					imageBase64: imageBase64 ?? undefined,
 				});
 		setSubmitting(false);
@@ -193,7 +171,6 @@ export function ArtistDialog({
 							onChange={(e) => {
 								const file = e.target.files?.[0];
 								if (file) pickImage(file);
-								// Reset so re-picking the same file fires onChange again.
 								e.target.value = "";
 							}}
 						/>

@@ -12,11 +12,9 @@ import type {
 const YT_DLP_LATEST_API =
 	"https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
 
-/** One HTTP download; a binary may need several (macOS ffmpeg + ffprobe). */
 interface DownloadPart {
 	url: string;
 	kind: "raw" | "zip";
-	/** raw: single dest name. zip: archive entry path → dest name in bin/. */
 	files: { entry?: string; dest: string }[];
 }
 
@@ -46,14 +44,6 @@ function defaultBinDir(): string | null {
 	return null;
 }
 
-/**
- * Downloads and tracks the external executables the URL-import feature needs
- * (yt-dlp, ffmpeg+ffprobe, deno). Binaries live in a per-user folder, not the
- * app bundle, so they can be installed and updated without shipping a new app
- * version. Install runs are detached: the RPC request only starts them, and
- * progress/completion flow to the webview through `sendProgress` — a full
- * ffmpeg download would not fit inside the RPC timeout.
- */
 export class BinaryManager {
 	readonly binDir: string;
 	private readonly unsupported: string | null;
@@ -72,23 +62,15 @@ export class BinaryManager {
 		this.tmpDir = path.join(this.binDir, ".tmp");
 	}
 
-	/** True while an install/update run is replacing binaries on disk — a
-	 * spawned yt-dlp must not be running then (Windows can't overwrite a
-	 * running exe), so everything that spawns one is refused for the duration. */
+	// Windows can't overwrite a running exe, so everything that spawns yt-dlp is
+	// refused while an install run replaces binaries.
 	get isBusy(): boolean {
 		return this.installTask !== null;
 	}
 
-	/**
-	 * Whether managed binaries can exist on this platform at all. The callers
-	 * that spawn them ask this rather than reading `binDir` for emptiness, which
-	 * only means "unsupported" by coincidence of how it is constructed.
-	 */
 	get isSupported(): boolean {
 		return this.unsupported === null;
 	}
-
-	// --- Paths (consumed by the URL-import downloader) ---
 
 	ytDlpPath(): string {
 		return this.destPath(this.exe("yt-dlp"));
@@ -106,7 +88,6 @@ export class BinaryManager {
 		return this.destPath(this.exe("deno"));
 	}
 
-	/** Disk-only check: manifest entry present AND all expected files exist. */
 	async getStatus(): Promise<BinaryStatusResult> {
 		if (this.unsupported) return { ok: false, error: this.unsupported };
 		try {
@@ -124,39 +105,22 @@ export class BinaryManager {
 		}
 	}
 
-	/**
-	 * Starts installing every missing binary and returns immediately;
-	 * completion arrives as a `finished`/`failed` progress message. A second
-	 * call while a run is active is a successful no-op.
-	 */
 	startInstall(): RpcResult {
 		return this.startRun(null);
 	}
 
-	/** Forced re-download of yt-dlp only, even when already installed. */
 	startYtDlpUpdate(): RpcResult {
 		return this.startRun(["ytDlp"]);
 	}
 
-	/**
-	 * Fire-and-forget at startup. Only checks when the manifest records an
-	 * installed yt-dlp version — a fresh install is the latest release anyway.
-	 */
 	startUpdateCheckIfInstalled(): void {
 		if (this.unsupported) return;
 		this.updateCheck = this.runUpdateCheck();
 	}
 
-	/**
-	 * Result of the startup check; `updateAvailable: false` when the check
-	 * never ran, failed (offline / rate limit), or an update was applied
-	 * since. Never rejects — the hint is best-effort.
-	 */
 	async checkYtDlpUpdate(): Promise<YtDlpUpdateResult> {
 		return this.updateCheck ?? { ok: true, updateAvailable: false };
 	}
-
-	// --- Install run ---
 
 	private startRun(binaries: BinaryName[] | null): RpcResult {
 		if (this.unsupported) return { ok: false, error: this.unsupported };
@@ -167,12 +131,10 @@ export class BinaryManager {
 		return { ok: true };
 	}
 
-	/** Detached task: every failure becomes a `failed` message, never a throw. */
 	private async runInstall(requested: BinaryName[] | null): Promise<void> {
 		let current: BinaryName = requested?.[0] ?? "ytDlp";
 		try {
 			await mkdir(this.binDir, { recursive: true });
-			// Leftovers of a run the app was killed in the middle of.
 			await rm(this.tmpDir, { recursive: true, force: true });
 			await mkdir(this.tmpDir, { recursive: true });
 
@@ -231,11 +193,7 @@ export class BinaryManager {
 
 		const manifest = await this.readManifest();
 		if (binary === "ytDlp") {
-			// GitHub's asset redirect ends on a signed CDN URL with no tag in
-			// it, so the binary itself is the only reliable version source.
 			manifest.ytDlp = { version: await this.queryYtDlpVersion() };
-			// The just-installed yt-dlp IS the latest release; drop any stale
-			// update hint from the startup check.
 			this.updateCheck = Promise.resolve({ ok: true, updateAvailable: false });
 		} else {
 			manifest[binary] = { installed: true };
@@ -243,7 +201,6 @@ export class BinaryManager {
 		await this.writeManifest(manifest);
 	}
 
-	/** `yt-dlp --version` prints exactly the release tag, e.g. "2026.07.04". */
 	private async queryYtDlpVersion(): Promise<string | undefined> {
 		try {
 			const proc = Bun.spawn([this.ytDlpPath(), "--version"], {
@@ -255,8 +212,6 @@ export class BinaryManager {
 			const version = (await new Response(proc.stdout).text()).trim();
 			return version || undefined;
 		} catch {
-			// Version stays unknown; the update check then reports no update
-			// until the next successful install records one.
 			return undefined;
 		}
 	}
@@ -313,7 +268,7 @@ export class BinaryManager {
 		return filePath;
 	}
 
-	/** bsdtar handles .zip; Windows 10+ ships it in System32, macOS in /usr/bin. */
+	// bsdtar handles .zip; Windows 10+ ships it in System32, macOS in /usr/bin.
 	private async extractZip(zipPath: string, extractDir: string): Promise<void> {
 		const tar = process.platform === "win32" ? "tar" : "/usr/bin/tar";
 		const proc = Bun.spawn([tar, "-xf", zipPath, "-C", extractDir], {
@@ -331,13 +286,11 @@ export class BinaryManager {
 
 	private async moveIntoBin(from: string, destName: string): Promise<void> {
 		const dest = this.destPath(destName);
-		// Windows rename won't overwrite; also clears stale/old binaries.
+		// Windows rename won't overwrite.
 		await rm(dest, { force: true });
 		await rename(from, dest);
 		if (process.platform === "darwin") await chmod(dest, 0o755);
 	}
-
-	// --- Status / manifest ---
 
 	private async statusOnDisk(): Promise<{
 		installed: BinaryName[];
@@ -370,7 +323,6 @@ export class BinaryManager {
 		try {
 			return await Bun.file(this.manifestPath()).json();
 		} catch {
-			// Missing or corrupt manifest — treat everything as not installed.
 			return {};
 		}
 	}
@@ -381,8 +333,6 @@ export class BinaryManager {
 		await rm(this.manifestPath(), { force: true });
 		await rename(tmpPath, this.manifestPath());
 	}
-
-	// --- Update check ---
 
 	private async runUpdateCheck(): Promise<YtDlpUpdateResult> {
 		const none: YtDlpUpdateResult = { ok: true, updateAvailable: false };
@@ -402,8 +352,6 @@ export class BinaryManager {
 			return none;
 		}
 	}
-
-	// --- Download sources ---
 
 	private partsFor(binary: BinaryName): DownloadPart[] {
 		const arm64 = process.arch === "arm64";
@@ -432,9 +380,9 @@ export class BinaryManager {
 					];
 				}
 				case "deno":
-					// No arm64 Windows build published; x64 runs under emulation.
 					return [
 						{
+							// No arm64 Windows build published; x64 runs under emulation.
 							url: "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip",
 							kind: "zip",
 							files: [{ entry: "deno.exe", dest: "deno.exe" }],
@@ -452,7 +400,6 @@ export class BinaryManager {
 					},
 				];
 			case "ffmpeg":
-				// evermeet ships one binary per archive; x86_64 only (Rosetta).
 				return [
 					{
 						url: "https://evermeet.cx/ffmpeg/getrelease/zip",

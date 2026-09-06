@@ -24,21 +24,11 @@ import {
 	MAX_NAME_LENGTH,
 } from "../../shared/limits";
 
-/**
- * Cover editing is three-state: leave it untouched, replace it with a picked
- * file, or remove the existing one. The distinction matters on the wire —
- * `removed` sends `cover: null`, `unchanged` omits the field entirely.
- */
 type CoverEdit =
 	| { kind: "unchanged" }
 	| { kind: "new"; file: File }
 	| { kind: "removed" };
 
-/**
- * Edit a server track's title, cover image, and linked artists. Only dirty
- * fields are sent; an unchanged save just closes without a request. Supersedes
- * the old artists-only dialog.
- */
 export function EditTrackDialog({
 	track,
 	open,
@@ -58,10 +48,6 @@ export function EditTrackDialog({
 	const [error, setError] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
-	// Seed a fresh form from the track every time the dialog opens. The linked
-	// artists are read here rather than held in state of their own: the ids are
-	// only wanted at the moment of seeding, and a value memoized on `track`
-	// would be a second dependency saying exactly what `track` already says.
 	useEffect(() => {
 		if (!open) return;
 		const linked = new Set(
@@ -75,9 +61,6 @@ export function EditTrackDialog({
 		setError(null);
 	}, [open, track]);
 
-	// Preview follows the cover edit: a picked file gets an object URL (revoked
-	// on change/unmount), removal shows the fallback, unchanged shows the server
-	// cover.
 	useEffect(() => {
 		if (cover.kind === "new") {
 			const url = URL.createObjectURL(cover.file);
@@ -88,8 +71,6 @@ export function EditTrackDialog({
 	}, [cover, track]);
 
 	const toggle = (id: number) => {
-		// The server takes a track's artists as one list and refuses an oversized
-		// one outright, so the cap is held here rather than discovered on save.
 		if (!selected.has(id) && selected.size >= MAX_ARTISTS_PER_TRACK) {
 			setError(`A track can name at most ${MAX_ARTISTS_PER_TRACK} artists.`);
 			return;
@@ -102,9 +83,6 @@ export function EditTrackDialog({
 		});
 	};
 
-	// A cover over the server's ceiling is refused at the picker, keeping the
-	// previous one selected: the alternative is encoding it, sending it, and
-	// answering with a 413 after the wait.
 	const pickCover = (file: File) => {
 		const tooLarge = tooLargeMessage(file.size, MAX_IMAGE_BYTES, "image");
 		if (tooLarge) {
@@ -116,8 +94,6 @@ export function EditTrackDialog({
 	};
 
 	const removeCover = () => {
-		// Removing a track that has no server cover is a no-op edit — revert to
-		// unchanged rather than sending a pointless `cover: null`.
 		setCover(track?.coverUrl ? { kind: "removed" } : { kind: "unchanged" });
 	};
 
@@ -140,7 +116,6 @@ export function EditTrackDialog({
 			}
 		}
 
-		// Nothing dirty → just close, no request.
 		if (Object.keys(changes).length === 0) {
 			onOpenChange(false);
 			return;
@@ -204,7 +179,6 @@ export function EditTrackDialog({
 							onChange={(e) => {
 								const file = e.target.files?.[0];
 								if (file) pickCover(file);
-								// Reset so re-picking the same file fires onChange again.
 								e.target.value = "";
 							}}
 						/>

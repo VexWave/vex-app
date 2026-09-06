@@ -4,10 +4,6 @@ import { Group } from "@/components/SettingsControls";
 import { Button } from "@/components/ui/button";
 import { useUninstall } from "@/hooks/useUninstall";
 
-/**
- * Takes VexWave off the machine. One row: the button governs the panel rather
- * than a setting in it, so it sits in the header and there are no rows.
- */
 export function UninstallPanel() {
 	const { uninstall, service } = useUninstall();
 	const [confirming, setConfirming] = useState(false);
@@ -16,15 +12,12 @@ export function UninstallPanel() {
 		void service.check();
 	}, [service]);
 
-	// Nothing until bun answers: a row that appears and retracts is worse than
-	// one that arrives a moment late.
 	if (!uninstall.removable) return null;
 
 	return (
 		<>
 			<Group
 				title="Uninstall"
-				// No row under it to carry a refusal.
 				description={uninstall.error ?? "Take VexWave off this computer."}
 				action={(labelling) => (
 					<Button
