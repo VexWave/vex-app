@@ -1,39 +1,48 @@
 export interface Room {
 	preDelaySec: number;
-	tailSec: number;
 	rt60Sec: number;
 	earlySec: number;
 	earlyCount: number;
-	toneOpenHz: number;
-	toneClosedHz: number;
+	earlyLevel: number;
 	seed: number;
 }
 
 export const SMALL: Room = {
-	preDelaySec: 0.012,
-	tailSec: 0.8,
-	rt60Sec: 0.6,
-	earlySec: 0.045,
-	earlyCount: 14,
-	toneOpenHz: 9500,
-	toneClosedHz: 2200,
+	preDelaySec: 0.014,
+	rt60Sec: 0.8,
+	earlySec: 0.05,
+	earlyCount: 16,
+	earlyLevel: 2.5,
 	seed: 0x5eed1e55,
 };
 export const LARGE: Room = {
-	preDelaySec: 0.042,
-	tailSec: 3.6,
-	rt60Sec: 3.1,
-	earlySec: 0.12,
+	preDelaySec: 0.032,
+	rt60Sec: 2.6,
+	earlySec: 0.11,
 	earlyCount: 26,
-	toneOpenHz: 8500,
-	toneClosedHz: 900,
+	earlyLevel: 1.6,
 	seed: 0x9e3779b9,
 };
 
-const DIFFUSION_SEC = 0.02;
-const EARLY_LEVEL = 8;
-const EARLY_TONE_HZ = 6500;
-const ROOM_FLOOR_HZ = 180;
+// Spread halls measure: 1.4x RT60 at 125 Hz, 0.45x at 8 kHz.
+const BASS_RT = 1.4;
+const AIR_RT = 0.45;
+const BASS_HZ = 250;
+const BODY_HZ = 2600;
+// Steep on top, gentle below: bass reaching 1 kHz would outlive the body tail.
+const TOP_POLES = 4;
+const BOTTOM_POLES = 2;
+// Own noise per layer: filtered copies of one stream cancel where they overlap.
+const OVERLAP = 0.4;
+const BASS_LEVEL = 0.45;
+const BODY_LEVEL = 1;
+const AIR_LEVEL = 1.2;
+const AIR_TONE_HZ = 6000;
+
+const EARLY_TONE_HZ = 5200;
+// Convolution multiplies spectra, and music is already bass-heavy.
+const LOW_CUT_HZ = 170;
+const LOW_CUT_POLES = 2;
 const FADE_SEC = 0.25;
 
 function roomNoise(seed: number): () => number {
@@ -50,24 +59,99 @@ function lowpassCoefficient(hz: number, rate: number): number {
 	return 1 - Math.exp((-2 * Math.PI * hz) / rate);
 }
 
+function decayStep(rt60Sec: number, rate: number): number {
+	return Math.exp(Math.log(0.001) / (rt60Sec * rate));
+}
+
+function lowpass(state: Float32Array, coefficient: number, x: number): number {
+	let carry = x;
+	for (let i = 0; i < state.length; i++) {
+		state[i] += coefficient * (carry - state[i]);
+		carry = state[i];
+	}
+	return carry;
+}
+
+function highpass(state: Float32Array, coefficient: number, x: number): number {
+	let carry = x;
+	for (let i = 0; i < state.length; i++) {
+		state[i] += coefficient * (carry - state[i]);
+		carry -= state[i];
+	}
+	return carry;
+}
+
+function layerNoise(rate: number, seed: number): () => Float32Array {
+	const bassCoefficient = lowpassCoefficient(BASS_HZ, rate);
+	const bodyCoefficient = lowpassCoefficient(BODY_HZ, rate);
+	const bodyFloor = lowpassCoefficient(BASS_HZ * OVERLAP, rate);
+	const airFloor = lowpassCoefficient(BODY_HZ * OVERLAP, rate);
+	const airTone = lowpassCoefficient(AIR_TONE_HZ, rate);
+	const bassNoise = roomNoise(seed);
+	const bodyNoise = roomNoise(seed ^ 0x85ebca6b);
+	const airNoise = roomNoise(seed ^ 0xc2b2ae35);
+	const bassTop = new Float32Array(TOP_POLES);
+	const bodyBottom = new Float32Array(BOTTOM_POLES);
+	const bodyTop = new Float32Array(TOP_POLES);
+	const airBottom = new Float32Array(BOTTOM_POLES);
+	const airTop = new Float32Array(1);
+	const out = new Float32Array(3);
+	return () => {
+		out[0] = lowpass(bassTop, bassCoefficient, bassNoise() * 2 - 1);
+		out[1] = lowpass(
+			bodyTop,
+			bodyCoefficient,
+			highpass(bodyBottom, bodyFloor, bodyNoise() * 2 - 1),
+		);
+		out[2] = lowpass(
+			airTop,
+			airTone,
+			highpass(airBottom, airFloor, airNoise() * 2 - 1),
+		);
+		return out;
+	};
+}
+
+// Level constants hold only once each layer is measured back to unit variance.
+function layerGains(rate: number): [number, number, number] {
+	const layers = layerNoise(rate, 0x2545f491);
+	const count = 1 << 16;
+	let bass = 0;
+	let body = 0;
+	let air = 0;
+	for (let i = 0; i < count; i++) {
+		const layer = layers();
+		bass += layer[0] * layer[0];
+		body += layer[1] * layer[1];
+		air += layer[2] * layer[2];
+	}
+	return [
+		BASS_LEVEL / Math.sqrt(bass / count),
+		BODY_LEVEL / Math.sqrt(body / count),
+		AIR_LEVEL / Math.sqrt(air / count),
+	];
+}
+
 export function buildImpulse(
 	context: BaseAudioContext,
 	room: Room,
 ): AudioBuffer {
 	const rate = context.sampleRate;
 	const head = Math.round(room.preDelaySec * rate);
+	const tailSec = room.rt60Sec * BASS_RT + FADE_SEC;
 	const buffer = context.createBuffer(
 		2,
-		head + Math.round(room.tailSec * rate),
+		head + Math.round(tailSec * rate),
 		rate,
 	);
 	const random = roomNoise(room.seed);
+	const gains = layerGains(rate);
 
 	for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
 		const samples = buffer.getChannelData(channel);
 		addEarlyReflections(samples, head, rate, random, room);
-		addTail(samples, head, rate, random, room);
-		clearLowEnd(samples, rate);
+		addTail(samples, head, rate, room, gains, channel);
+		cutLowEnd(samples, rate);
 		normalise(samples);
 	}
 	return buffer;
@@ -83,9 +167,10 @@ function addEarlyReflections(
 	const span = Math.round(room.earlySec * rate);
 	const cluster = new Float32Array(span);
 	for (let i = 0; i < room.earlyCount; i++) {
-		const when = ((i + random()) / room.earlyCount) ** 0.6;
+		const when = ((i + random()) / room.earlyCount) ** 0.7;
 		const at = Math.min(span - 1, Math.floor(when * span));
-		const level = EARLY_LEVEL ** (1 - when) * (0.75 + random() * 0.5);
+		const level =
+			room.earlyLevel * Math.exp(-2.2 * when) * (0.7 + random() * 0.6);
 		cluster[at] += random() < 0.5 ? -level : level;
 	}
 
@@ -102,50 +187,48 @@ function addTail(
 	samples: Float32Array,
 	head: number,
 	rate: number,
-	random: () => number,
 	room: Room,
+	[gainBass, gainBody, gainAir]: [number, number, number],
+	channel: number,
 ): void {
 	const length = samples.length - head;
 	const fadeFrom = length - Math.round(FADE_SEC * rate);
-	const decayStep = Math.exp(Math.log(0.001) / (room.rt60Sec * rate));
-	const buildStep = Math.exp(-1 / (DIFFUSION_SEC * rate));
-	const open = lowpassCoefficient(room.toneOpenHz, rate);
-	const closed = lowpassCoefficient(room.toneClosedHz, rate);
-	const toneStep = (closed / open) ** (1 / length);
+	const layers = layerNoise(rate, room.seed + channel * 0x9e3779b9);
+	const stepBass = decayStep(room.rt60Sec * BASS_RT, rate);
+	const stepBody = decayStep(room.rt60Sec, rate);
+	const stepAir = decayStep(room.rt60Sec * AIR_RT, rate);
+	const buildStep = Math.exp(-1 / (room.earlySec * 0.6 * rate));
 
-	let decay = 1;
+	let decayBass = 1;
+	let decayBody = 1;
+	let decayAir = 1;
 	let undiffused = 1;
-	let coefficient = open;
-	let filtered = 0;
 	for (let i = 0; i < length; i++) {
-		const white = (random() * 2 - 1) * Math.sqrt(3);
-		filtered += coefficient * (white - filtered);
-		const level = filtered * Math.sqrt((2 - coefficient) / coefficient);
+		const layer = layers();
 
-		let envelope = decay * (1 - undiffused);
+		let envelope = 1 - undiffused;
 		if (i >= fadeFrom) {
 			const t = (i - fadeFrom + 1) / (length - fadeFrom);
 			envelope *= (1 + Math.cos(Math.PI * t)) / 2;
 		}
-		samples[head + i] += level * envelope;
+		samples[head + i] +=
+			envelope *
+			(gainBass * layer[0] * decayBass +
+				gainBody * layer[1] * decayBody +
+				gainAir * layer[2] * decayAir);
 
-		decay *= decayStep;
+		decayBass *= stepBass;
+		decayBody *= stepBody;
+		decayAir *= stepAir;
 		undiffused *= buildStep;
-		coefficient *= toneStep;
 	}
 }
 
-function clearLowEnd(samples: Float32Array, rate: number): void {
-	const alpha = 1 / (1 + (2 * Math.PI * ROOM_FLOOR_HZ) / rate);
-	for (let pass = 0; pass < 2; pass++) {
-		let lastIn = 0;
-		let lastOut = 0;
-		for (let i = 0; i < samples.length; i++) {
-			const input = samples[i];
-			lastOut = alpha * (lastOut + input - lastIn);
-			lastIn = input;
-			samples[i] = lastOut;
-		}
+function cutLowEnd(samples: Float32Array, rate: number): void {
+	const coefficient = lowpassCoefficient(LOW_CUT_HZ, rate);
+	const state = new Float32Array(LOW_CUT_POLES);
+	for (let i = 0; i < samples.length; i++) {
+		samples[i] = highpass(state, coefficient, samples[i]);
 	}
 }
 
