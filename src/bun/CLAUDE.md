@@ -7,7 +7,7 @@ Everything talk network, filesystem, OS. Webview no touch none of it except RPC 
 | `index.ts` | Make `BrowserWindow`, wire RPC handlers. Also own mutual exclusion between yt-dlp spawners and updater, and Windows startup resize nudge. |
 | `ApiClient.ts` | ts-rest client + session token. Only place talk HTTP to backend. |
 | `StreamProxy.ts` | Loopback HTTP server. Re-serve backend audio and images to webview with token attached, plus finished URL imports straight off disk. |
-| `TrackDownloader.ts` | Write copy of track into user Downloads folder. Take bytes off `StreamProxy` own loopback URL, so download join same tee. |
+| `TrackDownloader.ts` | Write copy of track into folder user pick. Take bytes off `StreamProxy` own loopback URL, so download join same tee. |
 | `TrackCache.ts` | Byte-bounded in-memory LRU of fully-downloaded tracks. |
 | `BinaryManager.ts` | Download yt-dlp/ffmpeg/ffprobe/deno into per-user bin dir. |
 | `UrlImporter.ts` | Run yt-dlp, one job at time. |

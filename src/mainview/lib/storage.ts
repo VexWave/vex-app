@@ -122,6 +122,10 @@ export const storage = {
 		/** Whether the Rich Presence runs at all. Unset means on. */
 		presenceEnabled: booleanValue("discord.presenceEnabled"),
 	},
+	downloads: {
+		/** Where the folder picker opens, from the last download. */
+		folder: stringValue("downloads.folder"),
+	},
 	discover: {
 		/** The platform the Discover view searches. */
 		source: enumValue<SearchSource>("discover.source", [

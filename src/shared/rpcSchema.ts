@@ -103,10 +103,17 @@ export interface DownloadTrackParams {
 	 * follows from the bytes rather than from anything the webview knows.
 	 */
 	fileName: string;
+	/** Where the folder picker opens, from wherever the last download went. */
+	startingFolder?: string;
 }
 
-/** `path` is where the file landed — the only part of the write worth naming. */
-export type DownloadTrackResult = { ok: true; path: string } | RpcFailure;
+/**
+ * `path` is where the file landed and null when the picker was dismissed;
+ * `folder` is the directory it went into, which the next picker starts at.
+ */
+export type DownloadTrackResult =
+	| { ok: true; path: string | null; folder?: string }
+	| RpcFailure;
 
 export interface DeleteTrackParams {
 	/** Server-side track id. */
@@ -471,7 +478,7 @@ export type PlayerRPC = {
 			uploadTrack: { params: UploadTrackParams; response: RpcResult };
 			deleteTrack: { params: DeleteTrackParams; response: RpcResult };
 			/**
-			 * Writes a copy of the track into the user's Downloads folder. The
+			 * Writes a copy of the track into a folder the user picks. The
 			 * whole file rides this one answer rather than streaming progress
 			 * like an import does: the bytes come off the stream proxy, which
 			 * usually already holds them, so there is nothing long-running to

@@ -7,6 +7,7 @@ import { DiscoverView } from "@/components/DiscoverView";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Logo } from "@/components/Logo";
+import { NoticeBanner } from "@/components/NoticeBanner";
 import { PlayerBar } from "@/components/PlayerBar";
 import { PlaylistsView } from "@/components/PlaylistsView";
 import { SECTIONS } from "@/components/Sections";
@@ -43,8 +44,6 @@ function App() {
 	// LibraryService fetches the server library per login and clears the queue
 	// on logout; the component only renders its error state.
 	const { library } = useLibrary();
-	// Downloads report nothing on success — the file is simply in the folder —
-	// so all that reaches the screen is a failed one.
 	const downloads = useDownloads();
 	// Which view the main area shows, and which item it has opened — owned by
 	// NavigationService so any component can navigate (see useNavigation).
@@ -127,6 +126,10 @@ function App() {
 			/>
 			<ErrorBanner
 				error={downloads.error && `Download: ${downloads.error.message}`}
+				className="border-t"
+			/>
+			<NoticeBanner
+				notice={downloads.done && `Saved to ${downloads.done.path}`}
 				className="border-t"
 			/>
 

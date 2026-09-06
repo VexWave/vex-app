@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { Utils } from "electrobun/bun";
 import type { DownloadTrackResult } from "../shared/rpcSchema";
@@ -31,24 +30,30 @@ const MAX_NAME_BYTES = 255;
 const SUFFIX_CHARS = " (100)".length;
 
 /**
- * Writes a track into the user's Downloads folder and answers with where it
- * landed.
+ * Writes a track into a folder the user picks, answering with where it landed
+ * and with the folder to open the next picker at. A dismissed picker answers
+ * with a null path.
  *
  * The bytes come from the proxy's own loopback URL rather than a second
  * backend fetch, so a track that is playing or was played is already in
  * `TrackCache`, and one that isn't gets teed into it on the way past.
  *
- * ponytail: the whole file rides one RPC answer, so a cold track near the
- * 75 MiB ceiling fails as a `maxRequestTime` timeout on a slow link. Upgrade
- * path if that ever bites is the `importFromUrl` shape: answer immediately and
- * push progress.
+ * ponytail: the picker and the whole file ride one RPC answer, so an open
+ * dialog or a cold track near the 75 MiB ceiling on a slow link fails as a
+ * `maxRequestTime` timeout. Upgrade path is the `importFromUrl` shape: answer
+ * immediately and push progress.
  */
-export async function saveTrackToDownloads(
+export async function saveTrackToDisk(
 	streamProxy: StreamProxy,
 	trackId: string,
 	fileName: string,
+	startingFolder?: string,
 ): Promise<DownloadTrackResult> {
 	try {
+		// Asked first, so a dismissed picker costs no transfer.
+		const dir = await pickFolder(startingFolder);
+		if (!dir) return { ok: true, path: null };
+
 		const response = await fetch(streamProxy.urlForTrack(trackId));
 		if (!response.ok) {
 			// A 401 has already gone out as `sessionExpired` from the proxy.
@@ -60,8 +65,6 @@ export async function saveTrackToDownloads(
 		}
 		const bytes = new Uint8Array(await response.arrayBuffer());
 
-		const dir = Utils.paths.downloads;
-		await mkdir(dir, { recursive: true });
 		const extension = extensionOf(bytes);
 		const target = await freeName(
 			dir,
@@ -69,7 +72,7 @@ export async function saveTrackToDownloads(
 			extension,
 		);
 		await Bun.write(target, bytes);
-		return { ok: true, path: target };
+		return { ok: true, path: target, folder: dir };
 	} catch (err) {
 		return {
 			ok: false,
@@ -143,4 +146,15 @@ function extensionOf(data: Uint8Array): string {
 	if (ascii(4, 4) === "ftyp") return ".m4a";
 	// Uploads are audio/* or mp4, and mp3 is what the importer produces.
 	return ".mp3";
+}
+
+/** The folder to write into. Undefined when the dialog is dismissed. */
+async function pickFolder(startingFolder?: string): Promise<string | undefined> {
+	const [folder] = await Utils.openFileDialog({
+		startingFolder: startingFolder || Utils.paths.home,
+		canChooseFiles: false,
+		canChooseDirectory: true,
+		allowsMultipleSelection: false,
+	});
+	return folder || undefined;
 }
