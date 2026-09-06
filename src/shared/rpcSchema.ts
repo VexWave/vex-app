@@ -94,6 +94,20 @@ export interface RemoteTrack {
 	coverUrl?: string;
 }
 
+export interface DownloadTrackParams {
+	/** Server-side track id. */
+	id: string;
+	/**
+	 * What the user should see the file called, without an extension and
+	 * unsanitized: the filesystem's rules are bun's to apply, and the extension
+	 * follows from the bytes rather than from anything the webview knows.
+	 */
+	fileName: string;
+}
+
+/** `path` is where the file landed — the only part of the write worth naming. */
+export type DownloadTrackResult = { ok: true; path: string } | RpcFailure;
+
 export interface DeleteTrackParams {
 	/** Server-side track id. */
 	id: string;
@@ -456,6 +470,17 @@ export type PlayerRPC = {
 			getLibrary: { params: undefined; response: GetLibraryResult };
 			uploadTrack: { params: UploadTrackParams; response: RpcResult };
 			deleteTrack: { params: DeleteTrackParams; response: RpcResult };
+			/**
+			 * Writes a copy of the track into the user's Downloads folder. The
+			 * whole file rides this one answer rather than streaming progress
+			 * like an import does: the bytes come off the stream proxy, which
+			 * usually already holds them, so there is nothing long-running to
+			 * report on.
+			 */
+			downloadTrack: {
+				params: DownloadTrackParams;
+				response: DownloadTrackResult;
+			};
 			editTrack: { params: EditTrackParams; response: RpcResult };
 			createArtist: { params: CreateArtistParams; response: RpcResult };
 			editArtist: { params: EditArtistParams; response: RpcResult };

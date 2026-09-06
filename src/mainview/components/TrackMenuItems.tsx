@@ -1,4 +1,5 @@
-import { ListMusic, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { Download, ListMusic, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { downloadService } from "@/api/DownloadService";
 import {
 	ContextMenuCheckboxItem,
 	ContextMenuItem,
@@ -7,6 +8,7 @@ import {
 	ContextMenuSubContent,
 	ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
+import { useDownloads } from "@/hooks/useDownloads";
 import type { RemoteArtist, RemotePlaylist } from "../../shared/rpcSchema";
 import type { Track } from "@/player/types";
 
@@ -122,6 +124,27 @@ export function TrackPlaylistsSubmenu({
 				})}
 			</ContextMenuSubContent>
 		</ContextMenuSub>
+	);
+}
+
+/**
+ * Keep a copy of the track on this machine. Unlike its neighbours this item
+ * reaches its service itself instead of taking a callback: a row's menu content
+ * is only mounted while that menu is open, so the subscription costs nothing in
+ * a list of thousands and no row gains a prop it would have to stay memoized
+ * across.
+ */
+export function TrackDownloadItem({ track }: { track: Track }) {
+	const { activeIds } = useDownloads();
+	const running = activeIds.includes(track.id);
+	return (
+		<ContextMenuItem
+			disabled={running}
+			onSelect={() => void downloadService.download(track)}
+		>
+			<Download className="h-4 w-4" />
+			{running ? "Downloading…" : "Download"}
+		</ContextMenuItem>
 	);
 }
 

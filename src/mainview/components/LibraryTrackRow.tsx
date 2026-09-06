@@ -2,6 +2,7 @@ import { memo } from "react";
 import {
 	TrackArtistItems,
 	TrackDeleteItem,
+	TrackDownloadItem,
 	TrackEditItem,
 	TrackPlaylistsSubmenu,
 } from "@/components/TrackMenuItems";
@@ -78,6 +79,7 @@ export const LibraryTrackRow = memo(function LibraryTrackRow({
 						onToggle={onTogglePlaylist}
 						onNewPlaylist={onNewPlaylist}
 					/>
+					<TrackDownloadItem track={track} />
 					<ContextMenuSeparator />
 					<TrackDeleteItem onSelect={() => onDelete(track)} />
 				</>

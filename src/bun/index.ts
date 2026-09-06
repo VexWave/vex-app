@@ -4,6 +4,7 @@ import { BinaryManager } from "./BinaryManager";
 import { DiscordPresence } from "./DiscordPresence";
 import { MediaSearch } from "./MediaSearch";
 import { StreamProxy } from "./StreamProxy";
+import { saveTrackToDownloads } from "./TrackDownloader";
 import { Uninstaller } from "./Uninstaller";
 import { UrlImporter } from "./UrlImporter";
 import { applyWindowChrome } from "./WindowChrome";
@@ -131,6 +132,8 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 				if (result.ok) streamProxy.evictTrack(params.id);
 				return result;
 			},
+			downloadTrack: (params) =>
+				saveTrackToDownloads(streamProxy, params.id, params.fileName),
 			editTrack: (params) => api.editTrack(params),
 			createArtist: (params) => api.createArtist(params),
 			editArtist: (params) => api.editArtist(params),

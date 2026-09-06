@@ -232,7 +232,7 @@ export class UrlImporter {
 		this.sendProgress({
 			type: "finished",
 			importId: job.id,
-			fileName: `${sanitizeFileName(state.title ?? "Imported track")}.mp3`,
+			fileName: `${sanitizeFileName(state.title, "Imported track")}.mp3`,
 			fileUrl: this.fileUrlFor(job.id),
 			artist: name
 				? { name, imageBase64: avatar?.base64, imageMime: avatar?.mime }
@@ -383,7 +383,10 @@ function pickAvatarUrl(rawJson: string): string | undefined {
 }
 
 /** Strip characters Windows forbids in file names; the name is display-only. */
-function sanitizeFileName(name: string): string {
-	const cleaned = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim();
-	return cleaned || "Imported track";
+export function sanitizeFileName(
+	name: string | undefined,
+	fallback: string,
+): string {
+	const cleaned = (name ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim();
+	return cleaned || fallback;
 }

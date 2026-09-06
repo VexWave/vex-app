@@ -1,6 +1,6 @@
 # src/mainview/api — the webview's services
 
-`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`/`Uninstall`. All module-level singleton, show to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as player core. **New state go here, not component-local state.**
+`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Download`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`/`Uninstall`. All module-level singleton, show to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as player core. **New state go here, not component-local state.**
 
 Three module here not service: `rpc.ts`, Electroview singleton (`bun.…` for request, `onBunMessage` for pushed message, `notifyBun.…` for fire-and-forget), `LibraryData.ts` (below), `idListEdit.ts` (below).
 

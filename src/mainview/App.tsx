@@ -15,6 +15,7 @@ import { TrackList } from "@/components/TrackList";
 import { UploadReviewDialog } from "@/components/UploadReviewDialog";
 import { YtDlpUpdateBanner } from "@/components/YtDlpUpdateBanner";
 import { useBinaries } from "@/hooks/useBinaries";
+import { useDownloads } from "@/hooks/useDownloads";
 import { useLibrary } from "@/hooks/useLibrary";
 import { useNavigation } from "@/hooks/useNavigation";
 import { usePlayer } from "@/hooks/usePlayer";
@@ -42,6 +43,9 @@ function App() {
 	// LibraryService fetches the server library per login and clears the queue
 	// on logout; the component only renders its error state.
 	const { library } = useLibrary();
+	// Downloads report nothing on success — the file is simply in the folder —
+	// so all that reaches the screen is a failed one.
+	const downloads = useDownloads();
 	// Which view the main area shows, and which item it has opened — owned by
 	// NavigationService so any component can navigate (see useNavigation).
 	const { view, section } = useNavigation();
@@ -119,6 +123,10 @@ function App() {
 			<ErrorBanner error={state.error} className="border-t" />
 			<ErrorBanner
 				error={library.error && `Server library: ${library.error}`}
+				className="border-t"
+			/>
+			<ErrorBanner
+				error={downloads.error && `Download: ${downloads.error.message}`}
 				className="border-t"
 			/>
 

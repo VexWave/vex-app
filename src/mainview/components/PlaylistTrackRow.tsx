@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, GripVertical, X } from "lucide-react";
 import {
 	TrackArtistItems,
 	TrackDeleteItem,
+	TrackDownloadItem,
 	TrackEditItem,
 } from "@/components/TrackMenuItems";
 import { TrackRow } from "@/components/TrackRow";
@@ -133,6 +134,7 @@ export const PlaylistTrackRow = memo(function PlaylistTrackRow({
 							artists={artists}
 							onOpenArtist={onOpenArtist}
 						/>
+						<TrackDownloadItem track={track} />
 						<ContextMenuSeparator />
 						<ContextMenuItem
 							disabled={!canMoveUp}

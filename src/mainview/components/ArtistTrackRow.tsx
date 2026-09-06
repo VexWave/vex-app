@@ -2,6 +2,7 @@ import { memo } from "react";
 import { UserMinus } from "lucide-react";
 import {
 	TrackDeleteItem,
+	TrackDownloadItem,
 	TrackEditItem,
 	TrackPlaylistsSubmenu,
 } from "@/components/TrackMenuItems";
@@ -69,6 +70,7 @@ export const ArtistTrackRow = memo(function ArtistTrackRow({
 						onToggle={onTogglePlaylist}
 						onNewPlaylist={onNewPlaylist}
 					/>
+					<TrackDownloadItem track={track} />
 					<ContextMenuSeparator />
 					<ContextMenuItem onSelect={() => onUnlink(track)}>
 						<UserMinus className="h-4 w-4" />
