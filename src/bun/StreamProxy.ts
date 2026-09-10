@@ -4,7 +4,11 @@ import {
 	trackAudioPath,
 	trackImagePath,
 } from "../../contract/contract";
-import type { ApiClient } from "./ApiClient";
+import {
+	fetchBackend,
+	type ApiClient,
+	type BackendRoute,
+} from "./ApiClient";
 import { imageVersion, versionQuery } from "./imageVersion";
 import { TrackCache, respondFromCache } from "./TrackCache";
 
@@ -22,8 +26,6 @@ const IMAGE_HEADERS = [...PASSTHROUGH_HEADERS, "etag"] as const;
 const PINNED_IMAGE_HEADERS = [...IMAGE_HEADERS, "cache-control"] as const;
 
 const MAX_CACHE_BYTES = 256 * 1024 * 1024;
-
-type Auth = { baseUrl: string; token: string };
 
 const NEUTRAL_TYPE = "application/octet-stream";
 const contentTypeOf = (response: Response): string =>
@@ -238,7 +240,7 @@ export class StreamProxy {
 	private async serveAudio(
 		trackId: string,
 		range: string | null,
-		auth: Auth,
+		auth: BackendRoute,
 	): Promise<Response> {
 		const upstream = await this.fetchAudio(trackId, auth, range);
 		if (!upstream) return unreachable();
@@ -253,9 +255,9 @@ export class StreamProxy {
 		backendPath: string,
 		version: string | undefined,
 		ifNoneMatch: string | null,
-		auth: Auth,
+		auth: BackendRoute,
 	): Promise<Response> {
-		const upstream = await this.fetchBackend(
+		const upstream = await this.fetchUpstream(
 			auth,
 			backendPath,
 			ifNoneMatch ? { "if-none-match": ifNoneMatch } : undefined,
@@ -280,7 +282,7 @@ export class StreamProxy {
 		return response;
 	}
 
-	private async serveHead(trackId: string, auth: Auth): Promise<Response> {
+	private async serveHead(trackId: string, auth: BackendRoute): Promise<Response> {
 		const cached = this.cache.get(trackId);
 		if (cached) {
 			return headResponse(
@@ -312,7 +314,7 @@ export class StreamProxy {
 		}
 	}
 
-	private async fetchHead(trackId: string, auth: Auth): Promise<Response> {
+	private async fetchHead(trackId: string, auth: BackendRoute): Promise<Response> {
 		const range = `bytes=0-${HEAD_BYTES - 1}`;
 		const upstream = await this.fetchAudio(trackId, auth, range);
 		if (!upstream) return unreachable();
@@ -325,15 +327,13 @@ export class StreamProxy {
 		return headResponse(bytes, contentTypeOf(upstream));
 	}
 
-	private async fetchBackend(
-		auth: Auth,
+	private async fetchUpstream(
+		auth: BackendRoute,
 		path: string,
 		extra?: Record<string, string>,
 	): Promise<Response | null> {
 		try {
-			return await fetch(auth.baseUrl + path, {
-				headers: { authorization: auth.token, ...extra },
-			});
+			return await fetchBackend(auth, path, { headers: extra });
 		} catch {
 			return null;
 		}
@@ -341,10 +341,10 @@ export class StreamProxy {
 
 	private async fetchAudio(
 		trackId: string,
-		auth: Auth,
+		auth: BackendRoute,
 		range: string | null,
 	): Promise<Response | null> {
-		const upstream = await this.fetchBackend(
+		const upstream = await this.fetchUpstream(
 			auth,
 			trackAudioPath(trackId),
 			range ? { range } : undefined,
@@ -353,7 +353,7 @@ export class StreamProxy {
 		return upstream;
 	}
 
-	private syncCacheToAuth(auth: Auth): void {
+	private syncCacheToAuth(auth: BackendRoute): void {
 		const key = `${auth.baseUrl}\n${auth.token}`;
 		if (key !== this.authKey) {
 			this.cache.clear();

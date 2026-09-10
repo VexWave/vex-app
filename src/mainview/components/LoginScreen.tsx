@@ -1,12 +1,6 @@
-import {
-	useEffect,
-	useReducer,
-	useState,
-	type FormEvent,
-	type ReactNode,
-} from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { parseServerUrl } from "@/api/SessionService";
+import { AdvancedProxyField } from "@/components/AdvancedProxyField";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -17,7 +11,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/Logo";
+import { useSecondsUntil } from "@/hooks/useSecondsUntil";
 import { useSession } from "@/hooks/useSession";
+import {
+	INVALID_PROXY_MESSAGE,
+	parseProxyUrl,
+	parseServerUrl,
+} from "@/lib/urls";
 import { formatTime } from "@/lib/utils";
 import {
 	MAX_PASSWORD_LENGTH,
@@ -46,24 +46,14 @@ function Field({
 export function LoginScreen() {
 	const { session, service } = useSession();
 	const [address, setAddress] = useState(session.lastServerUrl);
+	const [proxyAddress, setProxyAddress] = useState(session.proxyUrl);
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [validationError, setValidationError] = useState<string | null>(null);
-	const [, tick] = useReducer((count: number) => count + 1, 0);
+	const waitSec = useSecondsUntil(session.retryAfter);
 
 	const loggingIn = session.status === "loggingIn";
 	const error = validationError ?? session.error;
-	const remainingMs = Math.max(0, (session.retryAfter ?? 0) - Date.now());
-
-	useEffect(() => {
-		const endsAt = session.retryAfter;
-		if (endsAt === null) return;
-		const id = setInterval(() => {
-			tick();
-			if (Date.now() >= endsAt) clearInterval(id);
-		}, 1000);
-		return () => clearInterval(id);
-	}, [session.retryAfter]);
 
 	const handleSubmit = (e: FormEvent) => {
 		e.preventDefault();
@@ -78,8 +68,13 @@ export function LoginScreen() {
 			);
 			return;
 		}
+		const proxyUrl = parseProxyUrl(proxyAddress);
+		if (proxyUrl === null) {
+			setValidationError(INVALID_PROXY_MESSAGE);
+			return;
+		}
 		setValidationError(null);
-		void service.login(baseUrl, username, password);
+		void service.login(baseUrl, username, password, proxyUrl);
 	};
 
 	return (
@@ -127,6 +122,11 @@ export function LoginScreen() {
 								disabled={loggingIn}
 							/>
 						</Field>
+						<AdvancedProxyField
+							value={proxyAddress}
+							onChange={setProxyAddress}
+							disabled={loggingIn}
+						/>
 						{error && (
 							<div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
 								<AlertCircle className="h-4 w-4 shrink-0" />
@@ -136,11 +136,11 @@ export function LoginScreen() {
 						<Button
 							type="submit"
 							className="w-full"
-							disabled={loggingIn || remainingMs > 0}
+							disabled={loggingIn || waitSec > 0}
 						>
 							{loggingIn && <Loader2 className="h-4 w-4 animate-spin" />}
-							{remainingMs > 0
-								? `Try again in ${formatTime(Math.ceil(remainingMs / 1000))}`
+							{waitSec > 0
+								? `Try again in ${formatTime(waitSec)}`
 								: loggingIn
 									? "Connecting…"
 									: "Log in"}

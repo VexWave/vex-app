@@ -53,6 +53,7 @@ export class UrlImporter {
 		private readonly binaries: BinaryManager,
 		private readonly sendProgress: (msg: UrlImportProgressMessage) => void,
 		private readonly fileUrlFor: (importId: string) => string,
+		private readonly proxy: () => string | undefined,
 	) {
 		this.importsDir = path.join(path.dirname(binaries.binDir), "imports");
 		this.cleanupDone = binaries.binDir ? this.sweepStaleFiles() : Promise.resolve();
@@ -152,7 +153,7 @@ export class UrlImporter {
 		];
 
 		const proc = Bun.spawn([this.binaries.ytDlpPath(), ...args], {
-			env: childEnv(binDir),
+			env: childEnv(binDir, this.proxy()),
 			stdout: "pipe",
 			stderr: "pipe",
 		});
@@ -200,7 +201,7 @@ export class UrlImporter {
 				"--print", `playlist:${AVATAR_MARK}%(thumbnails)j`,
 				aboutUrl,
 			],
-			{ env: childEnv(binDir), stdout: "pipe", stderr: "ignore" },
+			{ env: childEnv(binDir, this.proxy()), stdout: "pipe", stderr: "ignore" },
 		);
 		const { stdout } = await readYtDlpOutput(proc, AVATAR_LOOKUP_TIMEOUT_MS);
 
@@ -213,6 +214,7 @@ export class UrlImporter {
 
 		const res = await fetch(imageUrl, {
 			signal: AbortSignal.timeout(AVATAR_LOOKUP_TIMEOUT_MS),
+			proxy: this.proxy(),
 		});
 		if (!res.ok) return null;
 		const mime = res.headers.get("content-type")?.split(";")[0]?.trim();

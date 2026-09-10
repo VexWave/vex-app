@@ -23,6 +23,7 @@ Everything talk network, filesystem, OS. Webview no touch none of it except RPC 
 - **Track audio fetch with plain `fetch`, not ts-rest client** — client buffer response bodies, defeat progressive streaming and Range requests.
 - **Track bytes fetched once, wherever shareable.** Element stream it, `StreamProxy` tee into `TrackCache`; level scan (`mainview/player/programLevel`) take head off same tee through `/track/<id>/head`, fall back to own request only where no download to join. Second consumer of track bytes belong on that tee too.
 - **Image `?v=<hash>` travel from `getData` read through to backend untouched.** Layer that drop it still serve right bytes, so nothing visibly break — just return every cover to route uncached path.
+- **Proxy live in `ApiClient`, outside session**, since imports and searches outlive logout. Raw backend request built only by `fetchBackend`; every other request leaving machine, yt-dlp spawns included (through `childEnv`), take `api.proxy` too. Only exception setup-screen install: take one-time proxy off own request, bun keep no copy.
 
 ## Managed binaries and yt-dlp
 

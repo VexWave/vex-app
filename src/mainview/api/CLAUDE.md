@@ -31,9 +31,10 @@ Three module here not service: `rpc.ts`, Electroview singleton (`bun.…` for re
 - **At most one import job per URL**, what make URL enough to identify download: Discover card find own by matching `ImportJob.url` through same `parseImportUrl` normalization.
 - Imports and Discover result **not** session-scoped — nothing about download touch backend till upload step, so both survive logout.
 - **Whole queue cleared on logout** (`LibraryService` do it, on status change that empty `LibraryData`) — every stream URL session-scoped. **Log out local only**: it drop stored token and bun session without revoke anything server-side.
+- **Server proxy persisted beside server address, only once proven**: by login succeeding, or by bun's probe for change made in Settings. **Setup screen's download proxy never stored**: ride only on that one install request.
 
 ## Navigation and presence
 
-- `UninstallService` one service that fetch on component mount rather than off session change, and ask once: whether this copy installed one is fact about computer, so logout leave it alone.
+- `UninstallService` one service that fetch on component mount rather than off session change, and ask once: whether this copy installed one is fact about computer, so logout leave it alone. **yt-dlp update check asked from `YtDlpUpdateBanner` mount** too: banner exist only logged in, so check go through proxy login hand bun.
 - `NavigationService` hold current view and item opened in it, so any component can navigate and logout can reset it. **Views grouped into sections**, and `SECTION_OF` where new view declare self; only structure live there, labels and glyphs being `components/Sections`'. **Section switched to rather than navigated to**, so each resume view last on.
 - `PresenceService` odd one: only service whose state mostly *outbound*. Narrow player several-times-a-second notification down to change Discord would render, send `null` for pause (no paused presence — see `src/bun/CLAUDE.md`). **On/off switch app's, not bun's** — user preference, so persisted here and announced to bun process that keep no copy. That announcement request, not push: track update that go missing corrected by next one, switch that go missing not.

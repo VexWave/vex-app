@@ -10,7 +10,7 @@ UI only, no network reach itself: all server payload come over RPC or through `S
 - **App split into *sections* — library, Discover, Settings — switched by `ViewSwitch` in app bar.** Which views a section holds = `NavigationService`'s job; how one looks = `components/Sections`. **Adding section touch no existing component** — compiler ask for entries it need.
 - **Section's `Aside` decide if sidebar there**, never breakpoint: this fixed-size desktop window, on HiDPI displays CSS viewport can sit below Tailwind's `md`, where responsively-hidden sidebar unreachable. So **nothing whole app depend on may live in aside** — why logout sit in app bar.
 - **Sidebar's badge counts keyed off its own `NAV_ITEMS`, not off `MainViewName`** — entry added there must bring own count, view in other section never need declare it has nothing to count.
-- Settings panel = `Group` from `SettingsControls` (`EqualizerPanel`, `DiscordPanel`, `UninstallPanel`), holds `SettingRow`s where more to say than switch in header. Panel need not set anything: `UninstallPanel` holds one action, goes last, draws nothing where action not available. **`SettingsControls` decide how control looks, not where settings live**: `PlaybackEffects` take its `Toggle` into player bar's popover, draws own rows, cuz `Group` and `SettingRow` sized for settings column.
+- Settings panel = `Group` from `SettingsControls` (`EqualizerPanel`, `DiscordPanel`, `ProxyPanel`, `UninstallPanel`), holds `SettingRow`s where more to say than switch in header. Panel need not set anything: `UninstallPanel` holds one action, goes last, draws nothing where action not available. **`SettingsControls` decide how control looks, not where settings live**: `PlaybackEffects` take its `Toggle` into player bar's popover, draws own rows, cuz `Group` and `SettingRow` sized for settings column.
 - **Discover result thumbnails load straight from platform's CDN**, not through `StreamProxy`, as CORS requests — `lib/coverFit` gotta read their pixels back. Webview-never-reach-backend rule about *backend*: thumbnail URL carry no token, reveal nothing about server.
 
 ## lib/
@@ -18,6 +18,7 @@ UI only, no network reach itself: all server payload come over RPC or through `S
 - `storage.ts` — **all** localStorage access go through this typed registry; declare each persisted key here once, don't touch `localStorage` direct.
 - `devicePixelRatio.ts` — publish webview's device pixel ratio as `--dpr` on `<html>`, kept current through media query and `resize` listener (bun-side startup nudge why second one needed).
 - `coverFit.ts` — decide if Discover thumbnail fill its square frame or contained in it, by reading loaded image's pixels.
+- `urls.ts` — parse every server and proxy address user type.
 
 ## Styling
 

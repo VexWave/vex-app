@@ -48,7 +48,10 @@ export class MediaSearch {
 	private running: ReturnType<typeof Bun.spawn> | null = null;
 	private generation = 0;
 
-	constructor(private readonly binaries: BinaryManager) {}
+	constructor(
+		private readonly binaries: BinaryManager,
+		private readonly proxy: () => string | undefined,
+	) {}
 
 	get isActive(): boolean {
 		return this.running !== null;
@@ -84,7 +87,11 @@ export class MediaSearch {
 				"--print", `${RESULT_MARK}${RESULT_TEMPLATE}`,
 				`${SEARCH_PREFIX[source]}${RESULT_LIMIT}:${term}`,
 			],
-			{ env: childEnv(this.binaries.binDir), stdout: "pipe", stderr: "pipe" },
+			{
+				env: childEnv(this.binaries.binDir, this.proxy()),
+				stdout: "pipe",
+				stderr: "pipe",
+			},
 		);
 		this.running = proc;
 

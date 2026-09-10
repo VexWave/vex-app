@@ -75,16 +75,12 @@ export class BinaryService {
 		}
 		if (result.missing.length === 0) {
 			this.update({ phase: "ready", missing: [], progress: {}, error: null });
-			if (!this.updateCheckDone) {
-				this.updateCheckDone = true;
-				void this.checkForUpdate();
-			}
 		} else {
 			this.update({ phase: "missing", missing: result.missing, error: null });
 		}
 	}
 
-	async install(): Promise<void> {
+	async install(proxyUrl: string): Promise<void> {
 		const { phase, missing } = this.snapshot;
 		if (phase !== "missing" && phase !== "error") return;
 		const progress: BinariesState["progress"] = {};
@@ -100,7 +96,9 @@ export class BinaryService {
 		}
 		this.update({ phase: "installing", progress, error: null });
 		try {
-			const result = await bun.installMissingBinaries();
+			const result = await bun.installMissingBinaries({
+				proxyUrl: proxyUrl || undefined,
+			});
 			if (!result.ok) this.update({ phase: "error", error: result.error });
 		} catch (err) {
 			this.update({
@@ -110,9 +108,9 @@ export class BinaryService {
 		}
 	}
 
-	async retry(): Promise<void> {
+	async retry(proxyUrl: string): Promise<void> {
 		await this.refreshStatus();
-		if (this.snapshot.phase === "missing") await this.install();
+		if (this.snapshot.phase === "missing") await this.install(proxyUrl);
 	}
 
 	async updateYtDlp(): Promise<void> {
@@ -130,6 +128,8 @@ export class BinaryService {
 	}
 
 	async checkForUpdate(): Promise<void> {
+		if (this.updateCheckDone) return;
+		this.updateCheckDone = true;
 		try {
 			const result = await bun.checkYtDlpUpdate();
 			if (result.updateAvailable) {

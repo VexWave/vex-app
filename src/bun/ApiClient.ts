@@ -1,4 +1,4 @@
-import { initClient } from "@ts-rest/core";
+import { initClient, tsRestFetchApi } from "@ts-rest/core";
 import {
 	ApiContract,
 	MAX_AUDIO_BASE64,
@@ -22,6 +22,7 @@ import type {
 	GetLibraryResult,
 	LoginParams,
 	LoginResult,
+	ProxyParams,
 	RestoreSessionParams,
 	RpcFailure,
 	RpcResult,
@@ -44,12 +45,40 @@ if (
 	);
 }
 
-function createClient(baseUrl: string, token?: string) {
+function createClient(baseUrl: string, token?: string, proxy?: string) {
 	return initClient(ApiContract, {
 		baseUrl,
 		baseHeaders: token ? { authorization: token } : {},
+		api: (args) => {
+			const fetchOptions: BunFetchRequestInit = {
+				...args.fetchOptions,
+				proxy,
+			};
+			return tsRestFetchApi({ ...args, fetchOptions });
+		},
 	});
 }
+
+export interface BackendRoute {
+	baseUrl: string;
+	token: string;
+	proxy?: string;
+}
+
+export function fetchBackend(
+	route: BackendRoute,
+	path: string,
+	init: { headers?: Record<string, string>; signal?: AbortSignal } = {},
+): Promise<Response> {
+	return fetch(route.baseUrl + path, {
+		headers: { authorization: route.token, ...init.headers },
+		proxy: route.proxy,
+		signal: init.signal,
+	});
+}
+
+// Under the RPC's 120 s maxRequestTime, or the webview gives up while bun still adopts.
+const PROBE_TIMEOUT_MS = 30_000;
 
 export class ApiClient {
 	private session: {
@@ -57,11 +86,16 @@ export class ApiClient {
 		token: string;
 		client: ReturnType<typeof createClient>;
 	} | null = null;
+	private proxyUrl: string | undefined;
 
-	get auth(): { baseUrl: string; token: string } | null {
+	get proxy(): string | undefined {
+		return this.proxyUrl;
+	}
+
+	get auth(): BackendRoute | null {
 		if (!this.session) return null;
 		const { baseUrl, token } = this.session;
-		return { baseUrl, token };
+		return { baseUrl, token, proxy: this.proxyUrl };
 	}
 
 	expireSession(): void {
@@ -69,27 +103,64 @@ export class ApiClient {
 	}
 
 	restoreSession(params: RestoreSessionParams): RpcResult {
-		const { baseUrl, token } = params;
-		this.session = { baseUrl, token, client: createClient(baseUrl, token) };
+		const { baseUrl, token, proxyUrl } = params;
+		this.proxyUrl = proxyUrl;
+		this.session = { baseUrl, token, client: createClient(baseUrl, token, proxyUrl) };
 		return { ok: true };
 	}
 
 	async login(params: LoginParams): Promise<LoginResult> {
-		const { baseUrl, username, password } = params;
+		const { baseUrl, username, password, proxyUrl } = params;
 		this.expireSession();
 		try {
-			const res = await createClient(baseUrl).login({
+			const res = await createClient(baseUrl, undefined, proxyUrl).login({
 				body: { username, password },
 			});
 			if (res.status === 200) {
 				const token = res.body.token;
-				this.session = { baseUrl, token, client: createClient(baseUrl, token) };
+				this.proxyUrl = proxyUrl;
+				this.session = { baseUrl, token, client: createClient(baseUrl, token, proxyUrl) };
 				return { ok: true, token };
 			}
 			return failure(res, `Login failed (HTTP ${res.status})`);
 		} catch (err) {
-			return { ok: false, error: unreachable(baseUrl, err) };
+			return { ok: false, error: unreachable(baseUrl, err, proxyUrl) };
 		}
+	}
+
+	async setProxy(params: ProxyParams): Promise<RpcResult> {
+		const session = this.session;
+		if (!session) {
+			return { ok: false, status: 401, error: "Not logged in" };
+		}
+		const { baseUrl, token } = session;
+		const { proxyUrl } = params;
+		let res: Response;
+		try {
+			res = await fetchBackend(
+				{ baseUrl, token, proxy: proxyUrl },
+				ApiContract.getData.path,
+				{ signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) },
+			);
+		} catch (err) {
+			return { ok: false, error: unreachable(baseUrl, err, proxyUrl) };
+		}
+		if (session !== this.session) {
+			void res.body?.cancel();
+			return { ok: false, error: "The session changed while checking the proxy." };
+		}
+		if (res.status === 200) {
+			void res.body?.cancel();
+			this.proxyUrl = proxyUrl;
+			session.client = createClient(baseUrl, token, proxyUrl);
+			return { ok: true };
+		}
+		if (res.status === 401) this.expireSession();
+		const body = await res.text().catch(() => "");
+		return failure(
+			{ status: res.status, headers: res.headers, body },
+			`Checking the proxy failed (HTTP ${res.status})`,
+		);
 	}
 
 	async uploadTrack(params: UploadTrackParams): Promise<RpcResult> {
@@ -332,22 +403,37 @@ export class ApiClient {
 	}
 }
 
-function unreachable(baseUrl: string, err: unknown): string {
+function unreachable(baseUrl: string, err: unknown, proxy?: string): string {
 	const code = (err as { code?: unknown })?.code;
 	const detail = `${typeof code === "string" ? code : ""} ${
 		err instanceof Error ? err.message : ""
 	}`;
-	if (/cert|ssl|tls/i.test(detail)) {
-		return `Cannot reach ${baseUrl} — its certificate was rejected.`;
+	const certRejected = /cert|ssl|tls/i.test(detail);
+	if (!proxy) {
+		return certRejected
+			? `Cannot reach ${baseUrl} — its certificate was rejected.`
+			: `Cannot reach ${baseUrl} — is the server running?`;
 	}
-	return `Cannot reach ${baseUrl} — is the server running?`;
+	const via = `${baseUrl} through the proxy at ${URL.parse(proxy)?.host ?? "the given address"}`;
+	return certRejected
+		? `Cannot reach ${via} — the server's or the proxy's certificate was rejected.`
+		: `Cannot reach ${via} — check its address and credentials.`;
 }
 
+type ErrorResponse = { status: number; body: unknown; headers: Headers };
+
 function failure(
-	res: { status: number; body: unknown; headers: Headers },
+	res: ErrorResponse,
 	fallback: string,
 	payload?: "audio" | "image",
 ): RpcFailure {
+	if (res.status === 407) {
+		return {
+			ok: false,
+			status: res.status,
+			error: "The proxy rejected its credentials.",
+		};
+	}
 	if (res.status === 429) {
 		const retryAfterSec = retryAfterSeconds(res.headers);
 		return {
@@ -367,12 +453,12 @@ function failure(
 			ok: false,
 			status: res.status,
 			error: errorText(
-				res.body,
+				res,
 				`The server refused this ${what} as too large — this app allows up to ${megabytes(limit)}.`,
 			),
 		};
 	}
-	return { ok: false, status: res.status, error: errorText(res.body, fallback) };
+	return { ok: false, status: res.status, error: errorText(res, fallback) };
 }
 
 function retryAfterSeconds(headers: Headers): number | undefined {
@@ -392,6 +478,10 @@ function megabytes(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function errorText(body: unknown, fallback: string): string {
-	return typeof body === "string" && body.length > 0 ? body : fallback;
+// The backend's own messages are text/plain; proxies in the way answer with HTML pages.
+function errorText(res: ErrorResponse, fallback: string): string {
+	const plain = res.headers.get("content-type")?.startsWith("text/plain");
+	return plain && typeof res.body === "string" && res.body.length > 0
+		? res.body
+		: fallback;
 }
