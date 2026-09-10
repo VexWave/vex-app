@@ -8,11 +8,22 @@ export const YT_DLP_BASE_ARGS = ["--encoding", "UTF-8"] as const;
 // yt-dlp finds deno and ffprobe by scanning PATH. The existing key is
 // overwritten in place: a GUI-launched app inherits "Path", and adding "PATH"
 // beside it would leave the bin-dir-less one winning the lookup.
-export function childEnv(binDir: string): Record<string, string | undefined> {
+export function childEnv(
+	binDir: string,
+	proxy?: string,
+): Record<string, string | undefined> {
 	const env: Record<string, string | undefined> = { ...process.env };
 	const pathKey =
 		Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
 	env[pathKey] = binDir + path.delimiter + (env[pathKey] ?? "");
+	if (proxy) {
+		// no_proxy stays: Bun's fetch honours it even with an explicit proxy.
+		for (const key of Object.keys(env)) {
+			if (/^(https?|all)_proxy$/i.test(key)) delete env[key];
+		}
+		env.http_proxy = proxy;
+		env.https_proxy = proxy;
+	}
 	return env;
 }
 

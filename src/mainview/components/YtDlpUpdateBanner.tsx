@@ -1,10 +1,15 @@
-﻿import { AlertCircle, ArrowUpCircle, X } from "lucide-react";
+﻿import { useEffect } from "react";
+import { AlertCircle, ArrowUpCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useBinaries } from "@/hooks/useBinaries";
 
 export function YtDlpUpdateBanner() {
 	const { binaries, service } = useBinaries();
+
+	useEffect(() => {
+		void service.checkForUpdate();
+	}, [service]);
 
 	if (binaries.updating) {
 		const progress = binaries.updateProgress;

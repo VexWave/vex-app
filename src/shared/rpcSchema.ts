@@ -6,6 +6,7 @@ export interface LoginParams {
 	baseUrl: string;
 	username: string;
 	password: string;
+	proxyUrl?: string;
 }
 
 export type LoginResult = { ok: true; token: string } | RpcFailure;
@@ -13,6 +14,11 @@ export type LoginResult = { ok: true; token: string } | RpcFailure;
 export interface RestoreSessionParams {
 	baseUrl: string;
 	token: string;
+	proxyUrl?: string;
+}
+
+export interface ProxyParams {
+	proxyUrl?: string;
 }
 
 export interface RpcFailure {
@@ -244,6 +250,7 @@ export type PlayerRPC = {
 			login: { params: LoginParams; response: LoginResult };
 			restoreSession: { params: RestoreSessionParams; response: RpcResult };
 			logout: { params: undefined; response: RpcResult };
+			setProxy: { params: ProxyParams; response: RpcResult };
 			getLibrary: { params: undefined; response: GetLibraryResult };
 			uploadTrack: { params: UploadTrackParams; response: RpcResult };
 			deleteTrack: { params: DeleteTrackParams; response: RpcResult };
@@ -259,7 +266,7 @@ export type PlayerRPC = {
 			editPlaylist: { params: EditPlaylistParams; response: RpcResult };
 			deletePlaylist: { params: DeletePlaylistParams; response: RpcResult };
 			getBinaryStatus: { params: undefined; response: BinaryStatusResult };
-			installMissingBinaries: { params: undefined; response: RpcResult };
+			installMissingBinaries: { params: ProxyParams; response: RpcResult };
 			updateYtDlp: { params: undefined; response: RpcResult };
 			checkYtDlpUpdate: { params: undefined; response: YtDlpUpdateResult };
 			importFromUrl: { params: ImportFromUrlParams; response: RpcResult };

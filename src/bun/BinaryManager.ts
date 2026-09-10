@@ -49,10 +49,10 @@ export class BinaryManager {
 	private readonly unsupported: string | null;
 	private readonly tmpDir: string;
 	private installTask: Promise<void> | null = null;
-	private updateCheck: Promise<YtDlpUpdateResult> | null = null;
 
 	constructor(
 		private readonly sendProgress: (msg: BinaryProgressMessage) => void,
+		private readonly proxy: () => string | undefined,
 	) {
 		const dir = defaultBinDir();
 		this.unsupported = dir
@@ -105,33 +105,51 @@ export class BinaryManager {
 		}
 	}
 
-	startInstall(): RpcResult {
-		return this.startRun(null);
+	startInstall(proxy?: string): RpcResult {
+		return this.startRun(null, proxy);
 	}
 
 	startYtDlpUpdate(): RpcResult {
-		return this.startRun(["ytDlp"]);
-	}
-
-	startUpdateCheckIfInstalled(): void {
-		if (this.unsupported) return;
-		this.updateCheck = this.runUpdateCheck();
+		return this.startRun(["ytDlp"], this.proxy());
 	}
 
 	async checkYtDlpUpdate(): Promise<YtDlpUpdateResult> {
-		return this.updateCheck ?? { ok: true, updateAvailable: false };
+		const none: YtDlpUpdateResult = { ok: true, updateAvailable: false };
+		if (this.unsupported) return none;
+		try {
+			const manifest = await this.readManifest();
+			const installedVersion = manifest.ytDlp?.version;
+			if (!installedVersion) return none;
+			const res = await fetch(YT_DLP_LATEST_API, {
+				headers: { Accept: "application/vnd.github+json" },
+				proxy: this.proxy(),
+			});
+			if (!res.ok) return none;
+			const release = (await res.json()) as { tag_name?: string };
+			const latestVersion = release.tag_name;
+			if (!latestVersion || latestVersion === installedVersion) return none;
+			return { ok: true, updateAvailable: true, latestVersion, installedVersion };
+		} catch {
+			return none;
+		}
 	}
 
-	private startRun(binaries: BinaryName[] | null): RpcResult {
+	private startRun(
+		binaries: BinaryName[] | null,
+		proxy: string | undefined,
+	): RpcResult {
 		if (this.unsupported) return { ok: false, error: this.unsupported };
 		if (this.installTask) return { ok: true };
-		this.installTask = this.runInstall(binaries).finally(() => {
+		this.installTask = this.runInstall(binaries, proxy).finally(() => {
 			this.installTask = null;
 		});
 		return { ok: true };
 	}
 
-	private async runInstall(requested: BinaryName[] | null): Promise<void> {
+	private async runInstall(
+		requested: BinaryName[] | null,
+		proxy: string | undefined,
+	): Promise<void> {
 		let current: BinaryName = requested?.[0] ?? "ytDlp";
 		try {
 			await mkdir(this.binDir, { recursive: true });
@@ -142,7 +160,7 @@ export class BinaryManager {
 				requested ?? (await this.statusOnDisk()).missing;
 			for (const binary of binaries) {
 				current = binary;
-				await this.installOne(binary);
+				await this.installOne(binary, proxy);
 				this.sendProgress({ type: "binaryInstalled", binary });
 			}
 			this.sendProgress({ type: "finished" });
@@ -157,7 +175,10 @@ export class BinaryManager {
 		}
 	}
 
-	private async installOne(binary: BinaryName): Promise<void> {
+	private async installOne(
+		binary: BinaryName,
+		proxy: string | undefined,
+	): Promise<void> {
 		const parts = this.partsFor(binary);
 		for (let i = 0; i < parts.length; i++) {
 			const part = parts[i];
@@ -166,6 +187,7 @@ export class BinaryManager {
 				binary,
 				i + 1,
 				parts.length,
+				proxy,
 			);
 			if (part.kind === "raw") {
 				await this.moveIntoBin(filePath, part.files[0].dest);
@@ -194,7 +216,6 @@ export class BinaryManager {
 		const manifest = await this.readManifest();
 		if (binary === "ytDlp") {
 			manifest.ytDlp = { version: await this.queryYtDlpVersion() };
-			this.updateCheck = Promise.resolve({ ok: true, updateAvailable: false });
 		} else {
 			manifest[binary] = { installed: true };
 		}
@@ -221,8 +242,9 @@ export class BinaryManager {
 		binary: BinaryName,
 		partIndex: number,
 		partCount: number,
+		proxy: string | undefined,
 	): Promise<string> {
-		const res = await fetch(part.url);
+		const res = await fetch(part.url, { proxy });
 		if (!res.ok || !res.body) {
 			throw new Error(`Download failed (HTTP ${res.status}): ${part.url}`);
 		}
@@ -332,25 +354,6 @@ export class BinaryManager {
 		await Bun.write(tmpPath, JSON.stringify(manifest, null, "\t"));
 		await rm(this.manifestPath(), { force: true });
 		await rename(tmpPath, this.manifestPath());
-	}
-
-	private async runUpdateCheck(): Promise<YtDlpUpdateResult> {
-		const none: YtDlpUpdateResult = { ok: true, updateAvailable: false };
-		try {
-			const manifest = await this.readManifest();
-			const installedVersion = manifest.ytDlp?.version;
-			if (!installedVersion) return none;
-			const res = await fetch(YT_DLP_LATEST_API, {
-				headers: { Accept: "application/vnd.github+json" },
-			});
-			if (!res.ok) return none;
-			const release = (await res.json()) as { tag_name?: string };
-			const latestVersion = release.tag_name;
-			if (!latestVersion || latestVersion === installedVersion) return none;
-			return { ok: true, updateAvailable: true, latestVersion, installedVersion };
-		} catch {
-			return none;
-		}
 	}
 
 	private partsFor(binary: BinaryName): DownloadPart[] {

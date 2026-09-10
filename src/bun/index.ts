@@ -43,8 +43,10 @@ const streamProxy: StreamProxy = new StreamProxy(
 	(importId) => importer.filePathFor(importId),
 );
 
-const binaryManager = new BinaryManager((msg) => rpc.send.binaryProgress(msg));
-binaryManager.startUpdateCheckIfInstalled();
+const binaryManager = new BinaryManager(
+	(msg) => rpc.send.binaryProgress(msg),
+	() => api.proxy,
+);
 
 const discordPresence = new DiscordPresence(
 	() => api.auth?.baseUrl ?? null,
@@ -55,9 +57,10 @@ const importer: UrlImporter = new UrlImporter(
 	binaryManager,
 	(msg) => rpc.send.urlImportProgress(msg),
 	(importId) => streamProxy.urlForImportFile(importId),
+	() => api.proxy,
 );
 
-const mediaSearch = new MediaSearch(binaryManager);
+const mediaSearch = new MediaSearch(binaryManager, () => api.proxy);
 
 const uninstaller = new Uninstaller(
 	binaryManager.isSupported ? binaryManager.binDir : null,
@@ -92,6 +95,7 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 				api.expireSession();
 				return { ok: true as const };
 			},
+			setProxy: (params) => api.setProxy(params),
 			getLibrary: () => api.getLibrary(streamProxy),
 			uploadTrack: (params) => api.uploadTrack(params),
 			deleteTrack: async (params) => {
@@ -114,7 +118,8 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			editPlaylist: (params) => api.editPlaylist(params),
 			deletePlaylist: (params) => api.deletePlaylist(params),
 			getBinaryStatus: () => binaryManager.getStatus(),
-			installMissingBinaries: () => binaryManager.startInstall(),
+			installMissingBinaries: ({ proxyUrl }) =>
+				binaryManager.startInstall(proxyUrl),
 			updateYtDlp: () => {
 				const busy = ytDlpBusyReason();
 				return busy

@@ -75,6 +75,7 @@ export const storage = {
 	session: {
 		url: stringValue("player.server.url"),
 		token: stringValue("player.server.token"),
+		proxy: stringValue("player.server.proxy"),
 	},
 	player: {
 		volume: numberValue("player.volume", (v) => v >= 0 && v <= 1),

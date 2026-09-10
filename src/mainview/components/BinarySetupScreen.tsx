@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { AlertCircle, Check, Download, Loader2 } from "lucide-react";
+import { AdvancedProxyField } from "@/components/AdvancedProxyField";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -10,6 +12,7 @@ import {
 import { Logo } from "@/components/Logo";
 import { Progress } from "@/components/ui/progress";
 import { useBinaries } from "@/hooks/useBinaries";
+import { INVALID_PROXY_MESSAGE, parseProxyUrl } from "@/lib/urls";
 import { formatMb } from "@/lib/utils";
 import type { BinaryName } from "../../shared/rpcSchema";
 import type { BinaryProgressInfo } from "@/api/BinaryService";
@@ -74,6 +77,24 @@ function InstallRow({
 export function BinarySetupScreen() {
 	const { binaries, service } = useBinaries();
 	const { phase } = binaries;
+	const [proxyAddress, setProxyAddress] = useState("");
+	const [invalid, setInvalid] = useState(false);
+	const error = invalid
+		? INVALID_PROXY_MESSAGE
+		: phase === "error"
+			? binaries.error
+			: null;
+
+	const handleStart = () => {
+		const proxyUrl = parseProxyUrl(proxyAddress);
+		if (proxyUrl === null) {
+			setInvalid(true);
+			return;
+		}
+		void (phase === "error"
+			? service.retry(proxyUrl)
+			: service.install(proxyUrl));
+	};
 
 	return (
 		<div className="flex h-screen items-center justify-center bg-background p-4 text-foreground">
@@ -128,15 +149,27 @@ export function BinarySetupScreen() {
 						</div>
 					)}
 
-					{phase === "error" && binaries.error && (
+					{error && (
 						<div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
 							<AlertCircle className="h-4 w-4 shrink-0" />
-							<span>{binaries.error}</span>
+							<span>{error}</span>
 						</div>
 					)}
 
+					{phase !== "checking" && (
+						<AdvancedProxyField
+							value={proxyAddress}
+							onChange={(value) => {
+								setProxyAddress(value);
+								setInvalid(false);
+							}}
+							disabled={phase === "installing"}
+							hint="Only used for this download."
+						/>
+					)}
+
 					{phase === "missing" && (
-						<Button className="w-full" onClick={() => void service.install()}>
+						<Button className="w-full" onClick={handleStart}>
 							<Download className="h-4 w-4" />
 							Download
 						</Button>
@@ -148,7 +181,7 @@ export function BinarySetupScreen() {
 						</Button>
 					)}
 					{phase === "error" && (
-						<Button className="w-full" onClick={() => void service.retry()}>
+						<Button className="w-full" onClick={handleStart}>
 							Retry
 						</Button>
 					)}

@@ -1,5 +1,6 @@
 import { DiscordPanel } from "@/components/DiscordPanel";
 import { EqualizerPanel } from "@/components/EqualizerPanel";
+import { ProxyPanel } from "@/components/ProxyPanel";
 import { UninstallPanel } from "@/components/UninstallPanel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -16,6 +17,7 @@ export function SettingsView() {
 				<div className="mx-auto flex max-w-2xl flex-col gap-5 p-5">
 					<EqualizerPanel />
 					<DiscordPanel />
+					<ProxyPanel />
 					<UninstallPanel />
 				</div>
 			</ScrollArea>
