@@ -5,7 +5,7 @@
 	"scripts": {
 		"start": "vite build && electrobun dev",
 		"dev": "electrobun dev --watch",
-		"dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
+		"dev:hmr": "bun run --parallel \"bun run hmr\" \"bun run start\"",
 		"hmr": "vite --port 5173",
 		"lint": "tsc --noEmit",
 		"vite:build": "vite build",
@@ -46,7 +46,6 @@
 		"@types/three": "^0.185.1",
 		"@vitejs/plugin-react": "^4.3.4",
 		"autoprefixer": "^10.4.20",
-		"concurrently": "^9.1.0",
 		"postcss": "^8.4.49",
 		"rcedit": "4.0.1",
 		"tailwindcss": "^3.4.16",
