@@ -24,24 +24,27 @@ export const LARGE: Room = {
 	seed: 0x9e3779b9,
 };
 
-// Spread halls measure: 1.4x RT60 at 125 Hz, 0.45x at 8 kHz.
-const BASS_RT = 1.4;
+// Halls measure 1.4x RT60 at 125 Hz and 0.45x at 8 kHz, the low end kept under.
+const BASS_RT = 1.15;
 const AIR_RT = 0.45;
-const BASS_HZ = 250;
+const BASS_HZ = 400;
 const BODY_HZ = 2600;
-// Steep on top, gentle below: bass reaching 1 kHz would outlive the body tail.
+// Steep or the body tail outlives the air one at 8 kHz; gentle on the low layer
+// or the body layer owns the low end instead.
 const TOP_POLES = 4;
 const BOTTOM_POLES = 2;
+const BASS_POLES = 2;
 // Own noise per layer: filtered copies of one stream cancel where they overlap.
-const OVERLAP = 0.4;
-const BASS_LEVEL = 0.45;
+const OVERLAP = 0.75;
+const BASS_LEVEL = 0.43;
 const BODY_LEVEL = 1;
 const AIR_LEVEL = 1.2;
 const AIR_TONE_HZ = 6000;
 
 const EARLY_TONE_HZ = 5200;
+const EAR_SEC = 0.0006;
 // Convolution multiplies spectra, and music is already bass-heavy.
-const LOW_CUT_HZ = 170;
+const LOW_CUT_HZ = 210;
 const LOW_CUT_POLES = 2;
 const FADE_SEC = 0.25;
 
@@ -81,16 +84,20 @@ function highpass(state: Float32Array, coefficient: number, x: number): number {
 	return carry;
 }
 
-function layerNoise(rate: number, seed: number): () => Float32Array {
+function layerNoise(
+	rate: number,
+	seed: number,
+	bassSeed: number,
+): () => Float32Array {
 	const bassCoefficient = lowpassCoefficient(BASS_HZ, rate);
 	const bodyCoefficient = lowpassCoefficient(BODY_HZ, rate);
 	const bodyFloor = lowpassCoefficient(BASS_HZ * OVERLAP, rate);
 	const airFloor = lowpassCoefficient(BODY_HZ * OVERLAP, rate);
 	const airTone = lowpassCoefficient(AIR_TONE_HZ, rate);
-	const bassNoise = roomNoise(seed);
+	const bassNoise = roomNoise(bassSeed);
 	const bodyNoise = roomNoise(seed ^ 0x85ebca6b);
 	const airNoise = roomNoise(seed ^ 0xc2b2ae35);
-	const bassTop = new Float32Array(TOP_POLES);
+	const bassTop = new Float32Array(BASS_POLES);
 	const bodyBottom = new Float32Array(BOTTOM_POLES);
 	const bodyTop = new Float32Array(TOP_POLES);
 	const airBottom = new Float32Array(BOTTOM_POLES);
@@ -114,7 +121,7 @@ function layerNoise(rate: number, seed: number): () => Float32Array {
 
 // Level constants hold only once each layer is measured back to unit variance.
 function layerGains(rate: number): [number, number, number] {
-	const layers = layerNoise(rate, 0x2545f491);
+	const layers = layerNoise(rate, 0x2545f491, 0x2545f491);
 	const count = 1 << 16;
 	let bass = 0;
 	let body = 0;
@@ -144,12 +151,11 @@ export function buildImpulse(
 		head + Math.round(tailSec * rate),
 		rate,
 	);
-	const random = roomNoise(room.seed);
 	const gains = layerGains(rate);
 
 	for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
 		const samples = buffer.getChannelData(channel);
-		addEarlyReflections(samples, head, rate, random, room);
+		addEarlyReflections(samples, head, rate, room, channel);
 		addTail(samples, head, rate, room, gains, channel);
 		cutLowEnd(samples, rate);
 		normalise(samples);
@@ -161,14 +167,21 @@ function addEarlyReflections(
 	samples: Float32Array,
 	head: number,
 	rate: number,
-	random: () => number,
 	room: Room,
+	channel: number,
 ): void {
 	const span = Math.round(room.earlySec * rate);
 	const cluster = new Float32Array(span);
+	// One set at ear spacing: a set per channel puts a room in each ear.
+	const random = roomNoise(room.seed);
+	const ear = roomNoise(room.seed ^ (0x632be59b * (channel + 1)));
+	const spread = EAR_SEC * rate;
 	for (let i = 0; i < room.earlyCount; i++) {
 		const when = ((i + random()) / room.earlyCount) ** 0.7;
-		const at = Math.min(span - 1, Math.floor(when * span));
+		const at = Math.min(
+			span - 1,
+			Math.max(0, Math.round(when * span + (ear() * 2 - 1) * spread)),
+		);
 		const level =
 			room.earlyLevel * Math.exp(-2.2 * when) * (0.7 + random() * 0.6);
 		cluster[at] += random() < 0.5 ? -level : level;
@@ -193,7 +206,8 @@ function addTail(
 ): void {
 	const length = samples.length - head;
 	const fadeFrom = length - Math.round(FADE_SEC * rate);
-	const layers = layerNoise(rate, room.seed + channel * 0x9e3779b9);
+	// Shared low layer: a real field is coherent where wavelength outruns the ears.
+	const layers = layerNoise(rate, room.seed + channel * 0x9e3779b9, room.seed);
 	const stepBass = decayStep(room.rt60Sec * BASS_RT, rate);
 	const stepBody = decayStep(room.rt60Sec, rate);
 	const stepAir = decayStep(room.rt60Sec * AIR_RT, rate);

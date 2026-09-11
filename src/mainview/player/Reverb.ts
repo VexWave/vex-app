@@ -8,6 +8,10 @@ import {
 import { buildImpulse, LARGE, SMALL, type Room } from "./roomImpulse";
 
 const WET_MAX = 0.5;
+// Where wet energy peaks and a lead vocal sits.
+const POCKET_HZ = 1400;
+const POCKET_Q = 0.7;
+const POCKET_DB = 8;
 
 class RoomBranch {
 	readonly gain: GainNode;
@@ -38,6 +42,7 @@ interface ReverbGraph {
 	context: AudioContext;
 	mix: GainNode;
 	wet: GainNode;
+	pocket: BiquadFilterNode;
 	small: RoomBranch;
 	large: RoomBranch;
 }
@@ -45,12 +50,17 @@ interface ReverbGraph {
 function buildReverb(context: AudioContext, input: AudioNode): ReverbGraph {
 	const mix = context.createGain();
 	const wet = context.createGain();
-	wet.connect(mix);
+	const pocket = context.createBiquadFilter();
+	pocket.type = "peaking";
+	pocket.frequency.value = POCKET_HZ;
+	pocket.Q.value = POCKET_Q;
+	wet.connect(pocket).connect(mix);
 	input.connect(mix);
 	return {
 		context,
 		mix,
 		wet,
+		pocket,
 		small: new RoomBranch(context, SMALL, input, wet),
 		large: new RoomBranch(context, LARGE, input, wet),
 	};
@@ -100,6 +110,7 @@ export class Reverb implements GraphStage {
 		const wet = WET_MAX * Math.sin(turn);
 		write(graph.mix.gain, 1 / Math.hypot(1, wet));
 		write(graph.wet.gain, wet);
+		write(graph.pocket.gain, -POCKET_DB * Math.sin(turn));
 		write(graph.small.gain.gain, Math.cos(turn));
 		write(graph.large.gain.gain, Math.sin(turn));
 	}
