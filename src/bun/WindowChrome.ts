@@ -17,9 +17,9 @@ const DWMWA_BORDER_COLOR = 34;
 const DWMWA_CAPTION_COLOR = 35;
 const DWMWA_TEXT_COLOR = 36;
 
-// COLORREF is 0x00BBGGRR. Mirrors --card, --border and --foreground in
-// index.css.
-const CAPTION_COLOR = 0x0f0f0f;
+// COLORREF is 0x00BBGGRR. Border and text mirror --border and --foreground in
+// index.css; the caption sits above --card so it reads apart from the header.
+const CAPTION_COLOR = 0x1c1c1c;
 const BORDER_COLOR = 0x262626;
 const TEXT_COLOR = 0xfafafa;
 
