@@ -11,6 +11,7 @@ const READY_TIMEOUT_MS = 8_000;
 const READY_POLL_MS = 100;
 
 export interface InstallRoots {
+	localAppData: string;
 	install: string;
 	identifier: string;
 	channel: string;
@@ -33,7 +34,7 @@ export async function installRoots(): Promise<InstallRoots | null> {
 
 	const install = path.join(localAppData, identifier);
 	if (!isInside(path.join(install, channel), process.execPath)) return null;
-	return { install, identifier, channel };
+	return { localAppData, install, identifier, channel };
 }
 
 export async function launchDetached(
@@ -137,9 +138,9 @@ function writeScript(target: string, script: string): Promise<void> {
 	return writeFile(target, `\uFEFF${script}`, "utf8");
 }
 
-// Doubling the quote is all a PowerShell single-quoted string needs.
+// PowerShell also treats ‘ ’ ‚ ‛ as single quotes; doubling escapes each.
 export function literal(value: string): string {
-	return `'${value.split("'").join("''")}'`;
+	return `'${value.replace(/['\u2018\u2019\u201A\u201B]/g, "$&$&")}'`;
 }
 
 async function waitForHandshake(ready: string): Promise<boolean> {

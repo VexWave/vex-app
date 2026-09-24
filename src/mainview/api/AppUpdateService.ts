@@ -1,6 +1,10 @@
-import type { AppUpdateProgressMessage } from "../../shared/rpcSchema";
+import type {
+	AppUpdateProgressMessage,
+	InstallAppUpdateResult,
+} from "../../shared/rpcSchema";
 import { mutate } from "./mutate";
 import { bun, onBunMessage } from "./rpc";
+import { uploadService } from "./UploadService";
 
 type AppUpdatePhase = "idle" | "downloading" | "ready" | "installing";
 
@@ -59,12 +63,29 @@ export class AppUpdateService {
 
 	async install(): Promise<void> {
 		if (this.snapshot.phase !== "ready") return;
+		// Bun sees only the upload in flight, not the queue behind it.
+		const { uploads } = uploadService.getSnapshot();
+		if (uploads.some((u) => u.status === "uploading")) {
+			this.update({
+				error: "Tracks are still uploading — try again when they're done.",
+			});
+			return;
+		}
 		this.update({ phase: "installing", error: null });
-		const result = await mutate(
-			() => bun.installAppUpdate(),
-			"Update failed to start",
-		);
-		if (!result.ok) this.update({ phase: "ready", error: result.error });
+		let result: InstallAppUpdateResult;
+		try {
+			result = await bun.installAppUpdate();
+		} catch (err) {
+			result = {
+				ok: false,
+				error: err instanceof Error ? err.message : "Update failed to start",
+			};
+		}
+		if (result.ok) return;
+		this.update({
+			phase: "downloadMissing" in result ? "idle" : "ready",
+			error: result.error,
+		});
 	}
 
 	retry(): Promise<void> {

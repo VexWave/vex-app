@@ -86,6 +86,17 @@ function ytDlpBusyReason(): string | null {
 
 const INSTALLING = "Components are updating — try again in a moment.";
 
+let trackTransfers = 0;
+
+async function trackTransfer<T>(run: () => Promise<T>): Promise<T> {
+	trackTransfers++;
+	try {
+		return await run();
+	} finally {
+		trackTransfers--;
+	}
+}
+
 function unlessInstalling<T>(run: () => T): T | RpcFailure {
 	return binaryManager.isBusy ? { ok: false, error: INSTALLING } : run();
 }
@@ -95,10 +106,15 @@ function quitBusyReason(): string | null {
 	if (appUpdater.isBusy) {
 		return "A VexWave update is downloading — try again when it's done.";
 	}
+	if (trackTransfers > 0) {
+		return "A track is uploading or saving — try again when it's done.";
+	}
 	return ytDlpBusyReason();
 }
 
-async function thenQuit(start: () => Promise<RpcResult>): Promise<RpcResult> {
+async function thenQuit<T extends RpcResult>(
+	start: () => Promise<T>,
+): Promise<T | RpcFailure> {
 	const busy = quitBusyReason();
 	if (busy) return { ok: false, error: busy };
 	const result = await start();
@@ -119,18 +135,20 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 			},
 			setProxy: (params) => api.setProxy(params),
 			getLibrary: () => api.getLibrary(streamProxy),
-			uploadTrack: (params) => api.uploadTrack(params),
+			uploadTrack: (params) => trackTransfer(() => api.uploadTrack(params)),
 			deleteTrack: async (params) => {
 				const result = await api.deleteTrack(params);
 				if (result.ok) streamProxy.evictTrack(params.id);
 				return result;
 			},
 			downloadTrack: (params) =>
-				saveTrackToDisk(
-					streamProxy,
-					params.id,
-					params.fileName,
-					params.startingFolder,
+				trackTransfer(() =>
+					saveTrackToDisk(
+						streamProxy,
+						params.id,
+						params.fileName,
+						params.startingFolder,
+					),
 				),
 			editTrack: (params) => api.editTrack(params),
 			createArtist: (params) => api.createArtist(params),
