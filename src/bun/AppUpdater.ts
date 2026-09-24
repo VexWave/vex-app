@@ -5,6 +5,7 @@ import { Updater } from "electrobun/bun";
 import type {
 	AppUpdateProgressMessage,
 	AppUpdateResult,
+	InstallAppUpdateResult,
 	RpcResult,
 } from "../shared/rpcSchema";
 import {
@@ -70,10 +71,15 @@ export class AppUpdater {
 		return { ok: true };
 	}
 
-	async install(): Promise<RpcResult> {
+	async install(): Promise<InstallAppUpdateResult> {
 		const installer = this.downloaded;
 		if (!installer || !(await Bun.file(installer).exists())) {
-			return { ok: false, error: "The update isn't downloaded yet." };
+			this.downloaded = null;
+			return {
+				ok: false,
+				error: "The downloaded update is gone — download it again.",
+				downloadMissing: true,
+			};
 		}
 		const roots = await installRoots();
 		if (!roots) {
@@ -86,7 +92,7 @@ export class AppUpdater {
 		return launchDetached(
 			"updater",
 			channelDir,
-			updateWorker(installer, channelDir),
+			updateWorker(installer, channelDir, roots.localAppData),
 			"nothing changed",
 		);
 	}
@@ -138,8 +144,14 @@ async function isVerifiedCopy(
 }
 
 // electrobun's installer never relaunches the app.
-function updateWorker(installer: string, channelDir: string): string[] {
+function updateWorker(
+	installer: string,
+	channelDir: string,
+	localAppData: string,
+): string[] {
 	return [
+		// The installer picks its target folder from this variable.
+		`$env:LOCALAPPDATA = ${literal(localAppData)}`,
 		`$setup = ${literal(installer)}`,
 		`$launcher = ${literal(path.join(channelDir, "app", "bin", "launcher.exe"))}`,
 		"",

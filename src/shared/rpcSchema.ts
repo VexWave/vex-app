@@ -160,6 +160,10 @@ export interface AppUpdateResult {
 	latestVersion: string | null;
 }
 
+export type InstallAppUpdateResult =
+	| RpcResult
+	| (RpcFailure & { downloadMissing: true });
+
 export type AppUpdateProgressMessage =
 	| { type: "progress"; receivedBytes: number; totalBytes?: number }
 	| { type: "ready" }
@@ -280,7 +284,10 @@ export type PlayerRPC = {
 			checkYtDlpUpdate: { params: undefined; response: YtDlpUpdateResult };
 			checkAppUpdate: { params: undefined; response: AppUpdateResult };
 			downloadAppUpdate: { params: undefined; response: RpcResult };
-			installAppUpdate: { params: undefined; response: RpcResult };
+			installAppUpdate: {
+				params: undefined;
+				response: InstallAppUpdateResult;
+			};
 			importFromUrl: { params: ImportFromUrlParams; response: RpcResult };
 			discardImport: { params: DiscardImportParams; response: RpcResult };
 			searchMedia: { params: SearchMediaParams; response: SearchMediaResult };
