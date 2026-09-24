@@ -1,6 +1,6 @@
 # src/mainview/api — the webview's services
 
-`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Download`/`Import`/`Discover`/`Binary`/`Navigation`/`Presence`/`Uninstall`. All module-level singleton, show to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as player core. **New state go here, not component-local state.**
+`Session`/`Library`/`Artist`/`Playlist`/`Upload`/`Download`/`Import`/`Discover`/`Binary`/`AppUpdate`/`Navigation`/`Presence`/`Uninstall`. All module-level singleton, show to React via `useSyncExternalStore` (one hook each in `hooks/`), same pattern as player core. **New state go here, not component-local state.**
 
 Three module here not service: `rpc.ts`, Electroview singleton (`bun.…` for request, `onBunMessage` for pushed message, `notifyBun.…` for fire-and-forget), `LibraryData.ts` (below), `idListEdit.ts` (below).
 
@@ -35,6 +35,6 @@ Three module here not service: `rpc.ts`, Electroview singleton (`bun.…` for re
 
 ## Navigation and presence
 
-- `UninstallService` one service that fetch on component mount rather than off session change, and ask once: whether this copy installed one is fact about computer, so logout leave it alone. **yt-dlp update check asked from `YtDlpUpdateBanner` mount** too: banner exist only logged in, so check go through proxy login hand bun.
+- `UninstallService` one service that fetch on component mount rather than off session change, and ask once: whether this copy installed one is fact about computer, so logout leave it alone. **yt-dlp and app update checks asked from `YtDlpUpdateBanner` and `AppUpdateBanner` mount** too: banners exist only logged in, so check go through proxy login hand bun.
 - `NavigationService` hold current view and item opened in it, so any component can navigate and logout can reset it. **Views grouped into sections**, and `SECTION_OF` where new view declare self; only structure live there, labels and glyphs being `components/Sections`'. **Section switched to rather than navigated to**, so each resume view last on.
 - `PresenceService` odd one: only service whose state mostly *outbound*. Narrow player several-times-a-second notification down to change Discord would render, send `null` for pause (no paused presence — see `src/bun/CLAUDE.md`). **On/off switch app's, not bun's** — user preference, so persisted here and announced to bun process that keep no copy. That announcement request, not push: track update that go missing corrected by next one, switch that go missing not.

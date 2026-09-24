@@ -4,7 +4,7 @@ Everything talk network, filesystem, OS. Webview no touch none of it except RPC 
 
 | File | Role |
 | --- | --- |
-| `index.ts` | Make `BrowserWindow`, wire RPC handlers. Also own mutual exclusion between yt-dlp spawners and updater, and Windows startup resize nudge. |
+| `index.ts` | Make `BrowserWindow`, wire RPC handlers. Also own mutual exclusion between yt-dlp spawners and updater, what an exit would cut off (`quitBusyReason`), and Windows startup resize nudge. |
 | `ApiClient.ts` | ts-rest client + session token. Only place talk HTTP to backend. |
 | `StreamProxy.ts` | Loopback HTTP server. Re-serve backend audio and images to webview with token attached, plus finished URL imports straight off disk. |
 | `TrackDownloader.ts` | Write copy of track into folder user pick. Take bytes off `StreamProxy` own loopback URL, so download join same tee. |
@@ -16,6 +16,10 @@ Everything talk network, filesystem, OS. Webview no touch none of it except RPC 
 | `ytDlp.ts` | Plumbing both yt-dlp callers share: base args, child env, output reading, field parsing, failures. |
 | `WindowChrome.ts` | Win32 FFI (`bun:ffi`) for dark title bar and window/taskbar icon. Windows-only, best-effort. |
 | `Uninstaller.ts` | Remove VexWave from machine. Windows-only. |
+| `AppUpdater.ts` | Check GitHub releases for newer VexWave, download installer, hand it to detached helper. Stable channel, Windows-only. |
+| `download.ts` | GitHub latest-release lookup and throttled streaming download both updaters share. |
+| `appRelease.ts` | Pure release parsing and version compare. No I/O, no electrobun. |
+| `detachedHelper.ts` | What uninstaller and updater share: install roots, detached PowerShell helper, worker preamble that wait out app. |
 | `DiscordPresence.ts` | Discord Rich Presence, speak straight to client local IPC socket (no library). Best-effort: no Discord running normal case, not fault. |
 
 ## Server I/O
@@ -53,6 +57,7 @@ Only Windows and macOS got bin dir, so `BinaryManager.isSupported` false everywh
 ## Windows
 
 - **Title bar and window icon set by us, not Electrobun** (`WindowChrome.ts`): caption would otherwise come up in *system* theme beside app always dark, and Electrobun build step fail embed `build.win.icon` (rcedit resolved from path baked into their CI). Icon loaded at runtime from `Resources/app.ico`, which build do produce. All best-effort.
-- **App can't delete own install** (`Uninstaller.ts`), so uninstall hand script to detached helper and quit — Windows hold executing image open. **Quitting part of removal**: `index.ts` exit outright, not through `app.quit()`. yt-dlp updater exclusions guard it too.
+- **App can't delete own install** (`Uninstaller.ts`), so uninstall hand script to detached helper and quit — Windows hold executing image open. **Quitting part of removal**: `index.ts` exit outright, not through `app.quit()`, once `quitBusyReason` find nothing running.
 - **What it delete proved, not computed**: running executable must sit inside directory `version.json` name before anything removed. That also what make dev build refuse, and settings panel absent there.
+- **App update also run through detached helper** (`AppUpdater.ts`): electrobun installer replace `<channel>\app` wholesale, silently skip locked files, and never start app it installed — so helper wait out every VexWave process, run installer, relaunch `app\bin\launcher.exe` itself. Download stop short of install: user click restart, `quitBusyReason` guard it like uninstall.
 - **Window resized by 1px and back once webview up** (`index.ts`) — bundled CEF paint first frame before settle on monitor device scale factor, so at any scaling other than 100% layout come up zoomed and clipped until something force recompute. Timed off `dom-ready`, with 2 s fallback.

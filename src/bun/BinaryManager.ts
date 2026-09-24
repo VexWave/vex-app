@@ -8,6 +8,7 @@ import type {
 	RpcResult,
 	YtDlpUpdateResult,
 } from "../shared/rpcSchema";
+import { downloadToFile, fetchLatestRelease } from "./download";
 
 const YT_DLP_LATEST_API =
 	"https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
@@ -120,13 +121,11 @@ export class BinaryManager {
 			const manifest = await this.readManifest();
 			const installedVersion = manifest.ytDlp?.version;
 			if (!installedVersion) return none;
-			const res = await fetch(YT_DLP_LATEST_API, {
-				headers: { Accept: "application/vnd.github+json" },
-				proxy: this.proxy(),
-			});
-			if (!res.ok) return none;
-			const release = (await res.json()) as { tag_name?: string };
-			const latestVersion = release.tag_name;
+			const release = (await fetchLatestRelease(
+				YT_DLP_LATEST_API,
+				this.proxy(),
+			)) as { tag_name?: string } | null;
+			const latestVersion = release?.tag_name;
 			if (!latestVersion || latestVersion === installedVersion) return none;
 			return { ok: true, updateAvailable: true, latestVersion, installedVersion };
 		} catch {
@@ -244,49 +243,20 @@ export class BinaryManager {
 		partCount: number,
 		proxy: string | undefined,
 	): Promise<string> {
-		const res = await fetch(part.url, { proxy });
-		if (!res.ok || !res.body) {
-			throw new Error(`Download failed (HTTP ${res.status}): ${part.url}`);
-		}
-		const contentLength = Number(res.headers.get("content-length"));
-		const totalBytes =
-			Number.isFinite(contentLength) && contentLength > 0
-				? contentLength
-				: undefined;
-
 		const filePath = path.join(this.tmpDir, `${binary}-${partIndex}.download`);
-		const sink = Bun.file(filePath).writer();
-		let receivedBytes = 0;
-		let lastEmit = 0;
-		const emit = () =>
-			this.sendProgress({
-				type: "progress",
-				binary,
-				step: "downloading",
-				receivedBytes,
-				totalBytes,
-				part: partIndex,
-				partCount,
-			});
-		try {
-			emit();
-			const reader = res.body.getReader();
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				receivedBytes += value.byteLength;
-				sink.write(value);
-				const now = Date.now();
-				if (now - lastEmit >= 150) {
-					lastEmit = now;
-					emit();
-					await sink.flush();
-				}
-			}
-			emit();
-		} finally {
-			await sink.end();
-		}
+		await downloadToFile(part.url, filePath, {
+			proxy,
+			onProgress: (receivedBytes, totalBytes) =>
+				this.sendProgress({
+					type: "progress",
+					binary,
+					step: "downloading",
+					receivedBytes,
+					totalBytes,
+					part: partIndex,
+					partCount,
+				}),
+		});
 		return filePath;
 	}
 
