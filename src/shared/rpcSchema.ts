@@ -156,6 +156,15 @@ export type BinaryProgressMessage =
 	| { type: "finished" }
 	| { type: "failed"; binary: BinaryName; error: string };
 
+export interface AppUpdateResult {
+	latestVersion: string | null;
+}
+
+export type AppUpdateProgressMessage =
+	| { type: "progress"; receivedBytes: number; totalBytes?: number }
+	| { type: "ready" }
+	| { type: "failed"; error: string };
+
 export interface ImportFromUrlParams {
 	importId: string;
 	url: string;
@@ -269,6 +278,9 @@ export type PlayerRPC = {
 			installMissingBinaries: { params: ProxyParams; response: RpcResult };
 			updateYtDlp: { params: undefined; response: RpcResult };
 			checkYtDlpUpdate: { params: undefined; response: YtDlpUpdateResult };
+			checkAppUpdate: { params: undefined; response: AppUpdateResult };
+			downloadAppUpdate: { params: undefined; response: RpcResult };
+			installAppUpdate: { params: undefined; response: RpcResult };
 			importFromUrl: { params: ImportFromUrlParams; response: RpcResult };
 			discardImport: { params: DiscardImportParams; response: RpcResult };
 			searchMedia: { params: SearchMediaParams; response: SearchMediaResult };
@@ -288,6 +300,7 @@ export type PlayerRPC = {
 		messages: {
 			sessionExpired: { reason: string };
 			binaryProgress: BinaryProgressMessage;
+			appUpdateProgress: AppUpdateProgressMessage;
 			urlImportProgress: UrlImportProgressMessage;
 			presenceStatus: PresenceStatus;
 		};

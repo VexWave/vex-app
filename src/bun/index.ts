@@ -1,5 +1,6 @@
 import { BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import { ApiClient } from "./ApiClient";
+import { AppUpdater } from "./AppUpdater";
 import { BinaryManager } from "./BinaryManager";
 import { DiscordPresence } from "./DiscordPresence";
 import { MediaSearch } from "./MediaSearch";
@@ -8,7 +9,7 @@ import { saveTrackToDisk } from "./TrackDownloader";
 import { Uninstaller } from "./Uninstaller";
 import { UrlImporter } from "./UrlImporter";
 import { applyWindowChrome } from "./WindowChrome";
-import type { PlayerRPC, RpcFailure } from "../shared/rpcSchema";
+import type { PlayerRPC, RpcFailure, RpcResult } from "../shared/rpcSchema";
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -62,6 +63,11 @@ const importer: UrlImporter = new UrlImporter(
 
 const mediaSearch = new MediaSearch(binaryManager, () => api.proxy);
 
+const appUpdater = new AppUpdater(
+	() => api.proxy,
+	(msg) => rpc.send.appUpdateProgress(msg),
+);
+
 const uninstaller = new Uninstaller(
 	binaryManager.isSupported ? binaryManager.binDir : null,
 );
@@ -78,10 +84,26 @@ function ytDlpBusyReason(): string | null {
 	return null;
 }
 
+const INSTALLING = "Components are updating — try again in a moment.";
+
 function unlessInstalling<T>(run: () => T): T | RpcFailure {
-	return binaryManager.isBusy
-		? { ok: false, error: "Components are updating — try again in a moment." }
-		: run();
+	return binaryManager.isBusy ? { ok: false, error: INSTALLING } : run();
+}
+
+function quitBusyReason(): string | null {
+	if (binaryManager.isBusy) return INSTALLING;
+	if (appUpdater.isBusy) {
+		return "A VexWave update is downloading — try again when it's done.";
+	}
+	return ytDlpBusyReason();
+}
+
+async function thenQuit(start: () => Promise<RpcResult>): Promise<RpcResult> {
+	const busy = quitBusyReason();
+	if (busy) return { ok: false, error: busy };
+	const result = await start();
+	if (result.ok) setTimeout(() => process.exit(0), QUIT_DELAY_MS);
+	return result;
 }
 
 const rpc = BrowserView.defineRPC<PlayerRPC>({
@@ -127,20 +149,15 @@ const rpc = BrowserView.defineRPC<PlayerRPC>({
 					: binaryManager.startYtDlpUpdate();
 			},
 			checkYtDlpUpdate: () => binaryManager.checkYtDlpUpdate(),
+			checkAppUpdate: () => appUpdater.check(),
+			downloadAppUpdate: () => appUpdater.startDownload(),
+			installAppUpdate: () => thenQuit(() => appUpdater.install()),
 			importFromUrl: (params) => unlessInstalling(() => importer.start(params)),
 			discardImport: (params) => importer.discard(params),
 			searchMedia: (params) => unlessInstalling(() => mediaSearch.run(params)),
 			setPresenceEnabled: ({ enabled }) => discordPresence.setEnabled(enabled),
 			canUninstall: async () => ({ removable: await uninstaller.removable() }),
-			uninstallApp: async () => {
-				const busy = ytDlpBusyReason();
-				if (busy) return { ok: false as const, error: busy };
-				return unlessInstalling(async () => {
-					const result = await uninstaller.start();
-					if (result.ok) setTimeout(() => process.exit(0), QUIT_DELAY_MS);
-					return result;
-				});
-			},
+			uninstallApp: () => thenQuit(() => uninstaller.start()),
 		},
 		messages: {
 			presenceChanged: ({ track }) => discordPresence.setNowPlaying(track),

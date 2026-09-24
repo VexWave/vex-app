@@ -1,6 +1,7 @@
 import { useState, type ComponentType, type DragEvent } from "react";
 import { uploadService } from "@/api/UploadService";
 import { AppHeader } from "@/components/AppHeader";
+import { AppUpdateBanner } from "@/components/AppUpdateBanner";
 import { ArtistsView } from "@/components/ArtistsView";
 import { BinarySetupScreen } from "@/components/BinarySetupScreen";
 import { DiscoverView } from "@/components/DiscoverView";
@@ -73,6 +74,7 @@ function App() {
 			onDrop={handleDrop}
 		>
 			<AppHeader />
+			<AppUpdateBanner />
 			<YtDlpUpdateBanner />
 
 			<main className="flex min-h-0 flex-1 gap-4 p-4">
