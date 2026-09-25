@@ -16,7 +16,7 @@ Everything talk network, filesystem, OS. Webview no touch none of it except RPC 
 | `ytDlp.ts` | Plumbing both yt-dlp callers share: base args, child env, output reading, field parsing, failures. |
 | `WindowChrome.ts` | Win32 FFI (`bun:ffi`) for dark title bar and window/taskbar icon. Windows-only, best-effort. |
 | `Uninstaller.ts` | Remove VexWave from machine. Windows-only. |
-| `AppUpdater.ts` | Check GitHub releases for newer VexWave, download installer, hand it to detached helper. Stable channel, Windows-only. |
+| `AppUpdater.ts` | Check GitHub releases for newer VexWave, download installer, hand it to detached helper. |
 | `download.ts` | GitHub latest-release lookup and throttled streaming download both updaters share. |
 | `appRelease.ts` | Pure release parsing and version compare. No I/O, no electrobun. |
 | `detachedHelper.ts` | What uninstaller and updater share: install roots, detached PowerShell helper, worker preamble that wait out app. |

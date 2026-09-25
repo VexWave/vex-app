@@ -35,9 +35,8 @@ export class AppUpdater {
 	async check(): Promise<AppUpdateResult> {
 		const none: AppUpdateResult = { latestVersion: null };
 		try {
-			const roots = await installRoots();
-			if (roots?.channel !== "stable") return none;
-			const { version } = await Updater.getLocalInfo();
+			const { version, channel } = await Updater.getLocalInfo();
+			if (channel !== "stable" && channel !== "dev") return none;
 			const release = pickInstaller(
 				await fetchLatestRelease(RELEASES_LATEST_API, this.proxy()),
 			);
@@ -155,15 +154,41 @@ function updateWorker(
 		`$setup = ${literal(installer)}`,
 		`$launcher = ${literal(path.join(channelDir, "app", "bin", "launcher.exe"))}`,
 		"",
-		"$proc = Start-Process -FilePath $setup -WindowStyle Hidden -Wait -PassThru",
-		"if ($proc) { Note ('installer exited with ' + $proc.ExitCode) } else { Note 'installer did not start' }",
+		...progressWindow(),
+		"",
+		"$proc = Start-Process -FilePath $setup -WindowStyle Hidden -PassThru",
+		"if ($proc) {",
+		// ExitCode reads empty unless the handle is taken before the process exits.
+		"\t$null = $proc.Handle",
+		"\tPump { $proc.HasExited } 3600",
+		"\tNote ('installer exited with ' + $proc.ExitCode)",
+		"} else { Note 'installer did not start' }",
 		"Remove-Item -LiteralPath $setup -Force",
 		"",
 		"if (Test-Path -LiteralPath $launcher) {",
+		"\t$status.Text = 'Starting VexWave...'",
 		"\tStart-Process -FilePath $launcher -WorkingDirectory (Split-Path -Parent $launcher)",
 		"\tNote 'relaunched'",
+		"\tPump { Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -and $_.Path.StartsWith($root + '\\', 'OrdinalIgnoreCase') } } 30",
 		"} else {",
 		"\tNote 'no launcher to relaunch'",
+		"}",
+		"$form.Close()",
+	];
+}
+
+function progressWindow(): string[] {
+	return [
+		"Add-Type -AssemblyName System.Windows.Forms",
+		"[Windows.Forms.Application]::EnableVisualStyles()",
+		"$form = New-Object Windows.Forms.Form -Property @{ Text = 'VexWave'; ClientSize = New-Object Drawing.Size(360, 96); FormBorderStyle = 'FixedDialog'; ControlBox = $false; ShowIcon = $false; StartPosition = 'CenterScreen'; TopMost = $true }",
+		"$status = New-Object Windows.Forms.Label -Property @{ Text = 'Installing the update...'; Location = New-Object Drawing.Point(20, 20); AutoSize = $true }",
+		"$bar = New-Object Windows.Forms.ProgressBar -Property @{ Style = 'Marquee'; MarqueeAnimationSpeed = 30; Location = New-Object Drawing.Point(20, 52); Size = New-Object Drawing.Size(320, 20) }",
+		"$form.Controls.AddRange(@($status, $bar))",
+		"$form.Show()",
+		"function Pump([scriptblock]$until, [int]$seconds) {",
+		"\t$end = (Get-Date).AddSeconds($seconds)",
+		"\twhile (-not (& $until) -and (Get-Date) -lt $end) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 100 }",
 		"}",
 	];
 }
