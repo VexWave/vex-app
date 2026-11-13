@@ -36,7 +36,7 @@ jobs:
         working-directory: contract
 
       - name: Type-check contract and scripts
-        run: bunx tsc --noEmit
+        run: bun check
         working-directory: contract
 
       - name: Build frontend
@@ -53,7 +53,7 @@ jobs:
       - name: Generated files are current
         run: |
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
-          (cd contract && bun gen-limits.ts)
+          (cd contract && bun gen.ts)
           wails3 generate bindings -f '-tags production' -clean=true -ts -i
           git add -A --intent-to-add
           git diff --exit-code -- internal frontend/src/lib/limits.gen.ts frontend/bindings
