@@ -224,8 +224,8 @@ let vite: Bun.Subprocess | null = null;
 try {
 	if (check) {
 		process.stdout.write("type-checking the harness… ");
-		const tsc = await run(["bunx", "tsc", "--noEmit"]);
-		if (!tsc.ok) throw new Error(`the harness does not type-check:\n${tsc.output}`);
+		const types = await run(["bun", "check"]);
+		if (!types.ok) throw new Error(`the harness does not type-check:\n${types.output}`);
 		console.log("ok");
 	}
 

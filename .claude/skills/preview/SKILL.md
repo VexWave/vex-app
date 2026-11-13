@@ -68,7 +68,7 @@ project the library through those indices, which `LibraryService` builds from a
 real payload and so are empty behind a stubbed snapshot.
 
 The type-check is the safety net for all of this, which is why it is on by
-default: the harness is copied into `frontend/src/` for the run, so `tsc` sees it
+default: the harness is copied into `frontend/src/` for the run, so `bun check` sees it
 against the app's real types and a store that changed shape is a compile error
 rather than a wrong picture.
 

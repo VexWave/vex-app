@@ -171,7 +171,7 @@ func (u *UploadService) Confirm(ctx context.Context, p ConfirmParams) error {
 		<-prev
 	}
 
-	m := meta{Title: clampTitle(p.Title), Duration: e.durationMs, ArtistIDs: p.ArtistIDs}
+	m := backend.CreateTrack{Title: clampTitle(p.Title), Duration: int32(e.durationMs), ArtistIDs: p.ArtistIDs}
 	switch {
 	case p.CoverBase64.Set && !p.CoverBase64.Null:
 		m.Cover = p.CoverBase64.V
@@ -193,14 +193,7 @@ func (u *UploadService) Confirm(ctx context.Context, p ConfirmParams) error {
 	})
 }
 
-type meta struct {
-	Title     string  `json:"title"`
-	Duration  int     `json:"duration"`
-	ArtistIDs []int32 `json:"artistIds,omitempty"`
-	Cover     string  `json:"cover,omitempty"`
-}
-
-func body(m meta, f *os.File) (backend.Stream, func(), error) {
+func body(m backend.CreateTrack, f *os.File) (backend.Stream, func(), error) {
 	st, err := f.Stat()
 	if err != nil {
 		return backend.Stream{}, nil, err
@@ -208,12 +201,18 @@ func body(m meta, f *os.File) (backend.Stream, func(), error) {
 	if st.Size() > MaxAudioBytes {
 		return backend.Stream{}, nil, errors.New(tooLarge(st.Size()))
 	}
+	m.Data = ""
 	head, err := json.Marshal(m)
 	if err != nil {
 		return backend.Stream{}, nil, err
 	}
-	prefix := append(head[:len(head)-1:len(head)-1], `,"data":"`...)
-	suffix := []byte(`"}`)
+	// JSON escapes every quote inside a value, so the empty data field is the only match.
+	before, after, ok := bytes.Cut(head, []byte(`"data":""`))
+	if !ok {
+		return backend.Stream{}, nil, errors.New("the track metadata has no data field")
+	}
+	prefix := append(before[:len(before):len(before)], `"data":"`...)
+	suffix := append([]byte(`"`), after...)
 	pr, pw := io.Pipe()
 	go func() {
 		enc := base64.NewEncoder(base64.StdEncoding, pw)

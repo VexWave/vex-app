@@ -78,19 +78,19 @@ The Go side is new code. It starts from the sandbox packages (Ground rules 7) an
 | `src/mainview/**` | `frontend/src/**` | Copied, then the §4 changes. `components/ui/` keeps what shadcn generated. |
 | `components.json` | `frontend/components.json` | Kept for the shadcn CLI (`bunx shadcn add <component>`, run in `frontend/`). `tailwind.css` becomes `src/index.css`. `tailwind.config` stays `tailwind.config.js`, now `frontend/`'s. The `@/` aliases are unchanged, because `@/` now points at `frontend/src`. The CLI resolves them through `frontend/tsconfig.json`'s `paths`. The project stays on Tailwind 3, and the CLI keeps adding Tailwind 3 components to it. |
 | `src/shared/rpcSchema.ts` | `frontend/src/api/types.ts` | The data types only (§3.3). The `PlayerRPC` schema is dropped. |
-| `src/shared/limits.ts` | `frontend/src/lib/limits.ts` + `limits.gen.ts` | The constants are generated into `limits.gen.ts` by the same generator that writes `internal/backend/limits_gen.go` (§3.14), so they're no longer hand-mirrored. `limits.ts` keeps `base64Length` and the decoded-byte forms derived from the generated caps. |
-| `contract/contract.ts` | `contract/contract.ts` | Unchanged. It is the backend's API spec that the hand-written client follows, and the limits generator's input. `contract/package.json` holds `zod` and `@ts-rest/core`, so the frontend no longer depends on them. |
-| `port-sandbox/limits/gen.ts` | `contract/gen-limits.ts` | Rewritten to emit the Go and TS files. CI checks for drift. |
+| `src/shared/limits.ts` | `frontend/src/lib/limits.ts` + `limits.gen.ts` | The constants are generated into `limits.gen.ts` by the same generator that writes `internal/backend/contract_gen.go` (§3.14), so they're no longer hand-mirrored. `limits.ts` keeps `base64Length` and the decoded-byte forms derived from the generated caps. |
+| `contract/contract.ts` | `contract/contract.ts` | Unchanged. It is the backend's API spec and the input of `contract/gen.ts`, which generates the Go client's types, route table and limits, and the frontend's limits (§3.14). `contract/package.json` holds `zod` and `@ts-rest/core`, so the frontend no longer depends on them. |
+| `port-sandbox/limits/gen.ts` | `contract/gen.ts` | Rewritten to emit the Go and TS files, and extended to the Go client's types and route table. CI checks for drift. |
 | `scripts/test-server.ts` | `contract/test-server.ts` | Unchanged apart from its import path. It is the throwaway backend for manual end-to-end checks (§7). |
 | `port-sandbox/gotests/<pkg>` | `internal/<pkg>` | Code and tests, per the §6 map. The comparisons that need the old app's sources stay in the reference (§6). |
 | `scripts/release.ts` | `scripts/release.ts` | Same procedure, but writes the version into `build/config.yml` (§3.10). |
-| `.github/workflows/*` | same paths | Rewritten. The Go code imports `golang.org/x/sys/windows`, so CI runs on `windows-latest`: tsc, `go vet`, `go test -race`, and drift checks for the bindings and limits. In `build-windows.yml`, a `v*` tag builds stable and publishes it, as today. The manual canary run is left out until canary packaging is designed (§5). The workflow keeps its SHA-pinned actions and `persist-credentials: false`, and runs `wails3 package` instead of the fuse step. |
+| `.github/workflows/*` | same paths | Rewritten. The Go code imports `golang.org/x/sys/windows`, so CI runs on `windows-latest`: `bun check`, `go vet`, `go test -race`, and drift checks for the bindings and limits. In `build-windows.yml`, a `v*` tag builds stable and publishes it, as today. The manual canary run is left out until canary packaging is designed (§5). The workflow keeps its SHA-pinned actions and `persist-credentials: false`, and runs `wails3 package` instead of the fuse step. |
 | `.claude/skills/preview/` | same path | Paths moved to `frontend/`. The `window.__electrobun` stub is removed (§4). |
 | `assets/vex-logo.png` | `build/appicon.png` | The source for `wails3 generate icons`. |
 | `README.md`, `assets/*.png` screenshots | same paths | The stack badges are updated. |
 | `docs/wails-port-audit.md` | same path | The spec (Ground rules 3, 8). |
 
-**Frontend toolchain:** start from the template's `frontend/package.json`, which brings Vite, `@vitejs/plugin-react` and the Wails Vite plugin at the versions v3.1.0 was tested with. Add the app's runtime dependencies at their current `package.json` versions, and keep TypeScript at the repo's version. `noUnusedParameters` stays off, as in the template: the generated `Nullable<T>` binding never uses `T`. Checked in the first commit: `wails3 build` and `bunx tsc --noEmit` pass, and the preview skill's library and settings renders are byte-identical to the reference checkout's (discover differs only by its download spinner, which never renders the same twice).
+**Frontend toolchain:** start from the template's `frontend/package.json`, which brings Vite, `@vitejs/plugin-react` and the Wails Vite plugin at the versions v3.1.0 was tested with. Add the app's runtime dependencies at their current `package.json` versions, and type-check with `bun check` instead of a `typescript` dependency (it reports the same errors as tsc on both projects). `noUnusedParameters` stays off, as in the template: the generated `Nullable<T>` binding never uses `T`. Checked in the first commit: `wails3 build` and `bunx tsc --noEmit` pass, and the preview skill's library and settings renders are byte-identical to the reference checkout's (discover differs only by its download spinner, which never renders the same twice).
 
 **Not carried over:**
 - **`src/bun/**`:** reimplemented in Go.
@@ -215,8 +215,8 @@ Evidence: **test** = a sandbox test or probe (path given); **src** = Wails v3.1.
 | RPC timeout | `maxRequestTime: 120_000` (`index.ts:127`, `rpc.ts:5`) | Electrobun's 1 s default | No call timeout; `ctx` cancelled by `promise.cancel()` | Yes | low | test: a 9 s call completed; `cancel()` → Go saw `context canceled` |
 | Pushed messages | `rpc.send.*` (5 kinds) | Progress, expiry, presence status | `application.RegisterEvent[T]` + `app.Event.Emit`; typed names in `bindings/events` | Same | low | test (`probe-bridge.ts`: typed events received) |
 | Error model | `RpcFailure` (`rpcSchema.ts:24-31`), `ApiClient.ts:425-487` | 401→login, 429 `Retry-After`, 413/407 text | Go error type; promise rejects with `RuntimeError`, `cause` = JSON of the error | Same: calls reject, `failureOf` reads the error | low | test: `cause` = `{status, retryAfterSec, error}`; plain `errors.New` → `cause: {}` |
-| Backend client | `ApiClient.ts`, `contract/contract.ts` | Typed backend calls | Hand-written `backend.Client` on `net/http` (13 routes) | Yes: one HTTP path | med | npm registry: every `@ts-rest/open-api` dist-tag peers `zod ^3` |
-| Payload limits mirror | `src/shared/limits.ts`, startup check `ApiClient.ts:39-46` | Refuse oversize payloads early | `limits_gen.go` and the frontend's `limits.gen.ts` generated from the contract with zod 4's `z.toJSONSchema` | Yes: build time, no hand mirror | low | test (`port-sandbox/limits/gen.ts` produced all 8 limits) |
+| Backend client | `ApiClient.ts`, `contract/contract.ts` | Typed backend calls | `backend.Client` on `net/http` (13 routes), its types and route table generated from the contract | Yes: one HTTP path | med | npm registry: every `@ts-rest/open-api` dist-tag peers `zod ^3`, so the generator uses zod 4's `z.toJSONSchema` |
+| Payload limits mirror | `src/shared/limits.ts`, startup check `ApiClient.ts:39-46` | Refuse oversize payloads early | `contract_gen.go`'s limits and the frontend's `limits.gen.ts` generated from the contract with zod 4's `z.toJSONSchema` | Yes: build time, no hand mirror | low | test (`port-sandbox/limits/gen.ts` produced all 8 limits) |
 | Outbound proxy | `ApiClient.ts:48-78`, `ytDlp.ts:11-28` | User/corporate proxy | `httpproxy.Config{…}.ProxyFunc()` (honours `NO_PROXY`, bypasses loopback) | Same | low | test (`port-sandbox/gotests/netx`) |
 | Proxy 407 on HTTPS | `ApiClient.ts:430-436` | Clear "proxy auth" error | `Transport.OnProxyConnectResponse` returns a typed error | Yes: typed | low | test (`TestProxy407Typed`) |
 | Certificate errors | regex on text, `ApiClient.ts:406-421` | Explain cert failures | `errors.As` → `*tls.CertificateVerificationError`, `x509.UnknownAuthorityError`, `x509.HostnameError` | Yes | low | test (`TestCertErrorsTyped`) |
@@ -246,7 +246,7 @@ Evidence: **test** = a sandbox test or probe (path given); **src** = Wails v3.1.
 | Channels | `index.ts:18`, `AppUpdater.ts:38-39` | dev/canary/stable | the `stable` build tag; per-channel install folder from the installer, Uninstall key in `buildinfo`, and `VexWaveData\<channel>\`; canary doesn't self-update. Only stable is packaged for now (§5) | Same | low | n/a |
 | Web Audio over loopback | `AudioPlayer.ts:38-41`, `StreamProxy.ts:151-168` | `crossOrigin` media needs ACAO | Same headers from Go | Same | low | test: analyser peak 0.125 (untainted) |
 | Single instance | absent | Two copies race on `bin/`, imports | `Options.SingleInstance` | New | low | test: second launch exits in ~1 s, first gets its args |
-| Type-check / CI | `.github/workflows/ci.yml` | tsc both projects | On `windows-latest`: tsc (`frontend/`, `contract/`), `go vet`, `go test -race`, bindings and limits freshness | Yes | low | n/a |
+| Type-check / CI | `.github/workflows/ci.yml` | tsc both projects | On `windows-latest`: `bun check` (`frontend/`, `contract/`), `go vet`, `go test -race`, bindings and limits freshness | Yes | low | n/a |
 | Preview skill | `.claude/skills/preview/SKILL.md:87-92` | Headless renders | Drop the `window.__electrobun` stub | Yes | low | test: runtime + bindings import fine in headless Edge |
 
 ---
@@ -347,7 +347,7 @@ Responses are not capped: a 100 MiB return value arrived in 1.4 s.
 - **Finished imports:** the importer writes to `VexWaveData\<channel>\imports\` (today a single `%LOCALAPPDATA%\VexWave\imports` shared by all channels, `UrlImporter.ts:58`). It knows its output path (`UrlImporter.ts:134,177`) and calls `Stage` itself. `ImportService.stage()`'s fetch-into-Blob (`ImportService.ts:143-167`) is deleted.
 - **`Confirm(stagedID, edits)`:**
   - **Format:** base64 inside JSON stays, because it is the backend's current contract. If the backend later adds a raw or multipart upload endpoint, only `Confirm`'s body builder changes.
-  - Builds the contract body (`contract.ts:33-42`) as `json.Marshal(meta)` minus the closing brace, then `,"data":"`, then the file through `base64.NewEncoder` over an `io.Pipe`, then `"}`.
+  - Builds the contract body (`contract.ts:33-42`) from the generated `backend.CreateTrack` (§3.14): `json.Marshal` with an empty `data`, split at `"data":""`, with the file streamed into the gap through `base64.NewEncoder` over an `io.Pipe`.
   - `Content-Length` is exact: prefix + `base64.StdEncoding.EncodedLen(size)` + 2.
   - Evidence (`port-sandbox/gotests/upload/upload_test.go`): a 75 MiB file produced a 104 857 699-byte body, decoded byte-identical by `encoding/json`, with **0.2 MiB** allocated during the upload.
 - **Queue:** uploads run one at a time in confirm order: each `Confirm` waits for the done channel of the one confirmed before it, and holds a `busy.Transfer` token from the moment it's queued (`TestConfirmQueue`). The webview calls `Confirm` as soon as a track is confirmed, so its own queue goes. That closes the gap `AppUpdateService.ts:66-73` works around ("Bun sees only the upload in flight, not the queue behind it").
@@ -607,14 +607,17 @@ A direct port, except for where the binaries live.
 
 ### 3.14 Backend client and limits — **med**
 
-- **Client:** hand-written `backend.Client` with a `Do(ctx, method, path, body, out)` core and 13 thin methods. Path builders mirror `trackAudioPath`/`*ImagePath` (`contract.ts:397-416`), and edit requests use `Nullable[T]` + `omitzero` (§3.3).
-- **Why not generate it:** `@ts-rest/open-api` peers `zod ^3` in every published version, up to `3.53.0-rc.1`. This repo is on zod 4 and `@ts-rest/core 3.53.0-rc.1` (`package.json:31,40`), checked on the npm registry.
+- **Client:** `backend.Client` with a `do(ctx, method, path, body, out)` core and 12 thin hand-written methods, which keep the user-facing error texts. Path builders for the binary routes mirror `trackAudioPath`/`*ImagePath` (`contract.ts:397-416`).
+- **Generated types and routes:** `contract/gen.ts` (bun) writes `internal/backend/contract_gen.go` from the JSON routes of `ApiContract`: one struct per request and response schema (exported names minus `Request`/`Response`) and a typed `route[Body, Resp]` per route, with its payload kind from `metadata.body`. The methods go through the generic `call` (a transport error becomes a "server unreachable" `Failure`) or `send` (it stays raw, for `Login`, whose caller describes it with the proxy in mind; `Probe` stays raw too and skips decoding the library), so a contract change breaks `go build` at the call site, and CI fails when the file drifts.
+  - **Mapping:** request schemas use `z.toJSONSchema`'s `io: "input"` (base64 stays a string), responses `io: "output"`. Optional fields get `omitzero`, so a nil slice stays out and `[]` is sent. Optional nullable fields become `Nullable[T]` (§3.3). Any other shape makes the generator throw, as do path and query parameters and any header besides `authorization` on a JSON route; only routes whose 200 is an `otherResponse` are skipped.
+  - **Not generated:** `PostTrack` streams its body (§3.2) and takes the route's method and path only. `.refine` checks don't survive JSON Schema; `TestContract` still runs every recorded request through `contract/check.ts`.
+  - **Why not `@ts-rest/open-api`:** it peers `zod ^3` in every published version, up to `3.53.0-rc.1`. This repo is on zod 4 and `@ts-rest/core 3.53.0-rc.1` (`package.json:31,40`), checked on the npm registry.
 - **Errors:**
   - certificate failures classified with `errors.As` (§2);
   - a proxy 407 on an HTTPS target surfaces as a transport error whose text is only `Proxy Authentication Required` (`TestProxy407`). Return a typed error from `Transport.OnProxyConnectResponse` instead (`TestProxy407Typed`);
   - an HTTP target still gets a plain 407 response;
   - `Retry-After` also accepts the HTTP-date form via `http.ParseTime` (`TestRetryAfterDate`); today only seconds are read (`ApiClient.ts:464-467`).
-- **Limits:** only `MAX_IMAGE_BASE64` and `MAX_AUDIO_BASE64` are exported (`contract.ts:18-19`); the rest live inside schemas. `z.toJSONSchema` (built into zod 4) gave all eight values: `maxLength`, `maximum` and `maxItems` (`port-sandbox/limits/gen.ts`). `contract/gen-limits.ts` (bun) writes `internal/backend/limits_gen.go` and `frontend/src/lib/limits.gen.ts`, and CI fails when either drifts. That replaces the startup `throw` (`ApiClient.ts:39-46`) and the hand mirror in `src/shared/limits.ts`. The frontend still needs the values for its image pre-checks.
+- **Limits:** only `MAX_IMAGE_BASE64` and `MAX_AUDIO_BASE64` are exported (`contract.ts:18-19`); the rest live inside schemas. `z.toJSONSchema` (built into zod 4) gave all eight values: `maxLength`, `maximum` and `maxItems` (`port-sandbox/limits/gen.ts`). `contract/gen.ts` reads them from the same JSON Schemas it builds the structs from, and writes them into `contract_gen.go` and `frontend/src/lib/limits.gen.ts`. CI fails when either drifts. That replaces the startup `throw` (`ApiClient.ts:39-46`) and the hand mirror in `src/shared/limits.ts`. The frontend still needs the values for its image pre-checks.
 
 ---
 
@@ -743,7 +746,7 @@ internal/
   platform/                    // Command(): CREATE_NO_WINDOW + HideWindow, PATH appended last
   netx/                        // For(proxy): cached API + stream clients; httpproxy ProxyFunc; OnProxyConnectResponse → ProxyAuthError; Unreachable text
   busy/                        // Registry: Acquire(Kind) (release, error), QuitBlocker()
-  backend/                     // Client (13 methods), Failure error, Nullable[T], path builders, limits_gen.go
+  backend/                     // Client (12 methods), Failure error, Nullable[T], path builders, contract_gen.go (generated types, routes, limits)
   session/                     // SessionService (bound): Restore, Login, Logout, SetProxy; Store = atomic.Pointer[Session] + CAS
   media/                       // loopback Server; download (shared, progressive reader); Cache (LRU); image + staged-cover routes
   library/                     // LibraryService (bound): GetLibrary, Edit/Delete Track, Artist/Playlist CRUD
@@ -790,7 +793,7 @@ The frontend (`frontend/`), the contract tooling (`contract/`) and the build ass
 | `platform` | `port-sandbox/gotests/winproc` | `winproc_test.go`, `env_test.go`, `ytdlp_test.go` |
 | `update` | `port-sandbox/gotests/updatertest` | `update_test.go`, through `UpdateService` against the fake GitHub; the sandbox's `PublicKey` case stays there, as no key is configured (§5) |
 | `backend.Nullable`, error shape | `port-sandbox/app/probe.go` | the `port-sandbox/cdp/probe-bridge.ts` checks |
-| `contract/gen-limits.ts` | `port-sandbox/limits/gen.ts` | CI drift check for both generated files |
+| `contract/gen.ts` | `port-sandbox/limits/gen.ts` | CI drift check for both generated files |
 
 ---
 
