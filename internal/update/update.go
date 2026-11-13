@@ -171,7 +171,6 @@ func Helper(pid, installer, exe string) error {
 		return err
 	}
 	installErr := install(installer, exe)
-	// No HideWindow: SW_HIDE in STARTUPINFO would apply to the app's first ShowWindow.
 	app := exec.Command(exe)
 	if err := app.Start(); err != nil {
 		return errors.Join(installErr, err)
@@ -189,7 +188,6 @@ func install(installer, exe string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), installWait)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, installer)
-	// NSIS reads /D= only as the last argument and unquoted, even with spaces, which exec's quoting breaks.
 	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `"` + installer + `" /S /D=` + filepath.Dir(exe)}
 	if err := cmd.Run(); err != nil {
 		return errors.Join(err, os.Rename(backup, exe))

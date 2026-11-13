@@ -29,7 +29,6 @@ func Command(ctx context.Context, bin, name string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// ponytail: the copy can't delete itself; the next start sweeps HelperCopies, and after an uninstall Windows' temp cleanup takes it.
 func HandOff(mode string, quit func(), args ...string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -94,7 +93,7 @@ func WaitExit(pid string) error {
 	}
 	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(n))
 	if err != nil {
-		return nil // OpenProcess fails once the process is gone.
+		return nil
 	}
 	defer windows.CloseHandle(h)
 	if ev, err := windows.WaitForSingleObject(h, uint32(exitWait/time.Millisecond)); ev != windows.WAIT_OBJECT_0 {

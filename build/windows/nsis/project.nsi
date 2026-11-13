@@ -95,7 +95,6 @@ Section
 
     SetOutPath $INSTDIR
 
-    # Before wails.files, so a missing exe means a first install: a silent update mustn't restore a deleted desktop shortcut.
     IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}" +2
         CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
