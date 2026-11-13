@@ -2,15 +2,23 @@ package platform
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows"
+)
+
+const (
+	quitDelay = 500 * time.Millisecond
+	exitWait  = 2 * time.Minute
 )
 
 func Command(ctx context.Context, bin, name string, args ...string) *exec.Cmd {
@@ -21,26 +29,45 @@ func Command(ctx context.Context, bin, name string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func CopySelf(dst string) (string, error) {
+// ponytail: the copy can't delete itself; the next start sweeps HelperCopies, and after an uninstall Windows' temp cleanup takes it.
+func HandOff(mode string, quit func(), args ...string) error {
 	exe, err := os.Executable()
 	if err != nil {
-		return "", err
+		return err
 	}
-	in, err := os.Open(exe)
+	helper := filepath.Join(os.TempDir(), "vexwave-"+strings.TrimPrefix(mode, "--")+"-"+rand.Text()+".exe")
+	if err := CopyFile(exe, helper); err != nil {
+		return err
+	}
+	if err := SpawnDetached(exec.Command(helper, append([]string{mode, strconv.Itoa(os.Getpid())}, args...)...)); err != nil {
+		os.Remove(helper)
+		return err
+	}
+	time.AfterFunc(quitDelay, quit)
+	return nil
+}
+
+func HelperCopies() []string {
+	copies, _ := filepath.Glob(filepath.Join(os.TempDir(), "vexwave-*-helper-*.exe"))
+	return copies
+}
+
+func CopyFile(src, dst string) error {
+	in, err := os.Open(src)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer in.Close()
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o755)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
 		os.Remove(dst)
-		return "", err
+		return err
 	}
-	return dst, out.Close()
+	return out.Close()
 }
 
 // A job that forbids breakaway refuses the flag, so it retries without.
@@ -60,14 +87,18 @@ func SpawnDetached(cmd *exec.Cmd) error {
 	return cmd.Process.Release()
 }
 
-func WaitExit(pid string, timeout time.Duration) error {
+func WaitExit(pid string) error {
 	n, err := strconv.ParseUint(pid, 10, 32)
 	if err != nil {
 		return err
 	}
-	if h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(n)); err == nil {
-		windows.WaitForSingleObject(h, uint32(timeout/time.Millisecond))
-		windows.CloseHandle(h)
+	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(n))
+	if err != nil {
+		return nil // OpenProcess fails once the process is gone.
+	}
+	defer windows.CloseHandle(h)
+	if ev, err := windows.WaitForSingleObject(h, uint32(exitWait/time.Millisecond)); ev != windows.WAIT_OBJECT_0 {
+		return errors.Join(errors.New("the app didn't exit"), err)
 	}
 	return nil
 }

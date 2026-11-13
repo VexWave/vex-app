@@ -32,8 +32,12 @@ func TestMain(m *testing.M) {
 		time.Sleep(700 * time.Millisecond)
 		os.Exit(0)
 	}
+	exe, _ := os.Executable()
+	if target := os.Getenv("BREAK_THEN_FAIL"); target != "" && filepath.Base(exe) == installerAsset {
+		os.WriteFile(target, nil, 0o644)
+		os.Exit(1)
+	}
 	if dir := os.Getenv("WRITE_MARKER"); dir != "" {
-		exe, _ := os.Executable()
 		os.WriteFile(filepath.Join(dir, filepath.Base(exe)), []byte(windows.UTF16PtrToString(windows.GetCommandLine())), 0o644)
 		os.Exit(0)
 	}
@@ -182,35 +186,55 @@ func TestNoUpdate(t *testing.T) {
 
 func TestSweepLeftovers(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("TMP", filepath.Join(dir, "temp"))
 	exe := filepath.Join(dir, "VexWave.exe")
-	for _, f := range []string{"VexWave.exe", "uninstall.exe", "wails-update-42/VexWave-installer.exe"} {
+	for _, f := range []string{"VexWave.exe", "uninstall.exe", "wails-update-42/VexWave-installer.exe", "temp/vexwave-update-helper-x.exe", "temp/vexwave-uninstall-helper-y.exe", "temp/other.exe"} {
 		os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755)
 		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
 	}
 	sweep(exe)
-	entries, _ := os.ReadDir(dir)
 	var left []string
-	for _, e := range entries {
-		left = append(left, e.Name())
-	}
-	if fmt.Sprint(left) != "[VexWave.exe uninstall.exe]" {
+	filepath.WalkDir(dir, func(p string, d os.DirEntry, _ error) error {
+		if !d.IsDir() {
+			rel, _ := filepath.Rel(dir, p)
+			left = append(left, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if fmt.Sprint(left) != "[VexWave.exe temp/other.exe uninstall.exe]" {
 		t.Fatalf("left %v", left)
 	}
 }
 
-func TestHelperWaitsThenInstallsAndRelaunches(t *testing.T) {
+func fakeInstall(t *testing.T) (installer, exe, markers string) {
 	dir := filepath.Join(t.TempDir(), "Programs", "Vex Wave")
 	os.MkdirAll(dir, 0o755)
-	installer := filepath.Join(t.TempDir(), installerAsset)
-	for _, dst := range []string{installer, filepath.Join(dir, "VexWave.exe")} {
+	installer, exe = filepath.Join(t.TempDir(), installerAsset), filepath.Join(dir, "VexWave.exe")
+	for _, dst := range []string{installer, exe} {
 		self, _ := os.Open(os.Args[0])
 		fake, _ := os.Create(dst)
 		io.Copy(fake, self)
 		self.Close()
 		fake.Close()
 	}
-	markers := t.TempDir()
+	markers = t.TempDir()
 	t.Setenv("WRITE_MARKER", markers)
+	return installer, exe, markers
+}
+
+func waitRelaunch(t *testing.T, markers string) {
+	t.Helper()
+	for range 100 {
+		if _, err := os.Stat(filepath.Join(markers, "VexWave.exe")); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("the app was never relaunched")
+}
+
+func TestHelperWaitsThenInstallsAndRelaunches(t *testing.T) {
+	installer, exe, markers := fakeInstall(t)
 
 	app := exec.Command(os.Args[0], "-test.run=^$")
 	app.Env = append(os.Environ(), "SLEEP_THEN_EXIT=1", "WRITE_MARKER=")
@@ -220,20 +244,31 @@ func TestHelperWaitsThenInstallsAndRelaunches(t *testing.T) {
 	defer app.Wait()
 	start := time.Now()
 
-	if err := Helper(strconv.Itoa(app.Process.Pid), installer, dir); err != nil {
+	if err := Helper(strconv.Itoa(app.Process.Pid), installer, exe); err != nil {
 		t.Fatal(err)
 	}
 	if took := time.Since(start); took < 500*time.Millisecond {
 		t.Fatalf("ran the installer after %v, before the app exited", took)
 	}
-	if got, err := os.ReadFile(filepath.Join(markers, installerAsset)); err != nil || !strings.HasSuffix(string(got), `" /S /D=`+dir) {
+	if got, err := os.ReadFile(filepath.Join(markers, installerAsset)); err != nil || !strings.HasSuffix(string(got), `" /S /D=`+filepath.Dir(exe)) {
 		t.Fatalf("installer command line: %q %v", got, err)
 	}
-	for range 100 {
-		if _, err := os.Stat(filepath.Join(markers, "VexWave.exe")); err == nil {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(exe + ".old"); !os.IsNotExist(err) {
+		t.Fatalf("backup left behind: %v", err)
 	}
-	t.Fatal("the app was never relaunched")
+	waitRelaunch(t, markers)
+}
+
+func TestHelperRestoresAfterFailedInstall(t *testing.T) {
+	installer, exe, markers := fakeInstall(t)
+	before, _ := os.ReadFile(exe)
+	t.Setenv("BREAK_THEN_FAIL", exe)
+
+	if err := Helper("0", installer, exe); err == nil {
+		t.Fatal("a failed install reported success")
+	}
+	if after, _ := os.ReadFile(exe); !bytes.Equal(after, before) {
+		t.Fatalf("exe not restored: %d bytes, was %d", len(after), len(before))
+	}
+	waitRelaunch(t, markers)
 }

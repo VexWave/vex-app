@@ -1,25 +1,17 @@
 package uninstall
 
 import (
-	"crypto/rand"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/VexWave/vex-app/internal/buildinfo"
 	"github.com/VexWave/vex-app/internal/busy"
 	"github.com/VexWave/vex-app/internal/datadirs"
 	"github.com/VexWave/vex-app/internal/platform"
 	"golang.org/x/sys/windows/registry"
-)
-
-const (
-	quitDelay = 500 * time.Millisecond
-	exitWait  = 2 * time.Minute
 )
 
 func InstallDir() (string, bool) {
@@ -68,21 +60,14 @@ func (s *UninstallService) Start() error {
 	if !ok {
 		return errors.New("VexWave can only uninstall an installed copy of itself, and this one is running from a development build.")
 	}
-	// ponytail: the helper copy stays in %TEMP%, since a running exe can't delete itself; Windows' temp cleanup takes it.
-	helper, err := platform.CopySelf(filepath.Join(os.TempDir(), "vexwave-uninstall-"+rand.Text()+".exe"))
-	if err != nil {
+	if err := platform.HandOff("--uninstall-helper", s.Quit, dir); err != nil {
 		return errors.New("The uninstaller couldn't start, so nothing was removed.")
 	}
-	if err := platform.SpawnDetached(exec.Command(helper, "--uninstall-helper", strconv.Itoa(os.Getpid()), dir)); err != nil {
-		os.Remove(helper)
-		return errors.New("The uninstaller couldn't start, so nothing was removed.")
-	}
-	time.AfterFunc(quitDelay, s.Quit)
 	return nil
 }
 
 func Helper(pid, dir string) error {
-	if err := platform.WaitExit(pid, exitWait); err != nil {
+	if err := platform.WaitExit(pid); err != nil {
 		return err
 	}
 	return exec.Command(filepath.Join(dir, "uninstall.exe"), "/S").Run()

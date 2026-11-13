@@ -2,13 +2,11 @@ package update
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -24,8 +22,7 @@ import (
 const (
 	repository     = "VexWave/vex-app"
 	installerAsset = "VexWave-installer.exe"
-	quitDelay      = 500 * time.Millisecond
-	exitWait       = 2 * time.Minute
+	installWait    = 5 * time.Minute
 )
 
 func Configure(u *updater.Updater, version string, proxy func() string) error {
@@ -70,6 +67,7 @@ type UpdateService struct {
 	mu          sync.Mutex
 	latest      string
 	downloading bool
+	handedOff   bool
 }
 
 func (s *UpdateService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
@@ -84,7 +82,7 @@ func (s *UpdateService) ServiceStartup(ctx context.Context, _ application.Servic
 // second launch before this runs.
 func sweep(exe string) {
 	stale, _ := filepath.Glob(filepath.Join(filepath.Dir(exe), "wails-update-*"))
-	for _, p := range stale {
+	for _, p := range append(stale, platform.HelperCopies()...) {
 		os.RemoveAll(p)
 	}
 }
@@ -149,38 +147,52 @@ func (s *UpdateService) Install(ctx context.Context) error {
 	if _, err := os.Stat(path); path == "" || err != nil {
 		return &Refusal{Message: "The downloaded update is gone — download it again.", DownloadMissing: true}
 	}
-	dir, ok := s.InstallDir()
-	if !ok {
+	if _, ok := s.InstallDir(); !ok {
 		return &Refusal{Message: "Only an installed copy of VexWave can update itself."}
 	}
-	// ponytail: the helper copy stays in %TEMP%, as the uninstaller's does; Windows' temp cleanup takes it.
-	helper, err := platform.CopySelf(filepath.Join(os.TempDir(), "vexwave-update-"+rand.Text()+".exe"))
-	if err == nil {
-		err = platform.SpawnDetached(exec.Command(helper, "--update-helper", strconv.Itoa(os.Getpid()), path, dir))
-		if err != nil {
-			os.Remove(helper)
-		}
-	}
+	exe, err := os.Executable()
 	if err != nil {
 		return &Refusal{Message: "The update couldn't start: " + err.Error()}
 	}
-	time.AfterFunc(quitDelay, s.Quit)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.handedOff {
+		return &Refusal{Message: "The update is already installing."}
+	}
+	if err := platform.HandOff("--update-helper", s.Quit, path, exe); err != nil {
+		return &Refusal{Message: "The update couldn't start: " + err.Error()}
+	}
+	s.handedOff = true
 	return nil
 }
 
-func Helper(pid, installer, dir string) error {
-	if err := platform.WaitExit(pid, exitWait); err != nil {
+func Helper(pid, installer, exe string) error {
+	if err := platform.WaitExit(pid); err != nil {
 		return err
 	}
-	cmd := exec.Command(installer)
-	// NSIS reads /D= only as the last argument and unquoted, even with spaces, which exec's quoting breaks.
-	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `"` + installer + `" /S /D=` + dir}
-	installErr := cmd.Run()
+	installErr := install(installer, exe)
 	// No HideWindow: SW_HIDE in STARTUPINFO would apply to the app's first ShowWindow.
-	app := exec.Command(filepath.Join(dir, "VexWave.exe"))
+	app := exec.Command(exe)
 	if err := app.Start(); err != nil {
 		return errors.Join(installErr, err)
 	}
 	app.Process.Release()
 	return installErr
+}
+
+func install(installer, exe string) error {
+	backup := exe + ".old"
+	os.Remove(backup)
+	if err := platform.CopyFile(exe, backup); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), installWait)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, installer)
+	// NSIS reads /D= only as the last argument and unquoted, even with spaces, which exec's quoting breaks.
+	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `"` + installer + `" /S /D=` + filepath.Dir(exe)}
+	if err := cmd.Run(); err != nil {
+		return errors.Join(err, os.Rename(backup, exe))
+	}
+	return os.Remove(backup)
 }
