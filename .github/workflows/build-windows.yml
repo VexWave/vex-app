@@ -48,9 +48,8 @@ jobs:
         shell: bash
         run: |
           mkdir release
-          cp bin/VexWave.exe release/VexWave-windows-amd64.exe
           cp bin/VexWave-amd64-installer.exe release/VexWave-installer.exe
-          (cd release && sha256sum VexWave-windows-amd64.exe VexWave-installer.exe > SHA256SUMS)
+          (cd release && sha256sum VexWave-installer.exe > SHA256SUMS)
           cat release/SHA256SUMS
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
