@@ -41,7 +41,7 @@ The port starts on a new branch from a **fresh `wails3 init -t react` project** 
 | Product (canary, not packaged yet, §5) | `VexWave Canary`, `Programs\VexWave Canary` | its installer config, once canary is packaged |
 | Product identifier | `app.vexwave` (an app ID only, not the old uninstaller's registry key) | `build/config.yml` `info.productIdentifier` |
 | `UNINST_KEY_NAME` (stable / canary) | `VexWave` / `VexWave Canary`. Set explicitly; the default would be `<Company><Product>` | `project.nsi`, `buildinfo` |
-| Release assets | `VexWave-windows-amd64.exe` (the bare exe the updater's default matcher picks, §3.9), `SHA256SUMS`, and `VexWave-installer.exe` (`project.nsi` writes `bin/VexWave-amd64-installer.exe`; CI renames it) for first installs. `SHA256SUMS` is `sha256sum` output for both exes; the provider strips its `*` (`wails:v3/pkg/updater/providers/github/github.go:352-375`). None is `VexWave-Setup.exe` (§5) | `build-windows.yml` |
+| Release assets | `VexWave-installer.exe` (`project.nsi` writes `bin/VexWave-amd64-installer.exe`; CI renames it), for first installs and for updates (§3.9), and `SHA256SUMS`, its `sha256sum` output; the provider strips the `*` (`wails:v3/pkg/updater/providers/github/github.go:352-375`). No bare app exe, so nobody downloads an uninstalled copy by mistake. Not `VexWave-Setup.exe` (§5) | `build-windows.yml` |
 
 ### Layout: the Wails template's, unchanged
 
@@ -237,7 +237,7 @@ Evidence: **test** = a sandbox test or probe (path given); **src** = Wails v3.1.
 | Busy flags & quit guard | `index.ts:77-123` | No yt-dlp overwrite while running; no quit mid-transfer | `busy.Registry.Acquire(kind)`, atomic | Yes: race-free | med | test (`busy_test.go`) |
 | Session swap | `ApiClient.ts:95-151` | Login/logout/proxy change while requests run | Immutable session behind `atomic.Pointer`, CAS | Yes: fixes a stale-401 logout | med | test (`port-sandbox/gotests/session`) |
 | Discord Rich Presence | `DiscordPresence.ts` | Activity card over local IPC | One actor goroutine; `winio.DialPipeContext` on the named pipe | Yes: no timer fields | med | test (`presence`, `pipe`); live Discord: §7 |
-| App updater | `AppUpdater.ts`, `download.ts`, `appRelease.ts`, `detachedHelper.ts` | Download, verify, install, relaunch (stable only) | `app.Updater` + GitHub provider + `SHA256SUMS`, `WindowNone`, own banner; never set up on canary | Yes: no PowerShell | med | test (`port-sandbox/gotests/updatertest`); `Restart` swap: §7 |
+| App updater | `AppUpdater.ts`, `download.ts`, `appRelease.ts`, `detachedHelper.ts` | Download, verify, install, relaunch (stable only) | `app.Updater` + GitHub provider + `SHA256SUMS`, `WindowNone`, own banner; the installer runs silently from a Go helper mode; never set up on canary | Yes: no PowerShell | med | test (`update_test.go`); installed run: §7 |
 | Uninstaller | `Uninstaller.ts`, `detachedHelper.ts` | Remove an install the app can't delete | NSIS `uninstall.exe /S` from a Go helper mode; the uninstaller runs the app's `--remove-data` mode | Yes | med | test (`datadirs_test.go`, job state); NSIS run: §7 |
 | Dark title bar & icon | `WindowChrome.ts`, `scripts/stamp-win-icons.ts` | Dark caption; embedded icon | `WindowsWindow.Theme` + `CustomTheme`; icon via build assets | Yes: deleted | low | src (`webview_window_options.go:366-372,439-450`); rendering: §7 |
 | HiDPI | `index.ts:204-222`, `bundleCEF`, `lib/devicePixelRatio.ts` | electrobun#324 | Wails manifest declares `permonitorv2` | Yes: deleted | low | test: `devicePixelRatio` 1.25 at 125 % scaling; WebView2 started with `--embedded-browser-webview-dpi-awareness=2` |
@@ -493,27 +493,28 @@ The login stays in `localStorage` (`storage.ts:75-79`) and is pushed to Go with 
 
 **Wails updater**, tested with the real v3.1.0 package against a fake GitHub API (`port-sandbox/gotests/updatertest/updater_test.go`):
 - **Setup:** `app.Updater.Init(updater.Config{CurrentVersion, Providers: [github.New(github.Config{Repository, ChecksumAsset: "SHA256SUMS", HTTPClient})], Window: updater.WindowNone})`. `github.New` returns `(*Provider, error)`.
-- **Asset choice:** the default matcher picked `VexWave-windows-amd64.exe` from among a `SHA256SUMS` and a `VexWave-Setup.exe`.
+- **Asset choice:** the default matcher picked `VexWave-windows-amd64.exe` from among a `SHA256SUMS` and a `VexWave-Setup.exe`, and skips any `*-installer.*` (`wails:v3/pkg/updater/providers/github/github.go:395-420`). Releases ship only the installer, so `Configure` sets an `AssetMatcher` that takes the asset named exactly `VexWave-installer.exe`. A release without it reads as no update.
 - **Install without a key:** `Check` → `DownloadAndInstall` reached `StateReady` with byte-identical staged bytes. All 3 requests went through the injected `HTTPClient`, which is where the user's proxy goes.
 - **Tampering:** a tampered checksum gives `updater: digest mismatch`.
-- **Staging location:** `wails-update-*` beside the running binary (seen next to the test binary). So the install dir must be user-writable, which means a per-user NSIS install (§3.10).
-- **Swap:** `Restart` re-execs the binary in helper mode, waits for the parent (30 s, `HelperReadyTimeout`), renames the old exe aside, moves the new one in and relaunches, rolling back if the launch fails (`wails:docs/mpress/content/guides/updater.md:589-601`). Its helper spawn already handles a kill-on-close job: it adds `CREATE_BREAKAWAY_FROM_JOB` and drops it if breakaway is denied (`wails:v3/pkg/updater/spawn_windows.go:17-51`). Checked end to end with an installed 0.6.1 and a fake GitHub serving 0.6.2 (debug port and API URL patched in for the test build only): the banner offered 0.6.2, the download went through the injected client, "Restart to install" swapped the exe and relaunched 0.6.2 from the same folder within a second, with the app inside the harness's kill-on-close job.
-- **A corrupt release:** a payload with a valid `MZ` header and a matching checksum passes download and verify, so the banner reaches "ready". The helper then swaps it in, fails to launch it, restores the backup and relaunches the old version. The user is never left without a working exe.
-- **Leftovers:** Wails clears a staged `wails-update-*` folder only on the next download in the same run, and leaves the replaced exe renamed to `VexWave.exe.old.<n>` because Windows won't delete it while it's still mapped (`wails:v3/pkg/updater/helper_windows.go:120-176`). `UpdateService` sweeps both beside the exe at startup; `SingleInstance` has already exited a second launch by then (`TestSweepLeftovers`, and checked in the installed app).
+- **Staging location:** `wails-update-*` beside the running binary (seen next to the test binary). So the install dir must be user-writable, which means a per-user NSIS install (§3.10). Its only check on the payload is a non-empty executable (`wails:v3/pkg/updater/validate.go:182`), which the installer passes.
+- **Swap (not used):** `Restart` re-execs the binary in helper mode, waits for the parent (30 s, `HelperReadyTimeout`), renames the old exe aside, moves the new one in and relaunches, rolling back if the launch fails (`wails:docs/mpress/content/guides/updater.md:589-601`). Its helper spawn already handles a kill-on-close job: it adds `CREATE_BREAKAWAY_FROM_JOB` and drops it if breakaway is denied (`wails:v3/pkg/updater/spawn_windows.go:17-51`). Checked end to end with an installed 0.6.1 and a fake GitHub serving 0.6.2 (debug port and API URL patched in for the test build only): the banner offered 0.6.2, the download went through the injected client, "Restart to install" swapped the exe and relaunched 0.6.2 from the same folder within a second, with the app inside the harness's kill-on-close job.
+- **A corrupt release** under the swap: a payload with a valid `MZ` header and a matching checksum passes download and verify, so the banner reaches "ready". The helper then swaps it in, fails to launch it, restores the backup and relaunches the old version.
+- **Why the installer instead:** the swap never runs NSIS, so the `DisplayVersion` in Settings → Apps, the shortcuts and `uninstall.exe` keep their first-install versions, and it needs a bare exe on the release. `Install` instead hands off through `platform.HandOff`, which the uninstaller shares (§3.11): it copies the exe to `%TEMP%` (the installer overwrites `VexWave.exe`), launches the copy detached as `--update-helper <pid> <staged installer> <exe>`, and quits. A second `Install` is refused once the hand-off has happened. The helper waits up to 2 minutes for the PID and does nothing if the app is still running. Otherwise it backs up the exe as `VexWave.exe.old`, runs `"<installer>" /S /D=<exe's folder>` with a 5-minute limit, and puts the backup back if the installer fails or times out. Either way it then relaunches the exe (`TestHelperRestoresAfterFailedInstall`). NSIS reads `/D=` only last and unquoted, so the helper sets `SysProcAttr.CmdLine` itself. The relaunch has no `HideWindow`, since `SW_HIDE` would apply to the app's first `ShowWindow`. The installer creates the desktop shortcut only on a first install, so an update doesn't bring back one the user deleted.
+- **Leftovers:** Wails clears a staged `wails-update-*` folder only on the next download in the same run. `UpdateService` sweeps it beside the exe at startup, along with the `vexwave-*-helper-*.exe` copies in `%TEMP%`; `SingleInstance` has already exited a second launch by then (`TestSweepLeftovers`, and checked in the installed app).
 
 **Channels.** Same rules as today:
 - **Stable:** checks GitHub's latest release, downloads and installs.
-- **Dev:** checks and downloads, but can't install, because it isn't an installed copy (`AppUpdater.ts:39,83`). `UpdateService.Restart()` uses the same installed-copy check as `Removable()` (§3.11).
+- **Dev:** checks and downloads, but can't install, because it isn't an installed copy (`AppUpdater.ts:39,83`). `UpdateService.Install()` uses the same installed-copy check as `Removable()` (§3.11).
 - **Canary:** never self-updates. A canary build doesn't set up `app.Updater` at all, and `Check` answers "no update" as `AppUpdater.ts:39` does today, so the banner never shows. Canary isn't packaged for now (§5). Today it never reaches the releases page (`build-windows.yml:101-104`), so it can't take stable's release feed.
 
 **What changes.**
-- **Releases** publish the bare app exe plus `SHA256SUMS`, next to the NSIS installer for first installs. The GitHub provider reads only `ChecksumAsset`, not GitHub's per-asset `digest` (`wails:v3/pkg/updater/providers/github/github.go:167-178`).
+- **Releases** publish only the NSIS installer plus `SHA256SUMS`. The GitHub provider reads only `ChecksumAsset`, not GitHub's per-asset `digest` (`wails:v3/pkg/updater/providers/github/github.go:167-178`).
 - **Frontend:** keeps `AppUpdateBanner` and `AppUpdateService` with its own phases. It listens to three of the updater's events while downloading: `wails:updater:download-progress` (`written`/`total`), `update-ready`, and `error` except at the `check` stage, since a failed check means no banner. A failed download shows the updater's own message (for example `updater: digest mismatch`).
 - **`internal/update`** wraps `app.Updater` (`update_test.go` runs it against a fake GitHub):
   - `Configure` sets up the GitHub provider; its `HTTPClient` sends each request through `netx.For(proxy)`'s stream transport, so a proxy change applies to the next request and a release asset keeps its `Content-Length`.
   - `Check` reports the newer version; any failure reads as no update, as `AppUpdater.ts:38-49` does.
   - `Download` refuses with "There is no update to download." before a successful `Check` and "The update is already downloading." during one. It runs `DownloadAndInstall` in the background under a `busy.AppDownload` token.
-  - `Install` checks `busy.QuitBlocker()` first, as `thenQuit` does today, then that the staged file still exists (`downloadMissing` in the error's JSON otherwise), then the installed-copy check (`uninstall.InstallDir`), then calls `Restart`.
+  - `Install` checks `busy.QuitBlocker()` first, as `thenQuit` does today, then that the staged file still exists (`downloadMissing` in the error's JSON otherwise), then the installed-copy check (`uninstall.InstallDir`), then starts the update helper and quits.
 - **Deleted:** `AppUpdater.ts`, `download.ts` (`BinaryManager` keeps a small download helper), `appRelease.ts`, the PowerShell worker and the WinForms window.
 - **No signing for now:** §5.
 
@@ -570,8 +571,8 @@ Evidence (`port-sandbox/gotests/datadirs/datadirs_test.go`, with real HKCU keys 
 
 **In-app uninstall:**
 - **`Removable()`:** reads `UninstallString` from this channel's HKCU key (`golang.org/x/sys/windows/registry`) and checks the running exe is inside that directory. Dev builds fail the check, as today.
-- **`Start()`:** copies the exe to `%TEMP%` and launches it in an uninstall helper mode (`--uninstall-helper <pid> <installdir>`, dispatched before `application.New`). The helper waits for the PID, then runs `uninstall.exe /S`, which removes the data through `--remove-data`. Shortcuts are the NSIS uninstaller's job. The helper copy stays in `%TEMP%`: a running exe can't delete itself, and a per-user process can't schedule a delete for the next reboot.
-- **Tests** (`internal/uninstall/uninstall_test.go`): `InstallDir` against a throwaway HKCU key; the helper waits for a live PID before running a fake `uninstall.exe /S`; a detached spawn runs.
+- **`Start()`:** copies the exe to `%TEMP%` and launches it in an uninstall helper mode (`--uninstall-helper <pid> <installdir>`, dispatched before `application.New`) through `platform.HandOff`. The helper waits up to 2 minutes for the PID and does nothing if the app is still running. Otherwise it runs `uninstall.exe /S`, which removes the data through `--remove-data`. Shortcuts are the NSIS uninstaller's job. The helper copy stays in `%TEMP%`: a running exe can't delete itself, and a per-user process can't schedule a delete for the next reboot.
+- **Tests** (`internal/uninstall/uninstall_test.go`): `InstallDir` against a throwaway HKCU key; the helper waits for a live PID before running a fake `uninstall.exe /S`; a detached spawn runs (`internal/platform/process_test.go`).
 - **Job objects, measured** (`port-sandbox/app/probe.go` `jobInfo`):
   - launched from Explorer (a `.lnk` opened through `explorer.exe`), the app **is in a job**, without kill-on-close and with breakaway allowed;
   - launched by a parent with a kill-on-close job (the test harness), it is in a kill-on-close job.
@@ -690,6 +691,7 @@ The UI is copied from `src/mainview/` to `frontend/src/` (Port setup). Paths bel
   - the relaunch logic in `AppUpdater.ts:145-194`, the install roots in `detachedHelper.ts:27-38`, and `scripts/fuse-installer.ts`: not ported;
   - nothing reads `%LOCALAPPDATA%\app.vexwave\<channel>`, `%LOCALAPPDATA%\VexWave` or the CEF profile.
 - **Consequences the port must handle:**
+  - **v1.0.0, the first Wails release, takes only a bare exe:** its default matcher skips `*-installer.*`, so once releases are installer-only it reports no update. Decision: those users download the installer by hand once; the first installer-only release's notes say so.
   - **Old clients still poll GitHub** for an asset named exactly `VexWave-Setup.exe` (`appRelease.ts:4,48-51`), and run it hidden **without `/S`** (`AppUpdater.ts:159`). Wails releases must not use that asset name: then `pickInstaller` returns `null`, and old clients report "no update" instead of starting an invisible NSIS installer.
   - **The old and new apps don't touch each other's files**, so users can install and uninstall them in any order:
     - the old uninstaller deletes its install tree `%LOCALAPPDATA%\app.vexwave`, the bin dir's parent `%LOCALAPPDATA%\VexWave` (`Uninstaller.ts:41`) and its own Uninstall key `app.vexwave` (`:75`);
@@ -739,11 +741,11 @@ The UI is copied from `src/mainview/` to `frontend/src/` (Port setup). Paths bel
 ## 6. Proposed Go structure (sketch)
 
 ```
-main.go                        // embed frontend/dist, mode dispatch before application.New (--uninstall-helper, --remove-data), window, wiring
+main.go                        // embed frontend/dist, mode dispatch before application.New (--update-helper, --uninstall-helper, --remove-data), window, wiring
 internal/
   buildinfo/                   // Channel (build tag), Version (the exe's version resource), the channels' UNINST_KEY_NAMEs
   datadirs/                    // Layout (%LOCALAPPDATA%\VexWaveData\{bin, <channel>\webview, <channel>\imports}), RemoveData rule, LockBin (bin\.lock)
-  platform/                    // Command(): CREATE_NO_WINDOW + HideWindow, PATH appended last
+  platform/                    // Command(): CREATE_NO_WINDOW + HideWindow, PATH appended last; HandOff, CopyFile, SpawnDetached, WaitExit, HelperCopies for the helper modes
   netx/                        // For(proxy): cached API + stream clients; httpproxy ProxyFunc; OnProxyConnectResponse → ProxyAuthError; Unreachable text
   busy/                        // Registry: Acquire(Kind) (release, error), QuitBlocker()
   backend/                     // Client (12 methods), Failure error, Nullable[T], path builders, contract_gen.go (generated types, routes, limits)
@@ -757,7 +759,7 @@ internal/
   importer/                    // ImportService (bound): Start, Discard; worker goroutine; avatar
   search/                      // SearchService (bound): Search; rank.go (pure, cases.Fold) + rank_test.go + testdata/{pages,ranked}.json
   presence/                    // PresenceService (bound): SetEnabled, SetNowPlaying; actor; pipe via go-winio (§3.7)
-  update/                      // UpdateService (bound): app.Updater + GitHub provider (ChecksumAsset, HTTPClient from netx)
+  update/                      // UpdateService (bound): app.Updater + GitHub provider (installer AssetMatcher, ChecksumAsset, HTTPClient from netx); the --update-helper mode
   uninstall/                   // UninstallService (bound): Removable, Start; the --uninstall-helper and --remove-data modes; InstallDir, which the updater's installed-copy check shares
   events/                      // RegisterEvent[...] calls + payload structs (the import:* events live in importer: their payload carries upload.Staged, and upload → session → events would be a cycle)
 ```

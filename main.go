@@ -29,7 +29,7 @@ var assets embed.FS
 const trackCacheBytes = 256 << 20
 
 func main() {
-	// The installer and the uninstall helper run these modes; they must stay clear of SingleInstance.
+	// The installer and the update and uninstall helpers run these modes; they must stay clear of SingleInstance.
 	if len(os.Args) > 1 {
 		switch {
 		case os.Args[1] == "--remove-data":
@@ -39,6 +39,11 @@ func main() {
 			return
 		case os.Args[1] == "--uninstall-helper" && len(os.Args) == 4:
 			if err := uninstall.Helper(os.Args[2], os.Args[3]); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case os.Args[1] == "--update-helper" && len(os.Args) == 5:
+			if err := update.Helper(os.Args[2], os.Args[3], os.Args[4]); err != nil {
 				log.Fatal(err)
 			}
 			return
@@ -76,7 +81,7 @@ func main() {
 		browserArgs = []string{"--remote-debugging-port=" + port}
 	}
 
-	updates := &update.UpdateService{Busy: busyRegistry, Installed: func() bool { _, ok := uninstall.InstallDir(); return ok }}
+	updates := &update.UpdateService{Busy: busyRegistry, InstallDir: uninstall.InstallDir}
 	uninstaller := &uninstall.UninstallService{Busy: busyRegistry}
 
 	caption := &application.WindowTheme{
@@ -123,6 +128,7 @@ func main() {
 	imports.Events = app.Event
 	presenceService.Events = app.Event
 	uninstaller.Quit = app.Quit
+	updates.Quit = app.Quit
 	if buildinfo.Channel != "canary" {
 		if err := update.Configure(app.Updater, buildinfo.Version, proxy); err != nil {
 			log.Fatal(err)
