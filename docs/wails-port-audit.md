@@ -48,7 +48,7 @@ The port starts on a new branch from a **fresh `wails3 init -t react` project** 
 ```
 main.go, go.mod, go.sum   Go module at the root; main.go embeds frontend/dist (//go:embed all:frontend/dist)
 internal/<pkg>/           Go packages (§6)
-frontend/                 the React app: package.json, bun.lock, vite.config.ts, tsconfig.json, tailwind + postcss configs, components.json
+frontend/                 the React app: package.json, bun.lock, vite.config.ts, tsconfig.json, components.json
 frontend/src/             the UI (was src/mainview/); the @/ alias points here
 frontend/bindings/        generated bindings, committed; CI fails when they drift
 build/                    config.yml, Taskfile.yml, appicon.png, windows/ (icon, manifest, info.json, nsis/project.nsi)
@@ -76,7 +76,7 @@ The Go side is new code. It starts from the sandbox packages (Ground rules 7) an
 | From `main` | On the branch | Form |
 |---|---|---|
 | `src/mainview/**` | `frontend/src/**` | Copied, then the §4 changes. `components/ui/` keeps what shadcn generated. |
-| `components.json` | `frontend/components.json` | Kept for the shadcn CLI (`bunx shadcn add <component>`, run in `frontend/`). `tailwind.css` becomes `src/index.css`. `tailwind.config` stays `tailwind.config.js`, now `frontend/`'s. The `@/` aliases are unchanged, because `@/` now points at `frontend/src`. The CLI resolves them through `frontend/tsconfig.json`'s `paths`. The project stays on Tailwind 3, and the CLI keeps adding Tailwind 3 components to it. |
+| `components.json` | `frontend/components.json` | Kept for the shadcn CLI (`bunx shadcn add <component>`, run in `frontend/`). `tailwind.css` becomes `src/index.css`, which also holds the theme: the project is on Tailwind 4, which has no config file, so `tailwind.config` is empty. The `@/` aliases are unchanged, because `@/` now points at `frontend/src`. The CLI resolves them through `frontend/tsconfig.json`'s `paths`. It adds shadcn's Tailwind 4 components, importing `cn` from the `cn` package; drop the `"use client"` directive it writes and indent the file with tabs. |
 | `src/shared/rpcSchema.ts` | `frontend/src/api/types.ts` | The data types only (§3.3). The `PlayerRPC` schema is dropped. |
 | `src/shared/limits.ts` | `frontend/src/lib/limits.ts` + `limits.gen.ts` | The constants are generated into `limits.gen.ts` by the same generator that writes `internal/backend/contract_gen.go` (§3.14), so they're no longer hand-mirrored. `limits.ts` keeps `base64Length` and the decoded-byte forms derived from the generated caps. |
 | `contract/contract.ts` | `contract/contract.ts` | Unchanged. It is the backend's API spec and the input of `contract/gen.ts`, which generates the Go client's types, route table and limits, and the frontend's limits (§3.14). `contract/package.json` holds `zod` and `@ts-rest/core`, so the frontend no longer depends on them. |
@@ -97,7 +97,7 @@ The Go side is new code. It starts from the sandbox packages (Ground rules 7) an
 - **`electrobun.config.ts` and `llms.txt`:** the identifier, names and channels move into `build/config.yml` and `buildinfo`.
 - **`scripts/fuse-installer.ts`, `scripts/stamp-win-icons.ts` and `scripts/tsconfig.json`:** the second TS project exists only because bun's globals collide with the DOM lib.
 - **`assets/vex-logo.ico`:** generated from `appicon.png`.
-- **The root `package.json`, `bun.lock`, `tsconfig.json`, `vite.config.ts`, `tailwind.config.js` and `postcss.config.js`:** replaced by `frontend/`'s, with content globs and the `@/` alias pointing at `frontend/src`. These packages leave: `electrobun`, `rcedit`, `@types/three`, `@types/bun`, `music-metadata`.
+- **The root `package.json`, `bun.lock`, `tsconfig.json`, `vite.config.ts`, `tailwind.config.js` and `postcss.config.js`:** replaced by `frontend/`'s, with the `@/` alias pointing at `frontend/src`. Tailwind runs as its Vite plugin and is configured in `frontend/src/index.css`, so the two config files have no successor. These packages leave: `electrobun`, `rcedit`, `@types/three`, `@types/bun`, `music-metadata`.
 - **`.gitignore`:** the template's, plus `/preview/` for the preview skill's output and `contract/node_modules`.
 - **All four `CLAUDE.md` files.** They describe the Electrobun app. The replacement is below.
 - **`port-sandbox/`:** stays on `main`. Its probe app, CDP harness, ranking capture and music-metadata comparison need the old app's sources and root `node_modules`, so they run from the reference checkout.
