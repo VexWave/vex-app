@@ -43,7 +43,7 @@ export function AppHeader() {
 					<HeaderAction
 						icon={<LogOut />}
 						label="Log out"
-						className="hover:bg-destructive/10 hover:text-red-400"
+						className="hover:bg-destructive/10 dark:hover:bg-destructive/10 hover:text-red-400"
 						onClick={() => void sessionService.logout()}
 					/>
 				</div>

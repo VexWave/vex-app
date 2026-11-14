@@ -19,7 +19,7 @@ function Progress({
 			{...props}
 		>
 			{/* Deviation from stock shadcn: a null value (Radix "indeterminate")
-          renders a pulsing full-width bar instead of an empty track. */}
+			    renders a pulsing full-width bar instead of an empty track. */}
 			<ProgressPrimitive.Indicator
 				data-slot="progress-indicator"
 				className="h-full w-full flex-1 bg-primary transition-all data-[state=indeterminate]:animate-pulse data-[state=indeterminate]:bg-primary/50"
