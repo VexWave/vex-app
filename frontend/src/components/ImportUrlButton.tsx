@@ -50,7 +50,7 @@ export function ImportUrlButton() {
 					if (!nextOpen) reset();
 				}}
 			>
-				<DialogContent className="max-w-md">
+				<DialogContent className="sm:max-w-md">
 					<form className="flex flex-col gap-4" onSubmit={handleSubmit}>
 						<DialogHeader>
 							<DialogTitle>Import from URL</DialogTitle>
