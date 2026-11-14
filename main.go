@@ -141,7 +141,8 @@ func main() {
 		Width:            1200,
 		Height:           800,
 		BackgroundColour: application.NewRGB(10, 10, 10),
-		URL:              "/",
+		// Absolute, or wails3 dev adds the Vite port to the origin.
+		URL: "http://wails.localhost/",
 		Windows: application.WindowsWindow{
 			Theme:       application.Dark,
 			CustomTheme: application.ThemeSettings{DarkModeActive: caption, DarkModeInactive: caption},
