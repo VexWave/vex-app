@@ -11,7 +11,6 @@ updates:
       # Moves together with the wails3 CLI the workflows install and @wailsio/runtime.
       - dependency-name: github.com/wailsapp/wails/v3
 
-  # contract/ is left out: its dependencies follow vex-backend's and @types/bun follows the workflows' Bun.
   - package-ecosystem: bun
     directory: /frontend
     schedule:
