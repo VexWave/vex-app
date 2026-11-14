@@ -30,11 +30,11 @@ const SliderThumb = React.forwardRef<
 	<SliderPrimitive.Thumb
 		ref={ref}
 		{...props}
-		className="group/thumb relative block size-0 focus-visible:outline-none"
+		className="group/thumb relative block size-0 focus-visible:outline-hidden"
 	>
 		<span
 			className={cn(
-				"absolute left-0 top-0 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/50 bg-background shadow transition-colors group-focus-visible/thumb:ring-1 group-focus-visible/thumb:ring-ring",
+				"absolute left-0 top-0 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/50 bg-background shadow-sm transition-colors group-focus-visible/thumb:ring-1 group-focus-visible/thumb:ring-ring",
 				className,
 			)}
 		/>
@@ -67,7 +67,7 @@ const Slider = React.forwardRef<
 			className={cn(
 				// The height is the thumb's, which no longer sets it: it is the band
 				// the pointer can grab, and the track alone would leave 6px of it.
-				"relative flex h-4 w-full touch-none select-none items-center data-[disabled]:opacity-50",
+				"relative flex h-4 w-full touch-none select-none items-center data-disabled:opacity-50",
 				className,
 			)}
 			{...props}

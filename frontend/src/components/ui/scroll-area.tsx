@@ -12,11 +12,11 @@ const ScrollArea = React.forwardRef<
 		className={cn("relative overflow-hidden", className)}
 		{...props}
 	>
-		{/* [&>div]:!block (not upstream shadcn): Radix renders the viewport's
+		{/* [&>div]:block! (not upstream shadcn): Radix renders the viewport's
 		    content wrapper as an inline `display: table`, which sizes to the
 		    widest row — long track titles would widen rows past the viewport
 		    instead of truncating. Block makes it fill the viewport width. */}
-		<ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] [&>div]:!block">
+		<ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] [&>div]:block!">
 			{children}
 		</ScrollAreaPrimitive.Viewport>
 		<ScrollBar />
@@ -35,9 +35,9 @@ const ScrollBar = React.forwardRef<
 		className={cn(
 			"flex touch-none select-none transition-colors",
 			orientation === "vertical" &&
-				"h-full w-2.5 border-l border-l-transparent p-[1px]",
+				"h-full w-2.5 border-l border-l-transparent p-px",
 			orientation === "horizontal" &&
-				"h-2.5 flex-col border-t border-t-transparent p-[1px]",
+				"h-2.5 flex-col border-t border-t-transparent p-px",
 			className,
 		)}
 		{...props}

@@ -42,7 +42,7 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 			}}
 			aria-current={active ? "page" : undefined}
 			className={cn(
-				"group relative flex w-full cursor-pointer items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+				"group relative flex w-full cursor-pointer items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-1.5 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
 				active ? "bg-accent" : "hover:bg-accent/50",
 			)}
 		>

@@ -48,12 +48,12 @@ export const DiscoverCard = memo(function DiscoverCard({
 				)}
 			/>
 
-			<div className="absolute inset-x-0 bottom-0 h-2/3 rounded-b-[inherit] bg-gradient-to-t from-black via-black/55 to-transparent" />
+			<div className="absolute inset-x-0 bottom-0 h-2/3 rounded-b-[inherit] bg-linear-to-t from-black via-black/55 to-transparent" />
 
 			<div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/10" />
 
 			{result.durationSec !== undefined && (
-				<span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white shadow-sm">
+				<span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white shadow-xs">
 					{formatTime(result.durationSec)}
 				</span>
 			)}
