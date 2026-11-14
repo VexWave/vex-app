@@ -40,6 +40,7 @@ detail view and writes `playlists-1.png`.
 | --- | --- |
 | `--out=preview` | where the PNGs go. `--out=assets` when they're being kept. |
 | `--scale=1.5` | 1.5 → 1800×1188 |
+| `--zoom=1` | lays the app out in a window this many times smaller at the same output size, so the UI reads bigger. `--zoom=1.2` for the README shots |
 | `--no-check` | skip the type-check (below). Only while iterating. |
 | `--keep` | leave the harness in `frontend/src/` and the vite URL usable, to poke at |
 | `--still` | freeze the now-playing bars, which is what makes a render byte-reproducible |

@@ -3,7 +3,7 @@
  * below. Copied into `frontend/src/` by `render.ts` for the length of a run and
  * deleted afterwards, which is why it can import `./App` and use `@/`.
  *
- * **The data below is an example, not a fixture â€” rewrite it for whatever is
+ * **The data below is an example, not a fixture - rewrite it for whatever is
  * being previewed.** A long queue, an empty library, an artist with one track,
  * a failed download: all of it is authored here, per preview. Only the wiring at
  * the bottom is meant to survive.
@@ -54,7 +54,7 @@ import "./index.css";
 import App from "./App";
 
 // ===========================================================================
-// ARTWORK â€” data URIs, so a preview needs no network and nothing real or
+// ARTWORK - data URIs, so a preview needs no network and nothing real or
 // copyrighted ends up in a picture. `crossOrigin="anonymous"` on a `data:` URL
 // still leaves the canvas `lib/coverFit.ts` reads back untainted.
 // ===========================================================================
@@ -102,7 +102,7 @@ const artTrack = (from: string, to: string) =>
 	);
 
 // ===========================================================================
-// DATA â€” rewrite all of this for the preview being asked for. Names are
+// DATA - rewrite all of this for the preview being asked for. Names are
 // fictional on purpose; keep them that way.
 // ===========================================================================
 
@@ -142,12 +142,12 @@ const SEARCH_QUERY = "nova halcyon";
 
 const RESULTS: MediaSearchResult[] = (
 	[
-		["Nova Halcyon â€” Static Bloom (Official Video)", "Nova Halcyon", 194, still("#c084fc", "#5b21b6")],
+		["Nova Halcyon - Static Bloom (Official Video)", "Nova Halcyon", 194, still("#c084fc", "#5b21b6")],
 		["Static Bloom (Kite and Ember Remix)", "Kite and Ember", 292, artTrack("#2dd4bf", "#0f766e")],
-		["Vertigo Sunday â€” live at Fold Sessions", "Fold Sessions", 241, still("#fb7185", "#7f1d1d")],
+		["Vertigo Sunday - live at Fold Sessions", "Fold Sessions", 241, still("#fb7185", "#7f1d1d")],
 		["Neon Arboretum (Visualizer)", "Nova Halcyon", 302, still("#818cf8", "#312e81")],
-		["Nova Halcyon â€” Nightline, full set", "Nightline Radio", 2480, still("#fbbf24", "#7c2d12")],
-		["Neon Arboretum â€” full album", "Nova Halcyon", 2287, artTrack("#f472b6", "#701a75")],
+		["Nova Halcyon - Nightline, full set", "Nightline Radio", 2480, still("#fbbf24", "#7c2d12")],
+		["Neon Arboretum - full album", "Nova Halcyon", 2287, artTrack("#f472b6", "#701a75")],
 	] as const
 ).map(([title, artist, durationSec, thumbnailUrl], index) => ({
 	id: `youtube-${index + 1}`,
@@ -160,7 +160,7 @@ const RESULTS: MediaSearchResult[] = (
 
 /**
  * A download in flight, so a Discover card shows the spinner, the progress bar
- * and the status line â€” otherwise that state is hover-only and a still frame
+ * and the status line - otherwise that state is hover-only and a still frame
  * can't reach it. Set to `null` for a plain grid.
  */
 const RUNNING_IMPORT: ImportJob | null = {
@@ -173,20 +173,13 @@ const RUNNING_IMPORT: ImportJob | null = {
 	error: null,
 };
 
-/**
- * Playing, and a short way in: the seek fill ends well clear of the middle,
- * which is the one place an off-centre thumb still met it.
- */
-const PLAYING = { index: 0, atSec: 29 } as const;
+/** The README shots: playing, a little under halfway in. */
+const PLAYING = { index: 0, atSec: 83 } as const;
 
-/**
- * Both limits, twice over, and two bands left flat: where a fader's thumb sits
- * against the ends of the bank, and against the curve, is only readable at the
- * extremes.
- */
+/** A gentle smile curve, the kind a listener actually sets. */
 const EQUALIZER = {
 	enabled: true,
-	gains: [12, -12, 0, 5.5, -2.5, 0, 8, -6, 3.5, -12],
+	gains: [4.5, 3.5, 1.5, -1, -2.5, -1.5, 0.5, 2.5, 4, 3],
 };
 
 /** Slowed, driven and wet, so the player bar's effects button reads as engaged. */
@@ -201,7 +194,10 @@ const EFFECTS = {
  * Press the player bar's effects button, since nothing draws that panel until it
  * is pressed. It opens over whichever view is being rendered.
  */
-const OPEN_EFFECTS = true;
+const OPEN_EFFECTS = false;
+
+/** Scroll settings to the uninstall row instead of opening on the equalizer. */
+const SETTINGS_AT_END = false;
 
 const PRESENCE: PresenceState = {
 	enabled: true,
@@ -219,7 +215,7 @@ const UNINSTALL: UninstallState = {
 };
 
 // ===========================================================================
-// WIRING â€” derives the stores from the data above. Edit when a store changes,
+// WIRING - derives the stores from the data above. Edit when a store changes,
 // not when a preview does.
 // ===========================================================================
 
@@ -371,6 +367,12 @@ playerController.effects.setPreservePitch(EFFECTS.preservePitch);
 playerController.effects.setDrive(EFFECTS.drive);
 playerController.effects.setReverbMix(EFFECTS.reverbMix);
 
+// Under --virtual-time-budget, headless Edge runs only the first two animation
+// frames, so the player bar's cover backdrop never passed its two-frame gate.
+window.requestAnimationFrame = (callback) =>
+	window.setTimeout(() => callback(performance.now()), 16);
+window.cancelAnimationFrame = (id) => window.clearTimeout(id);
+
 // Where to land: ?view=<MainViewName>[&open=<id>].
 const params = new URLSearchParams(location.search);
 const view = (params.get("view") ?? "library") as MainViewName;
@@ -400,7 +402,7 @@ createRoot(document.getElementById("root")!).render(
 setTimeout(() => {
 	// Settings only: every view scrolls through one of these, and a list scrolled
 	// to its end is a picture of its last row rather than of the view.
-	if (view === "settings") {
+	if (view === "settings" && SETTINGS_AT_END) {
 		document
 			.querySelectorAll("[data-radix-scroll-area-viewport]")
 			.forEach((viewport) => {
@@ -411,6 +413,9 @@ setTimeout(() => {
 		document
 			.querySelector<HTMLButtonElement>('[aria-label="Playback effects"]')
 			?.click();
+		// The popover focuses its first control, and a scripted click counts as no
+		// pointer, so the reset button would wear a focus-visible ring.
+		setTimeout(() => (document.activeElement as HTMLElement | null)?.blur(), 100);
 	}
 }, 400);
 
