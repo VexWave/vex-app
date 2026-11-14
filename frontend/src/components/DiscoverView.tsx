@@ -162,9 +162,9 @@ function SourceToggle({
 						aria-pressed={active}
 						onClick={() => onChange(source)}
 						className={cn(
-							"flex h-7 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+							"flex h-7 items-center gap-1.5 rounded px-2 text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
 							active
-								? "bg-background text-foreground shadow-sm"
+								? "bg-background text-foreground shadow-xs"
 								: "text-muted-foreground hover:text-foreground",
 						)}
 					>

@@ -33,7 +33,7 @@ export function Sidebar() {
 	const openPlaylistId = view.name === "playlists" ? view.openId : null;
 
 	return (
-		<div className="flex h-full w-[200px] shrink-0 flex-col overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
+		<div className="flex h-full w-[200px] shrink-0 flex-col overflow-hidden rounded-xl border bg-linear-to-b from-card to-card/40 shadow-xs">
 			<nav className="flex flex-col gap-1 p-2" aria-label="Main">
 				{NAV_ITEMS.map((item) => {
 					const active =
@@ -45,7 +45,7 @@ export function Sidebar() {
 							key={item.view}
 							type="button"
 							className={cn(
-								"group relative flex w-full items-center gap-3 rounded-lg py-2 pl-4 pr-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+								"group relative flex w-full items-center gap-3 rounded-lg py-2 pl-4 pr-2 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
 								active
 									? "bg-accent text-accent-foreground"
 									: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
@@ -74,7 +74,7 @@ export function Sidebar() {
 							{!!count && (
 								<span
 									className={cn(
-										"ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[11px] font-medium leading-none tabular-nums transition-colors",
+										"ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-medium leading-none tabular-nums transition-colors",
 										active
 											? "bg-nav-edge/20 text-foreground"
 											: "bg-muted/70 text-muted-foreground",

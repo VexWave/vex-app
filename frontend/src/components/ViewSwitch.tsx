@@ -29,7 +29,7 @@ function Marker({ index }: { index: number }) {
 	return (
 		<span
 			aria-hidden="true"
-			className="pointer-events-none absolute inset-y-0 left-0 rounded-t-lg rounded-b-[2px] bg-[radial-gradient(125%_95%_at_50%_122%,hsl(var(--nav)/0.55)_0%,hsl(var(--nav)/0.16)_48%,transparent_72%)] shadow-[inset_0_-1px_0_hsl(var(--nav-edge)/0.9)] transition-transform duration-300 ease-swift motion-reduce:transition-none"
+			className="pointer-events-none absolute inset-y-0 left-0 rounded-t-lg rounded-b-[2px] bg-[radial-gradient(125%_95%_at_50%_122%,color-mix(in_oklab,var(--nav)_55%,transparent)_0%,color-mix(in_oklab,var(--nav)_16%,transparent)_48%,transparent_72%)] shadow-[inset_0_-1px_0_color-mix(in_oklab,var(--nav-edge)_90%,transparent)] transition-transform duration-300 ease-swift motion-reduce:transition-none"
 			style={{ width: share, transform: `translateX(${index * 100}%)` }}
 		/>
 	);
@@ -43,7 +43,7 @@ function Segment({ name, active }: { name: SectionName; active: boolean }) {
 			aria-pressed={active}
 			onClick={() => navigationService.showSection(name)}
 			className={cn(
-				"relative flex h-9 items-center justify-center gap-2 rounded-t-lg rounded-b-[2px] px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+				"relative flex h-9 items-center justify-center gap-2 rounded-t-lg rounded-b-[2px] px-4 text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
 				active
 					? "text-foreground"
 					: "text-muted-foreground/70 hover:text-foreground/80",

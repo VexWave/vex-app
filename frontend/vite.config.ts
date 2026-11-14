@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import wails from "@wailsio/runtime/plugins/vite";
 
 export default defineConfig({
@@ -14,5 +15,5 @@ export default defineConfig({
 			"@": fileURLToPath(new URL("./src", import.meta.url)),
 		},
 	},
-	plugins: [react(), wails("./bindings")],
+	plugins: [react(), tailwindcss(), wails("./bindings")],
 });

@@ -62,7 +62,7 @@ function App() {
 
 			<main className="flex min-h-0 flex-1 gap-4 p-4">
 				{Aside && <Aside />}
-				<div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border bg-gradient-to-b from-card to-card/40 shadow-sm">
+				<div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border bg-linear-to-b from-card to-card/40 shadow-xs">
 					<div
 						key={view.name}
 						className="h-full duration-200 animate-in fade-in motion-reduce:animate-none"

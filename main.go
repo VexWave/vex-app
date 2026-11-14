@@ -85,7 +85,7 @@ func main() {
 	uninstaller := &uninstall.UninstallService{Busy: busyRegistry}
 
 	caption := &application.WindowTheme{
-		TitleBarColour:  application.NewRGBPtr(0x1c, 0x1c, 0x1c),
+		TitleBarColour:  application.NewRGBPtr(0x26, 0x26, 0x26),
 		BorderColour:    application.NewRGBPtr(0x26, 0x26, 0x26),
 		TitleTextColour: application.NewRGBPtr(0xfa, 0xfa, 0xfa),
 	}
