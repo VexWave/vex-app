@@ -22,7 +22,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-const MaxAudioBytes = backend.MaxAudioBase64 / 4 * 3
+const (
+	MaxAudioBytes = backend.MaxAudioBase64 / 4 * 3
+	MaxImageBytes = backend.MaxImageBase64 / 4 * 3
+)
 
 type Staged struct {
 	ID         string `json:"id"`
