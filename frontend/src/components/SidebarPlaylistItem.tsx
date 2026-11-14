@@ -3,6 +3,7 @@ import { Pause, Play } from "lucide-react";
 import { playlistService } from "@/api/PlaylistService";
 import { NowPlayingRing } from "@/components/NowPlayingRing";
 import { PlaylistCover } from "@/components/PlaylistCover";
+import { GHOST_TINT } from "@/components/ghostChrome";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { RemotePlaylist } from "@/api/types";
@@ -42,7 +43,7 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 			}}
 			aria-current={active ? "page" : undefined}
 			className={cn(
-				"group relative flex w-full cursor-pointer items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-1.5 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
+				"group relative flex w-full items-center gap-2.5 rounded-lg py-1.5 pl-2 pr-1.5 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring",
 				active ? "bg-accent" : "hover:bg-accent/50",
 			)}
 		>
@@ -78,7 +79,10 @@ export const SidebarPlaylistItem = memo(function SidebarPlaylistItem({
 				<Button
 					variant="ghost"
 					size="icon"
-					className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+					className={cn(
+						"h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100",
+						GHOST_TINT,
+					)}
 					aria-label={
 						playing ? `Pause ${playlist.name}` : `Play ${playlist.name}`
 					}

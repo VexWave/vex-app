@@ -78,7 +78,7 @@ export function CollectionCard({
 					onOpen();
 				}
 			}}
-			className="group relative flex cursor-pointer flex-col gap-2 rounded-xl p-3 transition-colors hover:bg-accent focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+			className="group relative flex flex-col gap-2 rounded-xl p-3 transition-colors hover:bg-accent focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
 		>
 			<div className="relative">
 				{artwork}

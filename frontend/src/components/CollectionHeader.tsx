@@ -50,7 +50,7 @@ export function CollectionHeader({
 					{actions}
 					<Button
 						size="sm"
-						className="rounded-full px-4"
+						className="rounded-full has-[>svg]:px-4"
 						disabled={playDisabled}
 						aria-label={playLabel}
 						onClick={onPlay}

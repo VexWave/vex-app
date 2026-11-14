@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { GHOST_TINT } from "@/components/ghostChrome";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,8 @@ export function HeaderAction({
 		<Button
 			variant="ghost"
 			className={cn(
-				"group h-9 shrink-0 gap-0 rounded-lg px-2.5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
+				"group h-9 shrink-0 gap-0 rounded-lg has-[>svg]:px-2.5 text-muted-foreground hover:text-foreground",
+				GHOST_TINT,
 				className,
 			)}
 			{...props}
