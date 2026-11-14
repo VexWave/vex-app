@@ -670,6 +670,7 @@ The UI is copied from `src/mainview/` to `frontend/src/` (Port setup). Paths bel
 - **`components/AddTracksButton.tsx:16-18`**: `<input type="file">` → `Uploads.Pick()`.
 - **`components/UploadReviewDialog.tsx:82`**: the staged cover comes from a loopback URL instead of `URL.createObjectURL(coverBlob)`. The replacement-cover picker (`:170-172`) stays a browser `File`.
 - **`App.tsx:44-50,67-74,110`**: the drop handlers and the `isDragging` overlay are deleted (§5).
+- **`index.css`**: `body` takes `select-none`, so text in the `role="button"` rows and cards can't be selected and doesn't show an I-beam cursor. Inputs stay selectable.
 - **`lib/devicePixelRatio.ts:1-5,22`**: the CEF `resize` trigger can go.
 - **Types:** the data types of `src/shared/rpcSchema.ts` move to `api/types.ts` as the frontend's hand-written types (§3.3). Its `PlayerRPC` schema (`:260-315`) is replaced by the `Backend` interface in `api/rpc.ts`, and its result envelopes and tagged messages by plain return values and per-event payloads.
 - **Imports of `src/shared/`:** the 34 `../../shared/rpcSchema` and 7 `../../shared/limits` imports become `@/api/types` and `@/lib/limits`.
