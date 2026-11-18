@@ -13,8 +13,8 @@ import (
 
 func managedBin(t *testing.T) string {
 	bin := datadirs.Default().Bin()
-	if _, err := os.Stat(filepath.Join(bin, "ffprobe.exe")); err != nil {
-		t.Skip("no managed ffprobe.exe")
+	if _, err := os.Stat(filepath.Join(bin, platform.Exe("ffprobe"))); err != nil {
+		t.Skip("no managed ffprobe")
 	}
 	if _, err := os.Stat(filepath.Join("testdata", "tagged.mp3")); err != nil {
 		out, err := platform.Command(context.Background(), bin, "sh", filepath.Join("testdata", "gen.sh")).CombinedOutput()
@@ -59,7 +59,7 @@ func withCover(t *testing.T, bin string, size int) string {
 		t.Fatal(err)
 	}
 	// image2 keeps the whole file as one packet; jpeg_pipe would cut the padding at the JPEG's end marker.
-	out, err := platform.Command(context.Background(), bin, filepath.Join(bin, "ffmpeg.exe"),
+	out, err := platform.Command(context.Background(), bin, filepath.Join(bin, platform.Exe("ffmpeg")),
 		"-v", "error", "-f", "lavfi", "-i", "sine=duration=1", "-f", "image2", "-i", img,
 		"-map", "0:a", "-map", "1:v", "-c:a", "libmp3lame", "-c:v", "copy", "-disposition:v", "attached_pic", track).CombinedOutput()
 	if err != nil {

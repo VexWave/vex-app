@@ -5,11 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
-	"syscall"
-	"time"
 
 	"github.com/VexWave/vex-app/internal/busy"
 	"github.com/VexWave/vex-app/internal/netx"
@@ -22,7 +19,6 @@ import (
 const (
 	repository     = "VexWave/vex-app"
 	installerAsset = "VexWave-installer.exe"
-	installWait    = 5 * time.Minute
 )
 
 func Configure(u *updater.Updater, version string, proxy func() string) error {
@@ -164,33 +160,4 @@ func (s *UpdateService) Install(ctx context.Context) error {
 	}
 	s.handedOff = true
 	return nil
-}
-
-func Helper(pid, installer, exe string) error {
-	if err := platform.WaitExit(pid); err != nil {
-		return err
-	}
-	installErr := install(installer, exe)
-	app := exec.Command(exe)
-	if err := app.Start(); err != nil {
-		return errors.Join(installErr, err)
-	}
-	app.Process.Release()
-	return installErr
-}
-
-func install(installer, exe string) error {
-	backup := exe + ".old"
-	os.Remove(backup)
-	if err := platform.CopyFile(exe, backup); err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), installWait)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, installer)
-	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `"` + installer + `" /S /D=` + filepath.Dir(exe)}
-	if err := cmd.Run(); err != nil {
-		return errors.Join(err, os.Rename(backup, exe))
-	}
-	return os.Remove(backup)
 }
